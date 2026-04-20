@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biotech-alpha-lab"
+version = "0.1.0"
+description = "AI-assisted investment research workspace for innovative drug companies."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Jiabao" }
+]
+dependencies = []
+
+[project.scripts]
+biotech-alpha = "biotech_alpha.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
