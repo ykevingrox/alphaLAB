@@ -50,6 +50,16 @@ from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
 )
+from biotech_alpha.valuation import (
+    ValuationMetrics,
+    ValuationSnapshot,
+    calculate_valuation_metrics,
+    load_valuation_snapshot,
+    validate_valuation_snapshot_file,
+    valuation_finding,
+    valuation_payload,
+    valuation_validation_report_as_dict,
+)
 
 
 class ClinicalTrialsSource(Protocol):
@@ -82,6 +92,7 @@ class ResearchArtifacts:
     competitor_assets: Path | None = None
     competitive_matches: Path | None = None
     cash_runway: Path | None = None
+    valuation: Path | None = None
     memo_json: Path | None = None
     memo_markdown: Path | None = None
 
@@ -101,6 +112,8 @@ class SingleCompanyResearchResult:
     competitive_matches: tuple[CompetitiveMatch, ...]
     financial_snapshot: FinancialSnapshot | None
     cash_runway_estimate: CashRunwayEstimate | None
+    valuation_snapshot: ValuationSnapshot | None
+    valuation_metrics: ValuationMetrics | None
     input_validation: dict[str, Any]
     clinical_trial_finding: AgentFinding
     memo: InvestmentMemo
@@ -118,6 +131,7 @@ def run_single_company_research(
     pipeline_assets_path: str | Path | None = None,
     competitors_path: str | Path | None = None,
     financials_path: str | Path | None = None,
+    valuation_path: str | Path | None = None,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
     limit: int = 20,
@@ -162,6 +176,11 @@ def run_single_company_research(
         if financials_path
         else None
     )
+    valuation_snapshot = (
+        load_valuation_snapshot(valuation_path)
+        if valuation_path
+        else None
+    )
     competitors = (
         load_competitor_assets(competitors_path)
         if competitors_path
@@ -173,10 +192,16 @@ def run_single_company_research(
         if financial_snapshot
         else None
     )
+    valuation_metrics = (
+        calculate_valuation_metrics(valuation_snapshot)
+        if valuation_snapshot
+        else None
+    )
     input_validation = _input_validation_reports(
         pipeline_assets_path=pipeline_assets_path,
         competitors_path=competitors_path,
         financials_path=financials_path,
+        valuation_path=valuation_path,
     )
     search_terms = _clinical_trial_search_terms(
         primary_term=query,
@@ -214,6 +239,8 @@ def run_single_company_research(
         competitive_matches=competitive_matches,
         financial_snapshot=financial_snapshot,
         cash_runway_estimate=cash_runway_estimate,
+        valuation_snapshot=valuation_snapshot,
+        valuation_metrics=valuation_metrics,
         input_validation=input_validation,
         finding=clinical_finding,
         catalysts=catalysts,
@@ -238,6 +265,8 @@ def run_single_company_research(
             competitive_matches=competitive_matches,
             financial_snapshot=financial_snapshot,
             cash_runway_estimate=cash_runway_estimate,
+            valuation_snapshot=valuation_snapshot,
+            valuation_metrics=valuation_metrics,
             input_validation=input_validation,
             memo=memo,
         )
@@ -254,6 +283,8 @@ def run_single_company_research(
         competitive_matches=competitive_matches,
         financial_snapshot=financial_snapshot,
         cash_runway_estimate=cash_runway_estimate,
+        valuation_snapshot=valuation_snapshot,
+        valuation_metrics=valuation_metrics,
         input_validation=input_validation,
         clinical_trial_finding=clinical_finding,
         memo=memo,
@@ -281,6 +312,16 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
         "cash_runway_months": (
             result.cash_runway_estimate.runway_months
             if result.cash_runway_estimate
+            else None
+        ),
+        "enterprise_value": (
+            result.valuation_metrics.enterprise_value
+            if result.valuation_metrics
+            else None
+        ),
+        "revenue_multiple": (
+            result.valuation_metrics.revenue_multiple
+            if result.valuation_metrics
             else None
         ),
         "input_warning_count": _input_warning_count(result.input_validation),
@@ -540,6 +581,7 @@ def _input_validation_reports(
     pipeline_assets_path: str | Path | None,
     competitors_path: str | Path | None,
     financials_path: str | Path | None,
+    valuation_path: str | Path | None,
 ) -> dict[str, Any]:
     reports: dict[str, Any] = {}
     if pipeline_assets_path:
@@ -553,6 +595,10 @@ def _input_validation_reports(
     if financials_path:
         reports["financials"] = financial_validation_report_as_dict(
             validate_financial_snapshot_file(financials_path)
+        )
+    if valuation_path:
+        reports["valuation"] = valuation_validation_report_as_dict(
+            validate_valuation_snapshot_file(valuation_path)
         )
     return reports
 
@@ -575,6 +621,8 @@ def _build_clinical_first_memo(
     competitive_matches: tuple[CompetitiveMatch, ...],
     financial_snapshot: FinancialSnapshot | None,
     cash_runway_estimate: CashRunwayEstimate | None,
+    valuation_snapshot: ValuationSnapshot | None,
+    valuation_metrics: ValuationMetrics | None,
     input_validation: dict[str, Any],
     finding: AgentFinding,
     catalysts: tuple[Catalyst, ...],
@@ -602,6 +650,7 @@ def _build_clinical_first_memo(
             pipeline_assets=pipeline_assets,
             competitor_assets=competitor_assets,
             financial_snapshot=financial_snapshot,
+            valuation_snapshot=valuation_snapshot,
             input_validation=input_validation,
         ),
     ]
@@ -622,6 +671,14 @@ def _build_clinical_first_memo(
                 company=context.company,
                 snapshot=financial_snapshot,
                 estimate=cash_runway_estimate,
+            )
+        )
+    if valuation_snapshot and valuation_metrics:
+        findings.append(
+            valuation_finding(
+                company=context.company,
+                snapshot=valuation_snapshot,
+                metrics=valuation_metrics,
             )
         )
     evidence = (*trial_evidence, *asset_evidence)
@@ -670,6 +727,11 @@ def _build_clinical_first_memo(
         summary += (
             f" Cash runway was estimated at "
             f"{cash_runway_estimate.runway_months:.1f} months."
+        )
+    if valuation_metrics:
+        summary += (
+            f" Enterprise value was estimated at "
+            f"{valuation_metrics.enterprise_value:g} {valuation_metrics.currency}."
         )
 
     return InvestmentMemo(
@@ -814,6 +876,7 @@ def _build_data_quality_finding(
     pipeline_assets: tuple[PipelineAsset, ...],
     competitor_assets: tuple[CompetitorAsset, ...],
     financial_snapshot: FinancialSnapshot | None,
+    valuation_snapshot: ValuationSnapshot | None,
     input_validation: dict[str, Any],
 ) -> AgentFinding:
     risks: list[str] = []
@@ -821,6 +884,8 @@ def _build_data_quality_finding(
         risks.append("No curated pipeline asset input was provided")
     if not financial_snapshot:
         risks.append("No financial snapshot input was provided")
+    if not valuation_snapshot:
+        risks.append("No valuation snapshot input was provided")
     if not competitor_assets:
         risks.append("No curated competitive landscape input was provided")
 
@@ -857,6 +922,8 @@ def _write_research_artifacts(
     competitive_matches: tuple[CompetitiveMatch, ...],
     financial_snapshot: FinancialSnapshot | None,
     cash_runway_estimate: CashRunwayEstimate | None,
+    valuation_snapshot: ValuationSnapshot | None,
+    valuation_metrics: ValuationMetrics | None,
     input_validation: dict[str, Any],
     memo: InvestmentMemo,
 ) -> ResearchArtifacts:
@@ -877,6 +944,7 @@ def _write_research_artifacts(
     competitor_assets_path = processed_dir / f"{run_id}_competitor_assets.json"
     competitive_matches_path = processed_dir / f"{run_id}_competitive_matches.json"
     cash_runway_path = processed_dir / f"{run_id}_cash_runway.json"
+    valuation_path = processed_dir / f"{run_id}_valuation.json"
     memo_json_path = processed_dir / f"{run_id}_memo.json"
     memo_markdown_path = memo_dir / f"{run_id}_memo.md"
 
@@ -947,6 +1015,11 @@ def _write_research_artifacts(
             cash_runway_path,
             cash_runway_payload(financial_snapshot, cash_runway_estimate),
         )
+    if valuation_snapshot and valuation_metrics:
+        _write_json(
+            valuation_path,
+            valuation_payload(valuation_snapshot, valuation_metrics),
+        )
     _write_json(memo_json_path, asdict(memo))
     memo_markdown_path.write_text(memo_to_markdown(memo), encoding="utf-8")
 
@@ -963,6 +1036,11 @@ def _write_research_artifacts(
         cash_runway=(
             cash_runway_path
             if financial_snapshot and cash_runway_estimate
+            else None
+        ),
+        valuation=(
+            valuation_path
+            if valuation_snapshot and valuation_metrics
             else None
         ),
         memo_json=memo_json_path,
@@ -985,6 +1063,7 @@ def _write_research_artifacts(
                 "competitor_assets": len(competitor_assets),
                 "competitive_matches": len(competitive_matches),
                 "cash_runway": 1 if cash_runway_estimate else 0,
+                "valuation": 1 if valuation_metrics else 0,
                 "catalysts": len(memo.catalysts),
                 "evidence": len(memo.evidence),
             },

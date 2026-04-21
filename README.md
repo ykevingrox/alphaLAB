@@ -45,6 +45,7 @@ src/biotech_alpha/
   models.py           Domain models for trials, pipeline assets, and memos
   pipeline.py         Pipeline asset loading and deterministic trial matching
   research.py         Single-company research pipeline orchestration
+  valuation.py        Valuation snapshot loading and context metrics
   agents.py           Agent interface sketches
   cli.py              Small command-line entry point
 tests/
@@ -54,6 +55,7 @@ tests/
   test_financials.py
   test_pipeline.py
   test_research.py
+  test_valuation.py
 ```
 
 ## Quick Start
@@ -98,6 +100,14 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-template \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
   data/input/akeso_competitors.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_valuation.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
+  data/input/akeso_valuation.json
 ```
 
 Run the first single-company research pipeline:
@@ -109,6 +119,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --pipeline-assets data/input/akeso_pipeline_assets.json \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
+  --valuation data/input/akeso_valuation.json \
   --limit 20
 ```
 
@@ -127,7 +138,7 @@ data/memos/
 Each saved run includes a manifest JSON, raw registry responses, normalized
 trial JSON, a trial-summary CSV table, catalyst-calendar CSV table, pipeline
 asset JSON, asset-trial match JSON, competitor asset JSON, competitive-match
-JSON, optional cash-runway JSON, and memo outputs.
+JSON, optional cash-runway JSON, optional valuation JSON, and memo outputs.
 The manifest also records input validation reports so placeholder fields and
 other data-quality warnings remain attached to the run.
 
@@ -207,6 +218,25 @@ Competitive landscape JSON follows the same curated-first pattern:
 
 Competitor assets are matched to company pipeline assets by normalized target
 and indication, then surfaced as competitive landscape findings and risks.
+
+Valuation snapshot JSON provides market context without creating a target price:
+
+```json
+{
+  "as_of_date": "2026-04-20",
+  "currency": "HKD",
+  "market_cap": 25000000000,
+  "cash_and_equivalents": 1200000000,
+  "total_debt": 300000000,
+  "revenue_ttm": 1500000000,
+  "source": "market-data-snapshot",
+  "source_date": "2026-04-20"
+}
+```
+
+If `market_cap` is omitted, provide `share_price` and `shares_outstanding`.
+The current valuation agent calculates enterprise value and revenue multiple
+when revenue is available.
 
 ## Current Data Reality
 

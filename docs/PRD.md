@@ -40,10 +40,12 @@ Current implementation status:
   cash runway estimation.
 - Implemented: curated competitor asset JSON input, validation, deterministic
   target/indication matching, and competitive landscape findings.
+- Implemented: curated valuation snapshot JSON input, validation, enterprise
+  value, and revenue multiple context where possible.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
-  parsing, automatic competitor discovery, valuation, and skeptical
+  parsing, automatic competitor discovery, scenario valuation, and skeptical
   counter-thesis agents.
 
 ## Non-Goals For MVP
@@ -147,5 +149,5 @@ Near-term success criteria for the current CLI slice:
   trial records.
 - A research run can emit trial summary and catalyst calendar CSV files.
 - A research run can produce a memo with source-backed evidence, key risks,
-  curated competitive landscape findings, follow-up questions, and a manifest
-  suitable for audit/reproduction.
+  curated competitive landscape findings, valuation context, follow-up
+  questions, and a manifest suitable for audit/reproduction.

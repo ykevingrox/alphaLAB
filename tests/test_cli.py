@@ -139,6 +139,48 @@ class CliTest(unittest.TestCase):
             self.assertEqual(validate_exit, 1)
             self.assertTrue(report["errors"])
 
+    def test_valuation_template_and_validate_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "input" / "valuation.json"
+
+            template_stdout = io.StringIO()
+            with redirect_stdout(template_stdout):
+                template_exit = main(
+                    [
+                        "valuation-template",
+                        "--company",
+                        "Example Biotech",
+                        "--ticker",
+                        "9999.HK",
+                        "--output",
+                        str(path),
+                    ]
+                )
+
+            self.assertEqual(template_exit, 0)
+            self.assertEqual(json.loads(template_stdout.getvalue())["path"], str(path))
+
+            validate_stdout = io.StringIO()
+            with redirect_stdout(validate_stdout):
+                validate_exit = main(["valuation-validate", str(path)])
+
+            report = json.loads(validate_stdout.getvalue())
+            self.assertEqual(validate_exit, 0)
+            self.assertTrue(report["has_snapshot"])
+
+    def test_valuation_validate_returns_nonzero_for_invalid_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "valuation.json"
+            path.write_text(json.dumps({"currency": "HKD"}))
+
+            validate_stdout = io.StringIO()
+            with redirect_stdout(validate_stdout):
+                validate_exit = main(["valuation-validate", str(path)])
+
+            report = json.loads(validate_stdout.getvalue())
+            self.assertEqual(validate_exit, 1)
+            self.assertTrue(report["errors"])
+
 
 if __name__ == "__main__":
     unittest.main()

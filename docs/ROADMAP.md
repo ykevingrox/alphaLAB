@@ -68,10 +68,10 @@ analysis are pending.
 
 Status: partially implemented. The current memo combines clinical trials,
 curated pipeline assets, deterministic asset-trial matches, derived catalysts,
-cash runway, curated competitive landscape findings, key risks, evidence, and
-follow-up questions. A deterministic data-quality finding flags missing inputs
-and validation warnings. Valuation and skeptical counter-thesis agents are
-pending.
+cash runway, curated competitive landscape findings, valuation context, key
+risks, evidence, and follow-up questions. A deterministic data-quality finding
+flags missing inputs and validation warnings. Skeptical counter-thesis agents
+and scenario valuation are pending.
 
 - Combine pipeline, trial, catalyst, competition, cash runway, and valuation
   outputs.

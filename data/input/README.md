@@ -20,6 +20,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_competitors.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_valuation.json
 ```
 
 Validate before running research:
@@ -33,6 +38,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli financial-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
   data/input/akeso_competitors.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
+  data/input/akeso_valuation.json
 ```
 
 Then run:
@@ -43,7 +51,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --ticker "9926.HK" \
   --pipeline-assets data/input/akeso_pipeline_assets.json \
   --financials data/input/akeso_financials.json \
-  --competitors data/input/akeso_competitors.json
+  --competitors data/input/akeso_competitors.json \
+  --valuation data/input/akeso_valuation.json
 ```
 
 Keep source filenames or URLs in each evidence entry so generated memos remain

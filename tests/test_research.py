@@ -126,6 +126,21 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            valuation_path = Path(tmpdir) / "valuation.json"
+            valuation_path.write_text(
+                json.dumps(
+                    {
+                        "as_of_date": "2026-04-20",
+                        "currency": "HKD",
+                        "market_cap": 2500,
+                        "cash_and_equivalents": 300,
+                        "total_debt": 100,
+                        "revenue_ttm": 200,
+                        "source": "market-snapshot",
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = run_single_company_research(
                 company="Example Biotech",
                 ticker="9999.HK",
@@ -134,6 +149,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 pipeline_assets=(asset,),
                 financials_path=financials_path,
                 competitors_path=competitors_path,
+                valuation_path=valuation_path,
                 client=client,
                 now=now,
             )
@@ -151,6 +167,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(len(result.competitive_matches), 1)
             self.assertIsNotNone(result.cash_runway_estimate)
             self.assertEqual(result.cash_runway_estimate.runway_months, 18)
+            self.assertIsNotNone(result.valuation_metrics)
+            self.assertEqual(result.valuation_metrics.enterprise_value, 2300)
             self.assertEqual(len(result.memo.catalysts), 2)
 
             summary = result_summary(result)
@@ -164,6 +182,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(summary["competitor_asset_count"], 1)
             self.assertEqual(summary["competitive_match_count"], 1)
             self.assertEqual(summary["cash_runway_months"], 18)
+            self.assertEqual(summary["enterprise_value"], 2300)
+            self.assertEqual(summary["revenue_multiple"], 11.5)
             self.assertEqual(summary["input_warning_count"], 1)
             self.assertEqual(summary["catalyst_count"], 2)
 
@@ -178,6 +198,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIsNotNone(artifacts.competitor_assets)
             self.assertIsNotNone(artifacts.competitive_matches)
             self.assertIsNotNone(artifacts.cash_runway)
+            self.assertIsNotNone(artifacts.valuation)
             self.assertIsNotNone(artifacts.memo_json)
             self.assertIsNotNone(artifacts.memo_markdown)
             for path in (
@@ -191,6 +212,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 artifacts.competitor_assets,
                 artifacts.competitive_matches,
                 artifacts.cash_runway,
+                artifacts.valuation,
                 artifacts.memo_json,
                 artifacts.memo_markdown,
             ):
@@ -216,6 +238,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
+            self.assertIn("enterprise value is 2300 HKD", memo_markdown)
 
             raw_payload = json.loads(Path(artifacts.raw_clinical_trials).read_text())
             self.assertEqual(
@@ -233,8 +256,10 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["competitor_assets"], 1)
             self.assertEqual(manifest["counts"]["competitive_matches"], 1)
             self.assertEqual(manifest["counts"]["cash_runway"], 1)
+            self.assertEqual(manifest["counts"]["valuation"], 1)
             self.assertIn("financials", manifest["input_validation"])
             self.assertIn("competitors", manifest["input_validation"])
+            self.assertIn("valuation", manifest["input_validation"])
             self.assertIn(
                 "replace placeholder source",
                 manifest["input_validation"]["financials"]["warnings"],
@@ -242,6 +267,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("memo_markdown", manifest["artifacts"])
             cash_runway = json.loads(Path(artifacts.cash_runway).read_text())
             self.assertEqual(cash_runway["estimate"]["runway_months"], 18)
+            valuation = json.loads(Path(artifacts.valuation).read_text())
+            self.assertEqual(valuation["metrics"]["enterprise_value"], 2300)
             competitive_matches = json.loads(
                 Path(artifacts.competitive_matches).read_text()
             )

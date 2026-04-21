@@ -76,6 +76,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_competitors.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_valuation.json
 ```
 
 Edit the generated files before using them for research:
@@ -96,6 +101,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli financial-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
   data/input/akeso_competitors.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
+  data/input/akeso_valuation.json
 ```
 
 Validation returns exit code `1` for structural errors and exit code `0` when
@@ -113,6 +121,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --pipeline-assets data/input/akeso_pipeline_assets.json \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
+  --valuation data/input/akeso_valuation.json \
   --limit 20
 ```
 
@@ -148,6 +157,8 @@ Important files:
 - `<run_id>_competitive_matches.json`: deterministic competitive matches.
 - `<run_id>_cash_runway.json`: financial snapshot and runway estimate, when
   financial input was provided.
+- `<run_id>_valuation.json`: market valuation snapshot and derived context
+  metrics, when valuation input was provided.
 - `<run_id>_memo.json`: structured memo.
 - `<run_id>_memo.md`: human-readable memo.
 
@@ -162,6 +173,8 @@ The `research` command prints a compact JSON summary:
 - `competitor_asset_count`: curated competitor assets supplied.
 - `competitive_match_count`: competitor matches to company assets.
 - `cash_runway_months`: runway estimate if financial input was supplied.
+- `enterprise_value`: enterprise value if valuation input was supplied.
+- `revenue_multiple`: revenue multiple if revenue was supplied.
 - `input_warning_count`: total validation warnings attached to the run.
 - `needs_human_review`: whether any finding asks for review.
 - `artifacts`: file paths when saving is enabled.
@@ -197,6 +210,7 @@ If validation warns about placeholders:
 ## Current Limits
 
 - Pipeline, financial, and competitor inputs are curated JSON files.
+- Valuation input is a curated JSON file and provides context only.
 - Automatic PDF/report extraction is not implemented yet.
 - China drug trial registry ingestion is not implemented yet.
 - Competitive matching is deterministic and coarse: target and indication only.

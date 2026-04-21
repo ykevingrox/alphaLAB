@@ -27,6 +27,11 @@ from biotech_alpha.pipeline import (
     write_pipeline_asset_template,
 )
 from biotech_alpha.research import result_summary, run_single_company_research
+from biotech_alpha.valuation import (
+    validate_valuation_snapshot_file,
+    valuation_validation_report_as_dict,
+    write_valuation_snapshot_template,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -87,6 +92,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     research_parser.add_argument(
         "--competitors",
         help="Optional JSON file containing curated competitor assets.",
+    )
+    research_parser.add_argument(
+        "--valuation",
+        help="Optional JSON file containing a market valuation snapshot.",
     )
     research_parser.add_argument(
         "--no-asset-queries",
@@ -215,6 +224,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Competitor asset JSON file to validate.",
     )
 
+    valuation_template_parser = subparsers.add_parser(
+        "valuation-template",
+        help="Write a starter JSON file for valuation snapshot inputs.",
+    )
+    valuation_template_parser.add_argument(
+        "--company",
+        required=True,
+        help="Company name for the template metadata.",
+    )
+    valuation_template_parser.add_argument(
+        "--ticker",
+        help="Optional listed ticker for the template metadata.",
+    )
+    valuation_template_parser.add_argument(
+        "--output",
+        required=True,
+        help="Output JSON path, such as data/input/akeso_valuation.json.",
+    )
+    valuation_template_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists.",
+    )
+
+    valuation_validate_parser = subparsers.add_parser(
+        "valuation-validate",
+        help="Validate a valuation snapshot JSON file.",
+    )
+    valuation_validate_parser.add_argument(
+        "path",
+        help="Valuation snapshot JSON file to validate.",
+    )
+
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
 
@@ -237,6 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             pipeline_assets_path=args.pipeline_assets,
             competitors_path=args.competitors,
             financials_path=args.financials,
+            valuation_path=args.valuation,
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
             limit=args.limit,
@@ -304,6 +347,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             json.dumps(
                 competition_validation_report_as_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1 if report.errors else 0
+
+    if args.command == "valuation-template":
+        path = write_valuation_snapshot_template(
+            path=args.output,
+            company=args.company,
+            ticker=args.ticker,
+            overwrite=args.force,
+        )
+        print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "valuation-validate":
+        report = validate_valuation_snapshot_file(args.path)
+        print(
+            json.dumps(
+                valuation_validation_report_as_dict(report),
                 ensure_ascii=False,
                 indent=2,
             )

@@ -13,6 +13,8 @@ extraction is still pending:
   `financial-validate`, and passed to `research --financials`.
 - Competitor assets: generated with `competitor-template`, checked with
   `competitor-validate`, and passed to `research --competitors`.
+- Valuation snapshots: generated with `valuation-template`, checked with
+  `valuation-validate`, and passed to `research --valuation`.
 
 All local input types preserve source references and validation warnings in the run
 manifest.

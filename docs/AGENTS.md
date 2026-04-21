@@ -170,11 +170,18 @@ Outputs:
 
 Purpose: provide valuation context, not a single magic price.
 
+Current implementation note: the CLI accepts curated valuation snapshot JSON via
+`--valuation`, validates it with `valuation-validate`, calculates market cap,
+enterprise value, and revenue multiple where possible, and emits a
+`valuation_agent` finding.
+
 Outputs:
 
 - Current market capitalization
 - Enterprise value where available
 - Revenue multiples where meaningful
+- Calculation method
+- Human-review warnings
 - rNPV assumptions for key assets
 - Scenario valuation
 - Key assumptions

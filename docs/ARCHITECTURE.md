@@ -92,6 +92,7 @@ Current CLI runs write:
 - Competitor asset and competitive-match JSON under
   `data/processed/single_company/`
 - Optional cash-runway JSON under `data/processed/single_company/`
+- Optional valuation JSON under `data/processed/single_company/`
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 
@@ -131,7 +132,8 @@ biotech-alpha research \
   --ticker "9926.HK" \
   --pipeline-assets data/input/akeso_pipeline_assets.json \
   --financials data/input/akeso_financials.json \
-  --competitors data/input/akeso_competitors.json
+  --competitors data/input/akeso_competitors.json \
+  --valuation data/input/akeso_valuation.json
 ```
 
 Current helper commands:
@@ -144,6 +146,8 @@ Current helper commands:
 - `financial-validate`
 - `competitor-template`
 - `competitor-validate`
+- `valuation-template`
+- `valuation-validate`
 - `research`
 
 Future UI:
