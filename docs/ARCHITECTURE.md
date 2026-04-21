@@ -82,7 +82,7 @@ MVP can begin with local files:
 
 Current CLI runs write:
 
-- Input validation reports in the run manifest
+- Input validation reports, company, ticker, and market in the run manifest
 - ClinicalTrials.gov raw responses under `data/raw/clinicaltrials/`
 - Normalized trial JSON and trial-summary CSV under
   `data/processed/single_company/`

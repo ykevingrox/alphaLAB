@@ -205,6 +205,7 @@ class CliTest(unittest.TestCase):
                         "run_id": run_id,
                         "company": "Alpha Bio",
                         "ticker": "1111.HK",
+                        "market": "HK",
                         "retrieved_at": "2026-04-20T01:00:00+00:00",
                         "input_validation": {},
                         "counts": {"trials": 2, "pipeline_assets": 1},
@@ -227,8 +228,65 @@ class CliTest(unittest.TestCase):
             payload = json.loads(output.getvalue())
             self.assertEqual(exit_code, 0)
             self.assertEqual(payload["entry_count"], 1)
+            self.assertFalse(payload["latest_only"])
             self.assertEqual(payload["entries"][0]["company"], "Alpha Bio")
+            self.assertEqual(payload["entries"][0]["market"], "HK")
             self.assertEqual(payload["entries"][0]["watchlist_score"], 61.5)
+
+    def test_watchlist_rank_latest_only_dedupes_company_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company" / "alpha"
+            root.mkdir(parents=True)
+            for run_id, score in (
+                ("20260420T010000Z", 51.0),
+                ("20260421T010000Z", 71.0),
+            ):
+                scorecard_path = root / f"{run_id}_scorecard.json"
+                manifest_path = root / f"{run_id}_manifest.json"
+                scorecard_path.write_text(
+                    json.dumps(
+                        {
+                            "total_score": score,
+                            "bucket": "watchlist",
+                            "needs_human_review": False,
+                            "monitoring_rules": ["Track readout"],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "company": "Alpha Bio",
+                            "ticker": "1111.HK",
+                            "market": "HK",
+                            "retrieved_at": run_id,
+                            "input_validation": {},
+                            "counts": {"trials": 2, "pipeline_assets": 1},
+                            "artifacts": {"scorecard": str(scorecard_path)},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "watchlist-rank",
+                        "--processed-dir",
+                        str(Path(tmpdir) / "single_company"),
+                        "--latest-only",
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["loaded_entry_count"], 2)
+            self.assertEqual(payload["entry_count"], 1)
+            self.assertTrue(payload["latest_only"])
+            self.assertEqual(payload["entries"][0]["run_id"], "20260421T010000Z")
 
 
 if __name__ == "__main__":

@@ -202,12 +202,13 @@ reads the saved scorecard artifact, and prints ranked JSON rows. Each row
 includes:
 
 - `rank`: rank after sorting by descending `watchlist_score`.
-- `company`, `ticker`, `run_id`, and `retrieved_at`.
+- `company`, `ticker`, `market`, `run_id`, and `retrieved_at`.
 - `watchlist_score`, `watchlist_bucket`, and `needs_human_review`.
 - `sizing_tier` and `research_position_limit_pct`: conservative research-only
   position guardrails, not trading instructions.
 - Trial, pipeline, competitor, match, catalyst, and input-warning counts.
 - Optional `cash_runway_months`, `enterprise_value`, and `revenue_multiple`.
+- `company_concentration_count` and `market_concentration_count`.
 - `target_concentration_count` and `indication_concentration_count`, derived
   from saved pipeline asset targets and indications.
 - `guardrail_flags`: reasons the position guardrail was capped, such as
@@ -225,6 +226,16 @@ PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank \
 
 Use `--processed-dir` when research artifacts were written somewhere other
 than the default `data/processed/single_company` directory.
+
+When a company has multiple historical runs, keep only the newest run per
+company or ticker:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --latest-only
+```
+
+The JSON output includes both `loaded_entry_count` and `entry_count`, so it is
+clear how many historical runs were collapsed.
 
 ## Troubleshooting
 

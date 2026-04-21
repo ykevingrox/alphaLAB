@@ -134,6 +134,8 @@ Rank saved single-company runs into a local watchlist:
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank
 
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --latest-only
+
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank \
   --format csv \
   --output data/processed/watchlist_rank.csv
@@ -266,7 +268,8 @@ Saved run manifests can then be ranked with `watchlist-rank`, which reads each
 manifest's scorecard and optional pipeline, runway, and valuation artifacts to
 produce a JSON or CSV watchlist table. The ranked table includes conservative,
 research-only position guardrails such as `research_position_limit_pct`,
-`sizing_tier`, concentration counts, and data-quality flags.
+`sizing_tier`, concentration counts, and data-quality flags. Use
+`--latest-only` to keep only the newest saved run per company or ticker.
 
 ## Current Data Reality
 

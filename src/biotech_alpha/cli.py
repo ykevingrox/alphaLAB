@@ -34,6 +34,7 @@ from biotech_alpha.valuation import (
     write_valuation_snapshot_template,
 )
 from biotech_alpha.watchlist import (
+    latest_watchlist_entries,
     load_watchlist_entries,
     rank_watchlist_entries,
     watchlist_entries_as_dicts,
@@ -284,6 +285,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         help="Optional file path to write the ranked watchlist.",
     )
+    watchlist_parser.add_argument(
+        "--latest-only",
+        action="store_true",
+        help="Keep only the newest saved run for each company or ticker.",
+    )
 
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
@@ -403,15 +409,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1 if report.errors else 0
 
     if args.command == "watchlist-rank":
-        entries = rank_watchlist_entries(
-            load_watchlist_entries(args.processed_dir)
+        loaded_entries = load_watchlist_entries(args.processed_dir)
+        entries = (
+            latest_watchlist_entries(loaded_entries)
+            if args.latest_only
+            else loaded_entries
         )
+        entries = rank_watchlist_entries(entries)
         if args.format == "csv":
             if args.output:
                 path = write_watchlist_csv(args.output, entries)
                 print(
                     json.dumps(
-                        {"path": str(path), "entry_count": len(entries)},
+                        {
+                            "path": str(path),
+                            "entry_count": len(entries),
+                            "loaded_entry_count": len(loaded_entries),
+                            "latest_only": args.latest_only,
+                        },
                         ensure_ascii=False,
                         indent=2,
                     )
@@ -422,6 +437,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         payload = {
             "entry_count": len(entries),
+            "loaded_entry_count": len(loaded_entries),
+            "latest_only": args.latest_only,
             "entries": watchlist_entries_as_dicts(entries),
         }
         if args.output:
@@ -433,7 +450,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(
                 json.dumps(
-                    {"path": str(path), "entry_count": len(entries)},
+                    {
+                        "path": str(path),
+                        "entry_count": len(entries),
+                        "loaded_entry_count": len(loaded_entries),
+                        "latest_only": args.latest_only,
+                    },
                     ensure_ascii=False,
                     indent=2,
                 )

@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from biotech_alpha.watchlist import (
+    latest_watchlist_entries,
     load_watchlist_entries,
     rank_watchlist_entries,
     watchlist_entries_as_dicts,
@@ -46,6 +47,7 @@ class WatchlistTest(unittest.TestCase):
                 ["Beta Bio", "Alpha Bio"],
             )
             self.assertEqual(rows[0]["rank"], 1)
+            self.assertEqual(rows[0]["market"], "HK")
             self.assertEqual(rows[0]["watchlist_score"], 72.5)
             self.assertEqual(rows[1]["input_warning_count"], 1)
             self.assertEqual(rows[0]["cash_runway_months"], 24.0)
@@ -54,6 +56,8 @@ class WatchlistTest(unittest.TestCase):
             self.assertEqual(rows[0]["targets"], ["PD-1"])
             self.assertEqual(rows[0]["indications"], ["NSCLC"])
             self.assertEqual(rows[0]["target_concentration_count"], 2)
+            self.assertEqual(rows[0]["company_concentration_count"], 1)
+            self.assertEqual(rows[0]["market_concentration_count"], 2)
             self.assertEqual(rows[0]["research_position_limit_pct"], 1.0)
             self.assertEqual(rows[1]["research_position_limit_pct"], 0.5)
             self.assertIn("input_validation_warnings", rows[1]["guardrail_flags"])
@@ -75,7 +79,7 @@ class WatchlistTest(unittest.TestCase):
             entries = rank_watchlist_entries(load_watchlist_entries(root))
             text = watchlist_entries_to_csv_text(entries)
 
-            self.assertIn("rank,company,ticker,run_id", text)
+            self.assertIn("rank,company,ticker,market,run_id", text)
             self.assertIn("Check next clinical catalyst; Review data quality", text)
             self.assertIn("PD-1", text)
 
@@ -104,6 +108,38 @@ class WatchlistTest(unittest.TestCase):
             self.assertIn("target_concentration", rows[0]["guardrail_flags"])
             self.assertIn("indication_concentration", rows[0]["guardrail_flags"])
 
+    def test_latest_watchlist_entries_keeps_newest_run_per_company(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company"
+            self._write_run(
+                root=root,
+                slug="alpha",
+                run_id="20260420T010000Z",
+                company="Alpha Bio",
+                ticker="1111.HK",
+                score=50.0,
+                bucket="needs_more_evidence",
+                warnings=[],
+            )
+            self._write_run(
+                root=root,
+                slug="alpha",
+                run_id="20260421T010000Z",
+                company="Alpha Bio",
+                ticker="1111.HK",
+                score=68.0,
+                bucket="watchlist",
+                warnings=[],
+            )
+
+            latest_entries = latest_watchlist_entries(load_watchlist_entries(root))
+            rows = watchlist_entries_as_dicts(rank_watchlist_entries(latest_entries))
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["run_id"], "20260421T010000Z")
+            self.assertEqual(rows[0]["watchlist_score"], 68.0)
+            self.assertEqual(rows[0]["company_concentration_count"], 1)
+
     def _write_run(
         self,
         *,
@@ -115,11 +151,12 @@ class WatchlistTest(unittest.TestCase):
         score: float,
         bucket: str,
         warnings: list[str],
+        market: str | None = "HK",
     ) -> None:
         run_dir = root / slug
         memo_dir = root.parent / "memos" / slug
-        run_dir.mkdir(parents=True)
-        memo_dir.mkdir(parents=True)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        memo_dir.mkdir(parents=True, exist_ok=True)
 
         scorecard_path = run_dir / f"{run_id}_scorecard.json"
         cash_path = run_dir / f"{run_id}_cash_runway.json"
@@ -178,6 +215,7 @@ class WatchlistTest(unittest.TestCase):
                     "run_id": run_id,
                     "company": company,
                     "ticker": ticker,
+                    "market": market,
                     "retrieved_at": "2026-04-20T01:00:00+00:00",
                     "input_validation": {
                         "pipeline_assets": {"warnings": warnings},

@@ -16,6 +16,7 @@ class WatchlistEntry:
 
     company: str
     ticker: str | None
+    market: str | None
     run_id: str
     retrieved_at: str | None
     watchlist_score: float
@@ -44,6 +45,8 @@ class PortfolioGuardrail:
 
     sizing_tier: str
     research_position_limit_pct: float
+    company_concentration_count: int
+    market_concentration_count: int
     target_concentration_count: int
     indication_concentration_count: int
     guardrail_flags: tuple[str, ...]
@@ -53,6 +56,7 @@ WATCHLIST_CSV_FIELDS = (
     "rank",
     "company",
     "ticker",
+    "market",
     "run_id",
     "retrieved_at",
     "watchlist_score",
@@ -70,6 +74,8 @@ WATCHLIST_CSV_FIELDS = (
     "cash_runway_months",
     "enterprise_value",
     "revenue_multiple",
+    "company_concentration_count",
+    "market_concentration_count",
     "target_concentration_count",
     "indication_concentration_count",
     "targets",
@@ -115,11 +121,27 @@ def rank_watchlist_entries(
     )
 
 
+def latest_watchlist_entries(
+    entries: tuple[WatchlistEntry, ...],
+) -> tuple[WatchlistEntry, ...]:
+    """Keep the newest saved run for each company or ticker identity."""
+
+    latest_by_identity: dict[str, WatchlistEntry] = {}
+    for entry in entries:
+        identity = _company_identity(entry)
+        current = latest_by_identity.get(identity)
+        if current is None or _run_sort_key(entry) > _run_sort_key(current):
+            latest_by_identity[identity] = entry
+    return tuple(latest_by_identity.values())
+
+
 def watchlist_entries_as_dicts(
     entries: tuple[WatchlistEntry, ...],
 ) -> list[dict[str, Any]]:
     """Return JSON-serializable ranked watchlist rows."""
 
+    company_counts = _company_counts(entries)
+    market_counts = _optional_value_counts(entry.market for entry in entries)
     target_counts = _concentration_counts(entries, "targets")
     indication_counts = _concentration_counts(entries, "indications")
     return [
@@ -129,6 +151,8 @@ def watchlist_entries_as_dicts(
             **asdict(
                 build_portfolio_guardrail(
                     entry,
+                    company_counts=company_counts,
+                    market_counts=market_counts,
                     target_counts=target_counts,
                     indication_counts=indication_counts,
                 )
@@ -144,6 +168,8 @@ def watchlist_entries_as_dicts(
 def build_portfolio_guardrail(
     entry: WatchlistEntry,
     *,
+    company_counts: dict[str, int] | None = None,
+    market_counts: dict[str, int] | None = None,
     target_counts: dict[str, int] | None = None,
     indication_counts: dict[str, int] | None = None,
 ) -> PortfolioGuardrail:
@@ -183,6 +209,20 @@ def build_portfolio_guardrail(
         limit = min(limit, 0.5)
         flags.append("high_revenue_multiple")
 
+    company_count = (company_counts or {}).get(_company_identity(entry), 0)
+    market_count = 0
+    if entry.market:
+        market_count = (market_counts or {}).get(
+            _normalize_group_value(entry.market),
+            0,
+        )
+    if company_count >= 2:
+        limit = min(limit, 1.0)
+        flags.append("multiple_company_runs")
+    if market_count >= 5:
+        limit = min(limit, 1.0)
+        flags.append("market_concentration")
+
     target_count = _max_group_count(entry.targets, target_counts or {})
     indication_count = _max_group_count(entry.indications, indication_counts or {})
     if target_count >= 3:
@@ -195,6 +235,8 @@ def build_portfolio_guardrail(
     return PortfolioGuardrail(
         sizing_tier=_sizing_tier(limit),
         research_position_limit_pct=round(limit, 2),
+        company_concentration_count=company_count,
+        market_concentration_count=market_count,
         target_concentration_count=target_count,
         indication_concentration_count=indication_count,
         guardrail_flags=tuple(flags),
@@ -259,6 +301,7 @@ def _entry_from_manifest(manifest_path: Path) -> WatchlistEntry | None:
     return WatchlistEntry(
         company=_str_or_empty(manifest.get("company")),
         ticker=_optional_str(manifest.get("ticker")),
+        market=_optional_str(manifest.get("market")),
         run_id=_str_or_empty(manifest.get("run_id")),
         retrieved_at=_optional_str(manifest.get("retrieved_at")),
         watchlist_score=score,
@@ -352,6 +395,23 @@ def _csv_row(row: dict[str, Any]) -> dict[str, Any]:
     return csv_row
 
 
+def _company_counts(entries: tuple[WatchlistEntry, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        identity = _company_identity(entry)
+        counts[identity] = counts.get(identity, 0) + 1
+    return counts
+
+
+def _company_identity(entry: WatchlistEntry) -> str:
+    value = entry.ticker or entry.company
+    return _normalize_group_value(value)
+
+
+def _run_sort_key(entry: WatchlistEntry) -> tuple[str, str, str]:
+    return (entry.retrieved_at or "", entry.run_id, entry.manifest_json)
+
+
 def _base_position_limit(score: float) -> float:
     if score >= 75:
         return 2.0
@@ -383,6 +443,16 @@ def _concentration_counts(
             key = _normalize_group_value(value)
             if key:
                 counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _optional_value_counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        key = _normalize_group_value(value)
+        counts[key] = counts.get(key, 0) + 1
     return counts
 
 

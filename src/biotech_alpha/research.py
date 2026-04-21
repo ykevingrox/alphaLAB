@@ -287,6 +287,7 @@ def run_single_company_research(
             output_dir=Path(output_dir),
             company=company,
             ticker=ticker,
+            market=market,
             run_id=run_id,
             search_terms=search_terms,
             retrieved_at=timestamp.isoformat(),
@@ -976,6 +977,7 @@ def _write_research_artifacts(
     output_dir: Path,
     company: str,
     ticker: str | None,
+    market: str,
     run_id: str,
     search_terms: tuple[str, ...],
     retrieved_at: str,
@@ -1021,6 +1023,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "search_terms": search_terms,
             "retrieved_at": retrieved_at,
             "api_version": api_version,
@@ -1032,6 +1035,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "search_terms": search_terms,
             "retrieved_at": retrieved_at,
             "trials": summaries_as_dicts(list(trials)),
@@ -1047,6 +1051,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "retrieved_at": retrieved_at,
             "assets": [asdict(asset) for asset in pipeline_assets],
         },
@@ -1056,6 +1061,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "retrieved_at": retrieved_at,
             "matches": [asdict(match) for match in asset_trial_matches],
         },
@@ -1065,6 +1071,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "retrieved_at": retrieved_at,
             "competitors": [asdict(item) for item in competitor_assets],
         },
@@ -1074,6 +1081,7 @@ def _write_research_artifacts(
         {
             "company": company,
             "ticker": ticker,
+            "market": market,
             "retrieved_at": retrieved_at,
             "matches": [asdict(match) for match in competitive_matches],
         },
@@ -1122,6 +1130,7 @@ def _write_research_artifacts(
             "run_id": run_id,
             "company": company,
             "ticker": ticker,
+            "market": market,
             "retrieved_at": retrieved_at,
             "search_terms": search_terms,
             "api_version": api_version,

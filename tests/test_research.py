@@ -260,6 +260,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             )
             manifest = json.loads(Path(artifacts.manifest_json).read_text())
             self.assertEqual(manifest["run_id"], "20260420T080000Z")
+            self.assertEqual(manifest["market"], "HK")
             self.assertEqual(manifest["counts"]["trials"], 1)
             self.assertEqual(manifest["counts"]["pipeline_assets"], 1)
             self.assertEqual(manifest["counts"]["competitor_assets"], 1)
