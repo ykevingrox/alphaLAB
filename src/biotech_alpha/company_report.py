@@ -49,6 +49,8 @@ class MissingInput:
     severity: str
     reason: str
     suggested_path: Path
+    next_action: str
+    template_command: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,57 @@ INPUT_SUFFIXES = {
     "competitors": ("competitors", "competitor"),
     "valuation": ("valuation",),
     "target_price_assumptions": ("target_price_assumptions", "target_price"),
+}
+
+MISSING_INPUT_SPECS = {
+    "pipeline_assets": {
+        "severity": "high",
+        "reason": "Pipeline assets are needed for asset-level trial matching.",
+        "next_action": (
+            "Create the pipeline template, then fill the company's disclosed "
+            "core assets, aliases, targets, indications, phases, milestones, "
+            "and evidence sources."
+        ),
+        "template_command": "pipeline-template",
+    },
+    "financials": {
+        "severity": "high",
+        "reason": "Financial snapshot is needed for cash runway and dilution risk.",
+        "next_action": (
+            "Create the financial template, then fill cash, debt, burn or "
+            "operating cash flow, source, and source date from the latest "
+            "annual or interim report."
+        ),
+        "template_command": "financial-template",
+    },
+    "competitors": {
+        "severity": "medium",
+        "reason": "Competitor assets improve differentiation and crowding checks.",
+        "next_action": (
+            "Create the competitor template, then add major assets with matching "
+            "targets or indications for the company's key programs."
+        ),
+        "template_command": "competitor-template",
+    },
+    "valuation": {
+        "severity": "medium",
+        "reason": "Valuation snapshot is needed for market context.",
+        "next_action": (
+            "Create the valuation template, then fill market cap or share price "
+            "and shares outstanding, cash, debt, revenue if available, and source."
+        ),
+        "template_command": "valuation-template",
+    },
+    "target_price_assumptions": {
+        "severity": "optional",
+        "reason": "Target-price assumptions are needed for rNPV scenario ranges.",
+        "next_action": (
+            "Create the target-price template only after the core pipeline and "
+            "financial inputs are credible; fill explicit rNPV assumptions and "
+            "event-impact deltas."
+        ),
+        "template_command": "target-price-template",
+    },
 }
 
 
@@ -233,38 +286,23 @@ def build_missing_inputs(
 
     root = Path(input_dir)
     slug = _identity_slug(identity)
-    specs = {
-        "pipeline_assets": (
-            "high",
-            "Pipeline assets are needed for asset-level trial matching.",
-        ),
-        "financials": (
-            "high",
-            "Financial snapshot is needed for cash runway and dilution risk.",
-        ),
-        "competitors": (
-            "medium",
-            "Competitor assets improve differentiation and crowding checks.",
-        ),
-        "valuation": (
-            "medium",
-            "Valuation snapshot is needed for market context.",
-        ),
-        "target_price_assumptions": (
-            "optional",
-            "Target-price assumptions are needed for rNPV scenario ranges.",
-        ),
-    }
     missing: list[MissingInput] = []
-    for key, (severity, reason) in specs.items():
+    for key, spec in MISSING_INPUT_SPECS.items():
         if getattr(input_paths, key) is not None:
             continue
+        suggested_path = root / f"{slug}_{key}.json"
         missing.append(
             MissingInput(
                 key=key,
-                severity=severity,
-                reason=reason,
-                suggested_path=root / f"{slug}_{key}.json",
+                severity=str(spec["severity"]),
+                reason=str(spec["reason"]),
+                suggested_path=suggested_path,
+                next_action=str(spec["next_action"]),
+                template_command=_template_command(
+                    command=str(spec["template_command"]),
+                    identity=identity,
+                    output=suggested_path,
+                ),
             )
         )
     return tuple(missing)
@@ -325,6 +363,11 @@ def missing_inputs_payload(
         "identity": _jsonable(asdict(identity)),
         "discovered_inputs": _jsonable(asdict(input_paths)),
         "missing_inputs": [_jsonable(asdict(item)) for item in missing_inputs],
+        "next_actions": next_actions(
+            identity=identity,
+            missing_inputs=missing_inputs,
+        ),
+        "rerun_command": company_report_rerun_command(identity),
         "notes": (
             "The report was generated with available inputs.",
             "Missing high-severity inputs should be filled before relying on "
@@ -344,12 +387,76 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         "discovered_inputs": _jsonable(asdict(result.input_paths)),
         "missing_input_count": len(result.missing_inputs),
         "missing_inputs": [_jsonable(asdict(item)) for item in result.missing_inputs],
+        "next_actions": next_actions(
+            identity=result.identity,
+            missing_inputs=result.missing_inputs,
+        ),
+        "rerun_command": company_report_rerun_command(result.identity),
         "missing_inputs_report": (
             str(result.missing_inputs_report)
             if result.missing_inputs_report
             else None
         ),
     }
+
+
+def next_actions(
+    *,
+    identity: CompanyIdentity,
+    missing_inputs: tuple[MissingInput, ...],
+) -> tuple[str, ...]:
+    """Return human-oriented next steps for the current report."""
+
+    if not missing_inputs:
+        return (
+            "All curated input files were found. Review the memo, manifest, "
+            "scorecard, catalysts, and target-price artifacts if present.",
+        )
+
+    high_priority = tuple(
+        item for item in missing_inputs if item.severity == "high"
+    )
+    medium_priority = tuple(
+        item for item in missing_inputs if item.severity == "medium"
+    )
+    optional = tuple(item for item in missing_inputs if item.severity == "optional")
+    actions: list[str] = []
+    if high_priority:
+        keys = ", ".join(item.key for item in high_priority)
+        actions.append(f"First create and fill high-priority inputs: {keys}.")
+    if medium_priority:
+        keys = ", ".join(item.key for item in medium_priority)
+        actions.append(f"Then add medium-priority context inputs: {keys}.")
+    if optional:
+        actions.append(
+            "Add target-price assumptions after the asset and financial inputs "
+            "are source-backed enough for scenario work."
+        )
+    actions.append(
+        "Run each generated template through its validate command before "
+        "rerunning company-report."
+    )
+    actions.append(f"Rerun: {company_report_rerun_command(identity)}")
+    return tuple(actions)
+
+
+def company_report_rerun_command(identity: CompanyIdentity) -> str:
+    """Return the one-command rerun command for an identity."""
+
+    parts = [
+        "PYTHONPATH=src",
+        "python3",
+        "-m",
+        "biotech_alpha.cli",
+        "company-report",
+        "--company",
+        _quote(identity.company),
+    ]
+    if identity.ticker:
+        parts.extend(("--ticker", _quote(identity.ticker)))
+    if identity.market:
+        parts.extend(("--market", _quote(identity.market)))
+    return " ".join(parts)
 
 
 def _registry_match(
@@ -454,6 +561,32 @@ def _match_key(value: str) -> str:
 
 def _clean_text(value: Any) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else ""
+
+
+def _template_command(
+    *,
+    command: str,
+    identity: CompanyIdentity,
+    output: Path,
+) -> str:
+    parts = [
+        "PYTHONPATH=src",
+        "python3",
+        "-m",
+        "biotech_alpha.cli",
+        command,
+        "--company",
+        _quote(identity.company),
+    ]
+    if identity.ticker:
+        parts.extend(("--ticker", _quote(identity.ticker)))
+    parts.extend(("--output", _quote(str(output)), "--force"))
+    return " ".join(parts)
+
+
+def _quote(value: str) -> str:
+    escaped = value.replace('"', '\\"')
+    return f'"{escaped}"'
 
 
 def _jsonable(value: Any) -> Any:

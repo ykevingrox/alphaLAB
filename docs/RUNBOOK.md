@@ -56,6 +56,8 @@ Expected behavior:
 - A memo is written under `data/memos/`.
 - A run manifest is written under `data/processed/single_company/`.
 - `<run_id>_missing_inputs_report.json` lists any missing curated inputs.
+- The CLI output and missing-input report include `next_actions`,
+  `template_command`, and `rerun_command` fields so the next step is explicit.
 - `needs_human_review` may be `true` when important inputs are missing.
 
 The lower-level `research` command is still useful for debugging and exact

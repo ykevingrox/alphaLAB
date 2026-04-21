@@ -102,10 +102,21 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(client.search_terms, ["No Data Bio"])
             self.assertEqual(result.research_result.memo.decision, "insufficient_data")
             self.assertEqual(len(result.missing_inputs), 5)
+            self.assertIn(
+                "pipeline-template",
+                result.missing_inputs[0].template_command,
+            )
+            self.assertIn(
+                "Create the pipeline template",
+                result.missing_inputs[0].next_action,
+            )
             self.assertIsNotNone(result.missing_inputs_report)
             payload = json.loads(Path(result.missing_inputs_report).read_text())
             self.assertEqual(payload["run_id"], "20260421T000000Z")
             self.assertEqual(payload["missing_inputs"][0]["key"], "pipeline_assets")
+            self.assertIn("next_actions", payload)
+            self.assertIn("First create", payload["next_actions"][0])
+            self.assertIn("company-report", payload["rerun_command"])
 
 
 if __name__ == "__main__":
