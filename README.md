@@ -55,6 +55,7 @@ src/biotech_alpha/
   research.py         Single-company research pipeline orchestration
   scorecard.py        Deterministic watchlist scoring and monitoring rules
   skeptic.py          Deterministic skeptical counter-thesis review
+  target_price.py     Target-price assumptions templates and validation
   valuation.py        Valuation snapshot loading and context metrics
   watchlist.py        Local ranking over saved single-company research runs
   agents.py           Agent interface sketches
@@ -69,6 +70,7 @@ tests/
   test_research.py
   test_scorecard.py
   test_skeptic.py
+  test_target_price.py
   test_valuation.py
   test_watchlist.py
 ```
@@ -89,7 +91,7 @@ Try the ClinicalTrials.gov client:
 PYTHONPATH=src python3 -m biotech_alpha.cli clinical-trials Akeso --limit 3
 ```
 
-Create and validate a pipeline asset input file:
+Create and validate curated input files:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli pipeline-template \
@@ -123,6 +125,14 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
+  data/input/akeso_target_price_assumptions.json
 ```
 
 Run the first single-company research pipeline:
@@ -269,9 +279,10 @@ when revenue is available.
 
 Target-price work is intentionally separated from the current valuation snapshot.
 The planned model is documented in
-[docs/TARGET_PRICE_MODEL.md](docs/TARGET_PRICE_MODEL.md). It will use curated
-asset assumptions, catalyst event impacts, and rNPV math to produce bear, base,
-bull, and probability-weighted target price ranges.
+[docs/TARGET_PRICE_MODEL.md](docs/TARGET_PRICE_MODEL.md). The current CLI can
+generate and validate curated target-price assumption files. The next step is
+to connect those assumptions to catalyst event impacts and rNPV math to produce
+bear, base, bull, and probability-weighted target price ranges.
 
 The memo also includes a deterministic skeptical review. It turns missing
 inputs, weak clinical coverage, unmatched assets, short runway, high valuation

@@ -99,9 +99,10 @@ advanced portfolio controls are pending.
 
 ## Phase 8: Catalyst-Adjusted Target Price Ranges
 
-Status: planned. The current system has catalyst calendars, catalyst-change
-alerts, curated valuation context, and watchlist guardrails. It does not yet
-calculate asset rNPV, event-impact deltas, or target price ranges.
+Status: partially implemented. The current system has catalyst calendars,
+catalyst-change alerts, curated valuation context, watchlist guardrails, and
+target-price assumption templates and validation. It does not yet calculate
+asset rNPV, event-impact deltas, or target price ranges.
 
 - Add target-price assumptions template and validation.
 - Add transparent asset rNPV calculation.

@@ -108,9 +108,9 @@ Event examples:
 - Financing: update cash, share count, and dilution assumptions.
 - Competitor positive data: lower market share or peak sales assumptions.
 
-## Planned Input Contract
+## Current Input Contract
 
-The first curated input file should be
+The first curated input file is
 `data/input/<company>_target_price_assumptions.json`.
 
 Suggested shape:
@@ -151,9 +151,9 @@ Suggested shape:
 }
 ```
 
-## Planned CLI
+## Current CLI
 
-The planned commands are:
+The implemented template and validation commands are:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
@@ -163,7 +163,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
+```
 
+The planned event-impact command is:
+
+```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
   --company "Akeso" \
   --assumptions data/input/akeso_target_price_assumptions.json
@@ -178,7 +182,7 @@ then write:
 
 ## Implementation Plan
 
-1. Add curated target-price assumptions template and validator.
+1. Add curated target-price assumptions template and validator. Implemented.
 2. Add transparent asset rNPV calculation.
 3. Add event-impact rules for common catalyst types.
 4. Add target-price scenario output with bear, base, and bull cases.

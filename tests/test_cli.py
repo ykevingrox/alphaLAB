@@ -337,6 +337,50 @@ class CliTest(unittest.TestCase):
             self.assertEqual(payload["alert_count"], 1)
             self.assertEqual(payload["alerts"][0]["change_type"], "date_changed")
 
+    def test_target_price_template_and_validate_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "input" / "target_price.json"
+
+            template_stdout = io.StringIO()
+            with redirect_stdout(template_stdout):
+                template_exit = main(
+                    [
+                        "target-price-template",
+                        "--company",
+                        "Example Biotech",
+                        "--ticker",
+                        "9999.HK",
+                        "--output",
+                        str(path),
+                    ]
+                )
+
+            self.assertEqual(template_exit, 0)
+            self.assertEqual(json.loads(template_stdout.getvalue())["path"], str(path))
+
+            validate_stdout = io.StringIO()
+            with redirect_stdout(validate_stdout):
+                validate_exit = main(["target-price-validate", str(path)])
+
+            report = json.loads(validate_stdout.getvalue())
+            self.assertEqual(validate_exit, 0)
+            self.assertTrue(report["has_assumptions"])
+            self.assertEqual(report["asset_count"], 1)
+            self.assertEqual(report["event_impact_count"], 1)
+
+    def test_target_price_validate_returns_nonzero_for_invalid_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "target_price.json"
+            path.write_text(json.dumps({"currency": "HKD"}), encoding="utf-8")
+
+            validate_stdout = io.StringIO()
+            with redirect_stdout(validate_stdout):
+                validate_exit = main(["target-price-validate", str(path)])
+
+            report = json.loads(validate_stdout.getvalue())
+            self.assertEqual(validate_exit, 1)
+            self.assertTrue(report["errors"])
+
 
 if __name__ == "__main__":
     unittest.main()

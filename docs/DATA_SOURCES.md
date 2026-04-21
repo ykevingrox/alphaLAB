@@ -4,7 +4,7 @@
 
 ## Current Local Input Contracts
 
-The current CLI supports four curated local JSON inputs while automatic document
+The current CLI supports five curated local JSON inputs while automatic document
 extraction is still pending:
 
 - Pipeline assets: generated with `pipeline-template`, checked with
@@ -15,11 +15,15 @@ extraction is still pending:
   `competitor-validate`, and passed to `research --competitors`.
 - Valuation snapshots: generated with `valuation-template`, checked with
   `valuation-validate`, and passed to `research --valuation`.
+- Target-price assumptions: generated with `target-price-template` and checked
+  with `target-price-validate`. These inputs are not yet connected to the
+  research run or event-impact calculation.
 
-All local input types preserve source references and validation warnings in the run
-manifest.
+Research-run input types preserve source references and validation warnings in
+the run manifest. Target-price assumption validation is standalone until those
+inputs are connected to event-impact and rNPV scenario outputs.
 
-Target-price assumptions are planned. They will need curated inputs for:
+Target-price assumptions need curated inputs for:
 
 - Current share price and shares outstanding
 - Cash, debt, and expected dilution

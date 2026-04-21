@@ -34,6 +34,11 @@ from biotech_alpha.pipeline import (
     write_pipeline_asset_template,
 )
 from biotech_alpha.research import result_summary, run_single_company_research
+from biotech_alpha.target_price import (
+    target_price_validation_report_as_dict,
+    validate_target_price_assumptions_file,
+    write_target_price_assumptions_template,
+)
 from biotech_alpha.valuation import (
     validate_valuation_snapshot_file,
     valuation_validation_report_as_dict,
@@ -317,6 +322,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Optional file path to write catalyst alerts.",
     )
 
+    target_price_template_parser = subparsers.add_parser(
+        "target-price-template",
+        help="Write a starter JSON file for target-price assumptions.",
+    )
+    target_price_template_parser.add_argument(
+        "--company",
+        required=True,
+        help="Company name for the template metadata.",
+    )
+    target_price_template_parser.add_argument(
+        "--ticker",
+        help="Optional listed ticker for the template metadata.",
+    )
+    target_price_template_parser.add_argument(
+        "--output",
+        required=True,
+        help=(
+            "Output JSON path, such as "
+            "data/input/akeso_target_price_assumptions.json."
+        ),
+    )
+    target_price_template_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists.",
+    )
+
+    target_price_validate_parser = subparsers.add_parser(
+        "target-price-validate",
+        help="Validate a target-price assumptions JSON file.",
+    )
+    target_price_validate_parser.add_argument(
+        "path",
+        help="Target-price assumptions JSON file to validate.",
+    )
+
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
 
@@ -527,6 +568,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
+
+    if args.command == "target-price-template":
+        path = write_target_price_assumptions_template(
+            path=args.output,
+            company=args.company,
+            ticker=args.ticker,
+            overwrite=args.force,
+        )
+        print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "target-price-validate":
+        report = validate_target_price_assumptions_file(args.path)
+        print(
+            json.dumps(
+                target_price_validation_report_as_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1 if report.errors else 0
 
     parser.error(f"Unknown command: {args.command}")
     return 2

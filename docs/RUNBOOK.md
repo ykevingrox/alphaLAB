@@ -27,6 +27,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli --help
 PYTHONPATH=src python3 -m biotech_alpha.cli research --help
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
 PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts --help
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template --help
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate --help
 ```
 
 Check ClinicalTrials.gov access:
@@ -83,11 +85,12 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_valuation.json
-```
 
-Target-price assumption templates are planned but not implemented yet. The
-intended design is documented in
-[TARGET_PRICE_MODEL.md](TARGET_PRICE_MODEL.md).
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_target_price_assumptions.json
+```
 
 Edit the generated files before using them for research:
 
@@ -110,6 +113,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
+  data/input/akeso_target_price_assumptions.json
 ```
 
 Validation returns exit code `1` for structural errors and exit code `0` when
@@ -270,18 +276,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts \
 
 ## Planned Target Price Workflow
 
-The next valuation extension should connect catalyst alerts to target price
-ranges. It is not implemented yet, but the intended workflow is:
+The CLI can already create and validate target-price assumption files. The next
+valuation extension should connect catalyst alerts to target price ranges. The
+planned event-impact command is:
 
 ```bash
-PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
-  --company "Akeso" \
-  --ticker "9926.HK" \
-  --output data/input/akeso_target_price_assumptions.json
-
-PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
-  data/input/akeso_target_price_assumptions.json
-
 PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
   --company "Akeso" \
   --assumptions data/input/akeso_target_price_assumptions.json
@@ -330,9 +329,11 @@ If validation warns about placeholders:
 
 ## Current Limits
 
-- Pipeline, financial, competitor, and valuation inputs are curated JSON files.
-- Valuation input provides context only; catalyst-adjusted target price
-  assumptions and event-impact modeling are planned but not implemented yet.
+- Pipeline, financial, competitor, valuation, and target-price assumption inputs
+  are curated JSON files.
+- Valuation input provides context only; target-price assumptions can be
+  validated, but event-impact modeling and rNPV target ranges are not
+  implemented yet.
 - Automatic PDF/report extraction is not implemented yet.
 - China drug trial registry ingestion is not implemented yet.
 - Competitive matching is deterministic and coarse: target and indication only.

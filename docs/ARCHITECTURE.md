@@ -95,6 +95,7 @@ Current CLI runs write:
   `data/processed/single_company/`
 - Optional cash-runway JSON under `data/processed/single_company/`
 - Optional valuation JSON under `data/processed/single_company/`
+- Curated target-price assumptions under `data/input/`
 - Watchlist scorecard JSON under `data/processed/single_company/`
 - Local ranked watchlist JSON or CSV under a user-selected output path,
   including research-only position and concentration guardrails
@@ -157,14 +158,14 @@ Current helper commands:
 - `competitor-validate`
 - `valuation-template`
 - `valuation-validate`
+- `target-price-template`
+- `target-price-validate`
 - `research`
 - `watchlist-rank`
 - `catalyst-alerts`
 
-Planned target-price commands:
+Planned target-price command:
 
-- `target-price-template`
-- `target-price-validate`
 - `event-impact`
 
 Future UI:

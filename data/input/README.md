@@ -25,6 +25,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_valuation.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_target_price_assumptions.json
 ```
 
 Validate before running research:
@@ -41,6 +46,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
+  data/input/akeso_target_price_assumptions.json
 ```
 
 Then run:
@@ -67,7 +75,8 @@ After rerunning research for the same company, check catalyst calendar changes:
 PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts
 ```
 
-Target-price assumption inputs are planned next. For the design, see:
+Target-price assumption inputs are available for validation, but event-impact
+modeling is still planned. For the design, see:
 
 ```text
 docs/TARGET_PRICE_MODEL.md

@@ -52,11 +52,14 @@ Current implementation status:
   and monitoring rules for single-company follow-up prioritization.
 - Implemented: local watchlist ranking, first-pass portfolio guardrails,
   latest-run filtering, and catalyst-change alerts across saved runs.
+- Implemented: target-price assumption template and validation for future
+  catalyst-adjusted rNPV scenarios.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
   parsing, automatic competitor discovery, catalyst-adjusted target price
-  ranges, scenario valuation, and deeper LLM scientific critique.
+  ranges, event-impact modeling, scenario valuation, and deeper LLM scientific
+  critique.
 
 ## Non-Goals For MVP
 
