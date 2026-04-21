@@ -61,5 +61,11 @@ After several companies have saved runs, rank the local watchlist with:
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank
 ```
 
+After rerunning research for the same company, check catalyst calendar changes:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts
+```
+
 Keep source filenames or URLs in each evidence entry so generated memos remain
 auditable.

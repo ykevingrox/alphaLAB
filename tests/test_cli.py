@@ -288,6 +288,55 @@ class CliTest(unittest.TestCase):
             self.assertTrue(payload["latest_only"])
             self.assertEqual(payload["entries"][0]["run_id"], "20260421T010000Z")
 
+    def test_catalyst_alerts_outputs_json_for_changed_calendar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company" / "alpha"
+            root.mkdir(parents=True)
+            for run_id, date_value in (
+                ("20260420T010000Z", "2026-12-01"),
+                ("20260421T010000Z", "2027-01-15"),
+            ):
+                catalyst_path = root / f"{run_id}_catalyst_calendar.csv"
+                manifest_path = root / f"{run_id}_manifest.json"
+                catalyst_path.write_text(
+                    (
+                        "title,category,expected_date,expected_window,"
+                        "related_asset,confidence,evidence_count\n"
+                        f"Readout,clinical,{date_value},,Drug A,0.5,1\n"
+                    ),
+                    encoding="utf-8",
+                )
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "company": "Alpha Bio",
+                            "ticker": "1111.HK",
+                            "market": "HK",
+                            "retrieved_at": run_id,
+                            "artifacts": {
+                                "catalyst_calendar_csv": str(catalyst_path),
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "catalyst-alerts",
+                        "--processed-dir",
+                        str(Path(tmpdir) / "single_company"),
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["alert_count"], 1)
+            self.assertEqual(payload["alerts"][0]["change_type"], "date_changed")
+
 
 if __name__ == "__main__":
     unittest.main()

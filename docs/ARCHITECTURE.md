@@ -96,6 +96,7 @@ Current CLI runs write:
 - Watchlist scorecard JSON under `data/processed/single_company/`
 - Local ranked watchlist JSON or CSV under a user-selected output path,
   including research-only position and concentration guardrails
+- Local catalyst-change alert JSON or CSV under a user-selected output path
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 
@@ -153,6 +154,7 @@ Current helper commands:
 - `valuation-validate`
 - `research`
 - `watchlist-rank`
+- `catalyst-alerts`
 
 Future UI:
 

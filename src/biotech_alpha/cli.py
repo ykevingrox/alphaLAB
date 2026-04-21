@@ -7,6 +7,12 @@ import json
 from pathlib import Path
 from typing import Sequence
 
+from biotech_alpha.alerts import (
+    build_catalyst_alerts,
+    catalyst_alerts_as_dicts,
+    catalyst_alerts_to_csv_text,
+    write_catalyst_alerts_csv,
+)
 from biotech_alpha.clinicaltrials import (
     ClinicalTrialsClient,
     extract_trial_summaries,
@@ -291,6 +297,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Keep only the newest saved run for each company or ticker.",
     )
 
+    alerts_parser = subparsers.add_parser(
+        "catalyst-alerts",
+        help="Compare recent saved runs and report catalyst calendar changes.",
+    )
+    alerts_parser.add_argument(
+        "--processed-dir",
+        default="data/processed/single_company",
+        help="Directory containing saved single-company processed artifacts.",
+    )
+    alerts_parser.add_argument(
+        "--format",
+        choices=("json", "csv"),
+        default="json",
+        help="Output format. Defaults to json.",
+    )
+    alerts_parser.add_argument(
+        "--output",
+        help="Optional file path to write catalyst alerts.",
+    )
+
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
 
@@ -456,6 +482,44 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "loaded_entry_count": len(loaded_entries),
                         "latest_only": args.latest_only,
                     },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "catalyst-alerts":
+        alerts = build_catalyst_alerts(args.processed_dir)
+        if args.format == "csv":
+            if args.output:
+                path = write_catalyst_alerts_csv(args.output, alerts)
+                print(
+                    json.dumps(
+                        {"path": str(path), "alert_count": len(alerts)},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            else:
+                print(catalyst_alerts_to_csv_text(alerts), end="")
+            return 0
+
+        payload = {
+            "alert_count": len(alerts),
+            "alerts": catalyst_alerts_as_dicts(alerts),
+        }
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                json.dumps(
+                    {"path": str(path), "alert_count": len(alerts)},
                     ensure_ascii=False,
                     indent=2,
                 )

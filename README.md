@@ -39,6 +39,7 @@ docs/
   ROADMAP.md          Suggested implementation sequence
   RUNBOOK.md          Step-by-step CLI operating guide
 src/biotech_alpha/
+  alerts.py          Local catalyst-calendar change alerts across saved runs
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
   competition.py      Competitive landscape inputs and deterministic matching
   financials.py       Financial snapshot loading and cash runway estimation
@@ -52,6 +53,7 @@ src/biotech_alpha/
   agents.py           Agent interface sketches
   cli.py              Small command-line entry point
 tests/
+  test_alerts.py
   test_cli.py
   test_clinicaltrials.py
   test_competition.py
@@ -139,6 +141,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --latest-only
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank \
   --format csv \
   --output data/processed/watchlist_rank.csv
+
+PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts
 ```
 
 The first-pass pipeline searches ClinicalTrials.gov, normalizes trial records,
@@ -270,6 +274,10 @@ produce a JSON or CSV watchlist table. The ranked table includes conservative,
 research-only position guardrails such as `research_position_limit_pct`,
 `sizing_tier`, concentration counts, and data-quality flags. Use
 `--latest-only` to keep only the newest saved run per company or ticker.
+
+The `catalyst-alerts` command compares each company's latest two saved catalyst
+calendars and reports added, removed, date-changed, and window-changed
+catalysts.
 
 ## Current Data Reality
 

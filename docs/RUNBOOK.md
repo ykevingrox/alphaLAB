@@ -26,6 +26,7 @@ Check the CLI surface:
 PYTHONPATH=src python3 -m biotech_alpha.cli --help
 PYTHONPATH=src python3 -m biotech_alpha.cli research --help
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
+PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts --help
 ```
 
 Check ClinicalTrials.gov access:
@@ -236,6 +237,32 @@ PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --latest-only
 
 The JSON output includes both `loaded_entry_count` and `entry_count`, so it is
 clear how many historical runs were collapsed.
+
+## Catalyst Change Alerts
+
+After repeating research for the same company, compare the newest two saved
+catalyst calendars:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts
+```
+
+The command scans `data/processed/single_company`, groups runs by company or
+ticker, compares the latest two runs for each group, and reports:
+
+- `added`: a catalyst appears in the newest run only.
+- `removed`: a catalyst appeared in the previous run but not the newest run.
+- `date_changed`: the catalyst's expected date changed.
+- `window_changed`: the catalyst's expected window changed.
+- `timing_changed`: both expected date and expected window changed.
+
+Write CSV output:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts \
+  --format csv \
+  --output data/processed/catalyst_alerts.csv
+```
 
 ## Troubleshooting
 

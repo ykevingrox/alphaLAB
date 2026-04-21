@@ -85,15 +85,16 @@ Status: partially implemented. The current CLI emits a deterministic
 single-company watchlist scorecard with dimension scores, a bucket, and
 monitoring rules. It can also rank saved single-company runs into a local JSON
 or CSV watchlist table with latest-run filtering, first-pass research-only
-position sizing, and concentration guardrails. Alerting and more advanced
-portfolio controls are pending.
+position sizing, and concentration guardrails. It can also compare each
+company's latest two saved catalyst calendars for local change alerts. More
+advanced portfolio controls are pending.
 
 - Add watchlist scoring.
 - Add local cross-run watchlist ranking.
 - Add latest-run filtering for repeat company research runs.
 - Add first-pass position sizing guardrails.
 - Track first-pass concentration by company, market, target, and indication.
-- Add alerting for catalyst changes.
+- Add first-pass alerting for catalyst changes.
 
 ## Phase 8: Technical Timing And Backtesting
 
