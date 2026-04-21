@@ -11,7 +11,11 @@ requires-python = ">=3.11"
 authors = [
   { name = "Jiabao" }
 ]
-dependencies = []
+dependencies = [
+  "beautifulsoup4>=4.12",
+  "pypdf>=4.0",
+  "requests>=2.31",
+]
 
 [project.scripts]
 biotech-alpha = "biotech_alpha.cli:main"

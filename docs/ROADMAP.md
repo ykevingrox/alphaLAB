@@ -30,7 +30,9 @@ research pipeline, writes artifacts, and emits a missing-input report.
 
 ## Milestone B: HK Biotech Source Pack
 
-Status: planned.
+Status: started. The first implementation discovers HKEX annual results
+announcements, downloads the PDF, extracts text, and drafts pipeline and
+financial inputs for Hong Kong biotech reports.
 
 - Discover HKEX announcements, annual reports, interim reports, results
   announcements, company investor pages, and trial registries.
@@ -39,7 +41,7 @@ Status: planned.
 
 ## Milestone C: Auto-Extract Into Current Contracts
 
-Status: planned.
+Status: started for pipeline and financial drafts from HKEX annual results.
 
 - Extract draft pipeline assets, financial snapshots, valuation snapshots,
   competitor seeds, and target-price assumption skeletons from source packs.

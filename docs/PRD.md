@@ -41,6 +41,8 @@ Current implementation status:
 - Implemented: one-command `company-report` entry that resolves a company
   identity, auto-discovers existing curated inputs, runs the current research
   pipeline, and writes a missing-input report.
+- Implemented: first-pass HKEX annual-results source discovery and draft input
+  generation for Hong Kong biotech pipeline assets and financial snapshots.
 - Implemented: ClinicalTrials.gov search and normalization, including company,
   asset-name, and alias searches when curated assets are provided.
 - Implemented: curated pipeline asset JSON input, validation, evidence capture,
@@ -65,7 +67,7 @@ Current implementation status:
   integration.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
-- Pending: automatic company document ingestion, automatic financial statement
+- Pending: broader company document ingestion, more robust financial statement
   parsing, automatic competitor discovery, calibrated historical
   catalyst-reaction backtests, and deeper LLM scientific critique.
 

@@ -197,6 +197,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Optional company registry JSON for aliases and tickers.",
     )
     company_report_parser.add_argument(
+        "--auto-inputs",
+        action="store_true",
+        help="Auto-generate draft pipeline and financial inputs from HKEX sources.",
+    )
+    company_report_parser.add_argument(
+        "--generated-input-dir",
+        default="data/input/generated",
+        help="Directory for generated draft inputs.",
+    )
+    company_report_parser.add_argument(
+        "--overwrite-auto-inputs",
+        action="store_true",
+        help="Overwrite generated draft inputs if they already exist.",
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -507,6 +522,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             input_dir=args.input_dir,
             output_dir=args.output_dir,
             registry_path=args.registry,
+            auto_inputs=args.auto_inputs,
+            generated_input_dir=args.generated_input_dir,
+            overwrite_auto_inputs=args.overwrite_auto_inputs,
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
             limit=args.limit,

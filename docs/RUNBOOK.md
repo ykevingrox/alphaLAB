@@ -60,6 +60,29 @@ Expected behavior:
   `template_command`, and `rerun_command` fields so the next step is explicit.
 - `needs_human_review` may be `true` when important inputs are missing.
 
+For the HK biotech MVP, use `--auto-inputs` when you want the system to create
+draft pipeline and financial inputs before running the report:
+
+```bash
+.venv/bin/python -m biotech_alpha.cli company-report \
+  --company "映恩生物" \
+  --ticker "09606.HK" \
+  --auto-inputs \
+  --limit 20
+```
+
+This currently:
+
+- Resolves the HKEX stock id from the ticker.
+- Searches HKEXnews for the latest annual results announcement.
+- Downloads the source PDF under `data/raw/hkex/`.
+- Extracts text with `pypdf`.
+- Writes draft inputs under `data/input/generated/`.
+- Runs `pipeline-validate` and `financial-validate` internally.
+- Runs the report with those generated inputs.
+
+Generated inputs are drafts and remain `needs_human_review: true`.
+
 The lower-level `research` command is still useful for debugging and exact
 input control. This version runs only the company-level ClinicalTrials.gov
 search and does not write artifacts:

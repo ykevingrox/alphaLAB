@@ -51,6 +51,7 @@ docs/
                       Catalyst-adjusted target price design
 src/biotech_alpha/
   alerts.py          Local catalyst-calendar change alerts across saved runs
+  auto_inputs.py     HKEX source discovery and draft input generation
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
   company_report.py   One-command report orchestration
   competition.py      Competitive landscape inputs and deterministic matching
@@ -67,6 +68,7 @@ src/biotech_alpha/
   cli.py              Small command-line entry point
 tests/
   test_alerts.py
+  test_auto_inputs.py
   test_cli.py
   test_clinicaltrials.py
   test_company_report.py
@@ -105,6 +107,19 @@ under `data/input`, still runs when inputs are missing, and writes a
 PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --company "Akeso" \
   --ticker "9926.HK" \
+  --limit 20
+```
+
+For the HK biotech MVP, add `--auto-inputs` to let the system discover the
+latest HKEX annual results announcement, download the source PDF, extract text,
+generate draft pipeline and financial input files, validate them, and then run
+the report:
+
+```bash
+.venv/bin/python -m biotech_alpha.cli company-report \
+  --company "映恩生物" \
+  --ticker "09606.HK" \
+  --auto-inputs \
   --limit 20
 ```
 

@@ -457,6 +457,8 @@ class CliTest(unittest.TestCase):
                             "company-report",
                             "--company",
                             "Example Bio",
+                            "--auto-inputs",
+                            "--overwrite-auto-inputs",
                             "--limit",
                             "1",
                             "--no-save",
@@ -468,6 +470,8 @@ class CliTest(unittest.TestCase):
         self.assertEqual(payload["identity"]["company"], "Example Bio")
         self.assertEqual(payload["missing_input_count"], 5)
         run_mock.assert_called_once()
+        self.assertTrue(run_mock.call_args.kwargs["auto_inputs"])
+        self.assertTrue(run_mock.call_args.kwargs["overwrite_auto_inputs"])
 
 
 def _target_price_payload() -> dict[str, object]:

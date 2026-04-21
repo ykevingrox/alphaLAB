@@ -6,7 +6,9 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+from biotech_alpha.auto_inputs import AutoInputArtifacts
 from biotech_alpha.company_report import (
     discover_company_inputs,
     resolve_company_identity,
@@ -117,6 +119,70 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("next_actions", payload)
             self.assertIn("First create", payload["next_actions"][0])
             self.assertIn("company-report", payload["rerun_command"])
+
+    def test_company_report_uses_generated_inputs_when_requested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            generated = root / "generated"
+            generated.mkdir()
+            pipeline = generated / "09606_hk_pipeline_assets.json"
+            financials = generated / "09606_hk_financials.json"
+            pipeline.write_text(
+                json.dumps(
+                    {
+                        "assets": [
+                            {
+                                "name": "DB-1303",
+                                "aliases": ["BNT323"],
+                                "target": "HER2",
+                                "indication": "breast cancer",
+                                "phase": "Phase 3",
+                                "evidence": [
+                                    {
+                                        "claim": "DB-1303 is disclosed.",
+                                        "source": "source.pdf",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            financials.write_text(
+                json.dumps(
+                    {
+                        "as_of_date": "2025-12-31",
+                        "currency": "RMB",
+                        "cash_and_equivalents": 1000,
+                        "short_term_debt": 0,
+                        "quarterly_cash_burn": 100,
+                        "source": "source.pdf",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("biotech_alpha.auto_inputs.generate_auto_inputs") as generate:
+                generate.return_value = AutoInputArtifacts(
+                    pipeline_assets=pipeline,
+                    financials=financials,
+                )
+                result = run_company_report(
+                    company="DualityBio",
+                    ticker="09606.HK",
+                    input_dir=root / "manual",
+                    generated_input_dir=generated,
+                    output_dir=root / "out",
+                    auto_inputs=True,
+                    limit=1,
+                    client=FakeClinicalTrialsClient(),
+                    now=datetime(2026, 4, 21, tzinfo=UTC),
+                )
+
+            self.assertEqual(result.input_paths.pipeline_assets, pipeline)
+            self.assertEqual(result.input_paths.financials, financials)
+            self.assertEqual(len(result.research_result.pipeline_assets), 1)
 
 
 if __name__ == "__main__":

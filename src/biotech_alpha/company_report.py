@@ -62,6 +62,7 @@ class CompanyReportResult:
     missing_inputs: tuple[MissingInput, ...]
     missing_inputs_report: Path | None
     research_result: SingleCompanyResearchResult
+    auto_input_artifacts: Any | None = None
 
 
 INPUT_SUFFIXES = {
@@ -134,6 +135,9 @@ def run_company_report(
     input_dir: str | Path = "data/input",
     output_dir: str | Path = "data",
     registry_path: str | Path | None = "data/input/company_registry.json",
+    auto_inputs: bool = False,
+    generated_input_dir: str | Path = "data/input/generated",
+    overwrite_auto_inputs: bool = False,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
     limit: int = 20,
@@ -157,7 +161,23 @@ def run_company_report(
         search_term=search_term,
         registry_path=registry_path,
     )
+    auto_input_artifacts = None
+    if auto_inputs:
+        from biotech_alpha.auto_inputs import generate_auto_inputs
+
+        auto_input_artifacts = generate_auto_inputs(
+            identity=identity,
+            input_dir=generated_input_dir,
+            output_dir=output_dir,
+            overwrite=overwrite_auto_inputs,
+        )
     input_paths = discover_company_inputs(identity, input_dir=input_dir)
+    if auto_inputs:
+        generated_paths = discover_company_inputs(
+            identity,
+            input_dir=generated_input_dir,
+        )
+        input_paths = _merge_input_paths(primary=input_paths, fallback=generated_paths)
     research_result = run_single_company_research(
         company=identity.company,
         ticker=identity.ticker,
@@ -197,6 +217,7 @@ def run_company_report(
         missing_inputs=missing_inputs,
         missing_inputs_report=missing_report_path,
         research_result=research_result,
+        auto_input_artifacts=auto_input_artifacts,
     )
 
 
@@ -385,6 +406,11 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         "identity": _jsonable(asdict(result.identity)),
         "research": result_summary(result.research_result),
         "discovered_inputs": _jsonable(asdict(result.input_paths)),
+        "auto_input_artifacts": _jsonable(
+            asdict(result.auto_input_artifacts)
+            if result.auto_input_artifacts
+            else None
+        ),
         "missing_input_count": len(result.missing_inputs),
         "missing_inputs": [_jsonable(asdict(item)) for item in result.missing_inputs],
         "next_actions": next_actions(
@@ -398,6 +424,23 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             else None
         ),
     }
+
+
+def _merge_input_paths(
+    *,
+    primary: CompanyReportInputPaths,
+    fallback: CompanyReportInputPaths,
+) -> CompanyReportInputPaths:
+    return CompanyReportInputPaths(
+        pipeline_assets=primary.pipeline_assets or fallback.pipeline_assets,
+        financials=primary.financials or fallback.financials,
+        competitors=primary.competitors or fallback.competitors,
+        valuation=primary.valuation or fallback.valuation,
+        target_price_assumptions=(
+            primary.target_price_assumptions
+            or fallback.target_price_assumptions
+        ),
+    )
 
 
 def next_actions(

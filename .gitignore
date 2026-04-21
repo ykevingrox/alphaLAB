@@ -10,6 +10,7 @@ build/
 dist/
 *.egg-info/
 data/raw/
+data/input/generated/
 data/processed/
 data/memos/
 .env
