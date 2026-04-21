@@ -159,6 +159,8 @@ Important files:
   financial input was provided.
 - `<run_id>_valuation.json`: market valuation snapshot and derived context
   metrics, when valuation input was provided.
+- `<run_id>_scorecard.json`: watchlist score, bucket, dimension scores, and
+  monitoring rules.
 - `<run_id>_memo.json`: structured memo.
 - `<run_id>_memo.md`: human-readable memo.
 
@@ -180,6 +182,8 @@ The `research` command prints a compact JSON summary:
 - `cash_runway_months`: runway estimate if financial input was supplied.
 - `enterprise_value`: enterprise value if valuation input was supplied.
 - `revenue_multiple`: revenue multiple if revenue was supplied.
+- `watchlist_score`: deterministic 0-100 follow-up priority score.
+- `watchlist_bucket`: score bucket for single-company triage.
 - `input_warning_count`: total validation warnings attached to the run.
 - `needs_human_review`: whether any finding asks for review.
 - `artifacts`: file paths when saving is enabled.

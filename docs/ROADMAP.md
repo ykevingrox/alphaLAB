@@ -81,7 +81,10 @@ Scenario valuation and deeper LLM scientific critique are pending.
 
 ## Phase 7: Portfolio Layer
 
-Status: not started.
+Status: partially implemented. The current CLI emits a deterministic
+single-company watchlist scorecard with dimension scores, a bucket, and
+monitoring rules. Cross-company ranking, portfolio concentration controls, and
+position sizing guardrails are pending.
 
 - Add watchlist scoring.
 - Add position sizing guardrails.

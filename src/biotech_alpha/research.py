@@ -50,6 +50,12 @@ from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
 )
+from biotech_alpha.scorecard import (
+    WatchlistScorecard,
+    build_watchlist_scorecard,
+    scorecard_finding,
+    scorecard_payload,
+)
 from biotech_alpha.skeptic import scientific_skeptic_finding
 from biotech_alpha.valuation import (
     ValuationMetrics,
@@ -94,6 +100,7 @@ class ResearchArtifacts:
     competitive_matches: Path | None = None
     cash_runway: Path | None = None
     valuation: Path | None = None
+    scorecard: Path | None = None
     memo_json: Path | None = None
     memo_markdown: Path | None = None
 
@@ -115,6 +122,7 @@ class SingleCompanyResearchResult:
     cash_runway_estimate: CashRunwayEstimate | None
     valuation_snapshot: ValuationSnapshot | None
     valuation_metrics: ValuationMetrics | None
+    scorecard: WatchlistScorecard
     input_validation: dict[str, Any]
     clinical_trial_finding: AgentFinding
     memo: InvestmentMemo
@@ -231,6 +239,29 @@ def run_single_company_research(
         *_derive_clinical_catalysts(trials, today=timestamp.date()),
         *_derive_asset_milestone_catalysts(assets),
     )
+    skeptic_preview = scientific_skeptic_finding(
+        company=company,
+        trials=trials,
+        pipeline_assets=assets,
+        asset_trial_matches=asset_trial_matches,
+        competitor_assets=competitors,
+        competitive_matches=competitive_matches,
+        cash_runway_estimate=cash_runway_estimate,
+        valuation_metrics=valuation_metrics,
+        input_warning_count=_input_warning_count(input_validation),
+    )
+    scorecard = build_watchlist_scorecard(
+        trials=trials,
+        pipeline_assets=assets,
+        asset_trial_matches=asset_trial_matches,
+        competitor_assets=competitors,
+        competitive_matches=competitive_matches,
+        catalysts=catalysts,
+        cash_runway_estimate=cash_runway_estimate,
+        valuation_metrics=valuation_metrics,
+        input_warning_count=_input_warning_count(input_validation),
+        skeptic_risk_count=len(skeptic_preview.risks),
+    )
     memo = _build_clinical_first_memo(
         context=context,
         trials=trials,
@@ -242,6 +273,8 @@ def run_single_company_research(
         cash_runway_estimate=cash_runway_estimate,
         valuation_snapshot=valuation_snapshot,
         valuation_metrics=valuation_metrics,
+        scorecard=scorecard,
+        skeptic_finding=skeptic_preview,
         input_validation=input_validation,
         finding=clinical_finding,
         catalysts=catalysts,
@@ -268,6 +301,7 @@ def run_single_company_research(
             cash_runway_estimate=cash_runway_estimate,
             valuation_snapshot=valuation_snapshot,
             valuation_metrics=valuation_metrics,
+            scorecard=scorecard,
             input_validation=input_validation,
             memo=memo,
         )
@@ -286,6 +320,7 @@ def run_single_company_research(
         cash_runway_estimate=cash_runway_estimate,
         valuation_snapshot=valuation_snapshot,
         valuation_metrics=valuation_metrics,
+        scorecard=scorecard,
         input_validation=input_validation,
         clinical_trial_finding=clinical_finding,
         memo=memo,
@@ -325,6 +360,8 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
             if result.valuation_metrics
             else None
         ),
+        "watchlist_score": result.scorecard.total_score,
+        "watchlist_bucket": result.scorecard.bucket,
         "input_warning_count": _input_warning_count(result.input_validation),
         "catalyst_count": len(result.memo.catalysts),
         "needs_human_review": any(
@@ -397,6 +434,17 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
                 lines.append(f"  - {risk}")
     else:
         lines.append("- No skeptical review finding was generated.")
+    lines.extend(["", "## Watchlist Scorecard", ""])
+    scorecard_findings = [
+        finding
+        for finding in memo.findings
+        if finding.agent_name == "watchlist_scorecard_agent"
+    ]
+    if scorecard_findings:
+        for finding in scorecard_findings:
+            lines.append(f"- {finding.summary}")
+    else:
+        lines.append("- No watchlist scorecard was generated.")
     lines.extend(["", "## Upcoming Clinical Catalysts", ""])
     if memo.catalysts:
         for catalyst in memo.catalysts:
@@ -637,6 +685,8 @@ def _build_clinical_first_memo(
     cash_runway_estimate: CashRunwayEstimate | None,
     valuation_snapshot: ValuationSnapshot | None,
     valuation_metrics: ValuationMetrics | None,
+    scorecard: WatchlistScorecard,
+    skeptic_finding: AgentFinding,
     input_validation: dict[str, Any],
     finding: AgentFinding,
     catalysts: tuple[Catalyst, ...],
@@ -695,19 +745,8 @@ def _build_clinical_first_memo(
                 metrics=valuation_metrics,
             )
         )
-    findings.append(
-        scientific_skeptic_finding(
-            company=context.company,
-            trials=trials,
-            pipeline_assets=pipeline_assets,
-            asset_trial_matches=asset_trial_matches,
-            competitor_assets=competitor_assets,
-            competitive_matches=competitive_matches,
-            cash_runway_estimate=cash_runway_estimate,
-            valuation_metrics=valuation_metrics,
-            input_warning_count=_input_warning_count(input_validation),
-        )
-    )
+    findings.append(skeptic_finding)
+    findings.append(scorecard_finding(company=context.company, scorecard=scorecard))
     evidence = (*trial_evidence, *asset_evidence)
     if financial_snapshot and financial_snapshot.source:
         evidence = (
@@ -951,6 +990,7 @@ def _write_research_artifacts(
     cash_runway_estimate: CashRunwayEstimate | None,
     valuation_snapshot: ValuationSnapshot | None,
     valuation_metrics: ValuationMetrics | None,
+    scorecard: WatchlistScorecard,
     input_validation: dict[str, Any],
     memo: InvestmentMemo,
 ) -> ResearchArtifacts:
@@ -972,6 +1012,7 @@ def _write_research_artifacts(
     competitive_matches_path = processed_dir / f"{run_id}_competitive_matches.json"
     cash_runway_path = processed_dir / f"{run_id}_cash_runway.json"
     valuation_path = processed_dir / f"{run_id}_valuation.json"
+    scorecard_path = processed_dir / f"{run_id}_scorecard.json"
     memo_json_path = processed_dir / f"{run_id}_memo.json"
     memo_markdown_path = memo_dir / f"{run_id}_memo.md"
 
@@ -1047,6 +1088,7 @@ def _write_research_artifacts(
             valuation_path,
             valuation_payload(valuation_snapshot, valuation_metrics),
         )
+    _write_json(scorecard_path, scorecard_payload(scorecard))
     _write_json(memo_json_path, asdict(memo))
     memo_markdown_path.write_text(memo_to_markdown(memo), encoding="utf-8")
 
@@ -1070,6 +1112,7 @@ def _write_research_artifacts(
             if valuation_snapshot and valuation_metrics
             else None
         ),
+        scorecard=scorecard_path,
         memo_json=memo_json_path,
         memo_markdown=memo_markdown_path,
     )
@@ -1091,6 +1134,7 @@ def _write_research_artifacts(
                 "competitive_matches": len(competitive_matches),
                 "cash_runway": 1 if cash_runway_estimate else 0,
                 "valuation": 1 if valuation_metrics else 0,
+                "scorecard": 1,
                 "catalysts": len(memo.catalysts),
                 "evidence": len(memo.evidence),
             },

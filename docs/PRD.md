@@ -45,6 +45,8 @@ Current implementation status:
 - Implemented: deterministic skeptical review that converts weak coverage,
   unmatched assets, short runway, valuation warnings, and input quality issues
   into counter-thesis risks.
+- Implemented: deterministic watchlist scorecard with dimension scores, bucket,
+  and monitoring rules for single-company follow-up prioritization.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
@@ -153,4 +155,5 @@ Near-term success criteria for the current CLI slice:
 - A research run can emit trial summary and catalyst calendar CSV files.
 - A research run can produce a memo with source-backed evidence, key risks,
   curated competitive landscape findings, valuation context, skeptical review,
-  follow-up questions, and a manifest suitable for audit/reproduction.
+  watchlist scorecard, follow-up questions, and a manifest suitable for
+  audit/reproduction.

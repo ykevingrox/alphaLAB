@@ -45,6 +45,7 @@ src/biotech_alpha/
   models.py           Domain models for trials, pipeline assets, and memos
   pipeline.py         Pipeline asset loading and deterministic trial matching
   research.py         Single-company research pipeline orchestration
+  scorecard.py        Deterministic watchlist scoring and monitoring rules
   skeptic.py          Deterministic skeptical counter-thesis review
   valuation.py        Valuation snapshot loading and context metrics
   agents.py           Agent interface sketches
@@ -56,6 +57,7 @@ tests/
   test_financials.py
   test_pipeline.py
   test_research.py
+  test_scorecard.py
   test_skeptic.py
   test_valuation.py
 ```
@@ -243,6 +245,11 @@ when revenue is available.
 The memo also includes a deterministic skeptical review. It turns missing
 inputs, weak clinical coverage, unmatched assets, short runway, high valuation
 multiples, and crowded competition into explicit counter-thesis risks.
+
+The CLI also emits a deterministic watchlist scorecard. It combines clinical
+progress, pipeline-registry matching, cash runway, competition, valuation, data
+quality, and skeptical review risks into a `watchlist_score` and
+`watchlist_bucket`, plus monitoring rules in the saved scorecard artifact.
 
 ## Current Data Reality
 

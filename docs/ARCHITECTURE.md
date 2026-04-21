@@ -93,6 +93,7 @@ Current CLI runs write:
   `data/processed/single_company/`
 - Optional cash-runway JSON under `data/processed/single_company/`
 - Optional valuation JSON under `data/processed/single_company/`
+- Watchlist scorecard JSON under `data/processed/single_company/`
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 

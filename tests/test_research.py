@@ -169,6 +169,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(result.cash_runway_estimate.runway_months, 18)
             self.assertIsNotNone(result.valuation_metrics)
             self.assertEqual(result.valuation_metrics.enterprise_value, 2300)
+            self.assertGreater(result.scorecard.total_score, 55)
+            self.assertEqual(result.scorecard.bucket, "watchlist")
             self.assertEqual(len(result.memo.catalysts), 2)
 
             summary = result_summary(result)
@@ -184,6 +186,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(summary["cash_runway_months"], 18)
             self.assertEqual(summary["enterprise_value"], 2300)
             self.assertEqual(summary["revenue_multiple"], 11.5)
+            self.assertEqual(summary["watchlist_score"], result.scorecard.total_score)
+            self.assertEqual(summary["watchlist_bucket"], "watchlist")
             self.assertEqual(summary["input_warning_count"], 1)
             self.assertEqual(summary["catalyst_count"], 2)
 
@@ -199,6 +203,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIsNotNone(artifacts.competitive_matches)
             self.assertIsNotNone(artifacts.cash_runway)
             self.assertIsNotNone(artifacts.valuation)
+            self.assertIsNotNone(artifacts.scorecard)
             self.assertIsNotNone(artifacts.memo_json)
             self.assertIsNotNone(artifacts.memo_markdown)
             for path in (
@@ -213,6 +218,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 artifacts.competitive_matches,
                 artifacts.cash_runway,
                 artifacts.valuation,
+                artifacts.scorecard,
                 artifacts.memo_json,
                 artifacts.memo_markdown,
             ):
@@ -236,6 +242,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Key Risks", memo_markdown)
             self.assertIn("## Competitive Landscape", memo_markdown)
             self.assertIn("## Skeptical Review", memo_markdown)
+            self.assertIn("## Watchlist Scorecard", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
@@ -259,6 +266,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["competitive_matches"], 1)
             self.assertEqual(manifest["counts"]["cash_runway"], 1)
             self.assertEqual(manifest["counts"]["valuation"], 1)
+            self.assertEqual(manifest["counts"]["scorecard"], 1)
             self.assertIn("financials", manifest["input_validation"])
             self.assertIn("competitors", manifest["input_validation"])
             self.assertIn("valuation", manifest["input_validation"])
@@ -271,6 +279,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(cash_runway["estimate"]["runway_months"], 18)
             valuation = json.loads(Path(artifacts.valuation).read_text())
             self.assertEqual(valuation["metrics"]["enterprise_value"], 2300)
+            scorecard = json.loads(Path(artifacts.scorecard).read_text())
+            self.assertEqual(scorecard["bucket"], "watchlist")
             competitive_matches = json.loads(
                 Path(artifacts.competitive_matches).read_text()
             )

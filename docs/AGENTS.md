@@ -53,6 +53,25 @@ Outputs:
 - Input validation warning count
 - Human-review flag
 
+## Watchlist Scorecard Agent
+
+Purpose: turn the first-pass structured research package into a sortable
+watchlist priority score.
+
+Current implementation note: the research pipeline emits a deterministic
+`watchlist_scorecard_agent` finding. It combines clinical progress,
+pipeline-registry matching, cash runway, competition, valuation, data quality,
+and skeptical review risks into a 0-100 score, bucket, and monitoring rules.
+
+Outputs:
+
+- Total score
+- Bucket: `deep_dive_candidate`, `watchlist`, `needs_more_evidence`, or
+  `low_priority`
+- Dimension scores and rationales
+- Monitoring rules
+- Human-review flag
+
 ## Pipeline Agent
 
 Purpose: extract pipeline assets from company documents.
