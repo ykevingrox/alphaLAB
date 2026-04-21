@@ -94,7 +94,8 @@ Current CLI runs write:
 - Optional cash-runway JSON under `data/processed/single_company/`
 - Optional valuation JSON under `data/processed/single_company/`
 - Watchlist scorecard JSON under `data/processed/single_company/`
-- Local ranked watchlist JSON or CSV under a user-selected output path
+- Local ranked watchlist JSON or CSV under a user-selected output path,
+  including research-only position and concentration guardrails
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 

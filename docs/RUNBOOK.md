@@ -204,8 +204,15 @@ includes:
 - `rank`: rank after sorting by descending `watchlist_score`.
 - `company`, `ticker`, `run_id`, and `retrieved_at`.
 - `watchlist_score`, `watchlist_bucket`, and `needs_human_review`.
+- `sizing_tier` and `research_position_limit_pct`: conservative research-only
+  position guardrails, not trading instructions.
 - Trial, pipeline, competitor, match, catalyst, and input-warning counts.
 - Optional `cash_runway_months`, `enterprise_value`, and `revenue_multiple`.
+- `target_concentration_count` and `indication_concentration_count`, derived
+  from saved pipeline asset targets and indications.
+- `guardrail_flags`: reasons the position guardrail was capped, such as
+  missing competitor input, short runway, high valuation multiple, or target
+  concentration.
 - `monitoring_rules`, `memo_markdown`, and `manifest_json`.
 
 Write a reusable CSV table:

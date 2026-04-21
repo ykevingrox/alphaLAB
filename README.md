@@ -263,8 +263,10 @@ progress, pipeline-registry matching, cash runway, competition, valuation, data
 quality, and skeptical review risks into a `watchlist_score` and
 `watchlist_bucket`, plus monitoring rules in the saved scorecard artifact.
 Saved run manifests can then be ranked with `watchlist-rank`, which reads each
-manifest's scorecard and optional runway/valuation artifacts to produce a JSON
-or CSV watchlist table.
+manifest's scorecard and optional pipeline, runway, and valuation artifacts to
+produce a JSON or CSV watchlist table. The ranked table includes conservative,
+research-only position guardrails such as `research_position_limit_pct`,
+`sizing_tier`, concentration counts, and data-quality flags.
 
 ## Current Data Reality
 

@@ -84,13 +84,15 @@ Scenario valuation and deeper LLM scientific critique are pending.
 Status: partially implemented. The current CLI emits a deterministic
 single-company watchlist scorecard with dimension scores, a bucket, and
 monitoring rules. It can also rank saved single-company runs into a local JSON
-or CSV watchlist table. Portfolio concentration controls and position sizing
-guardrails are pending.
+or CSV watchlist table with first-pass research-only position sizing and
+concentration guardrails. Alerting and more advanced portfolio controls are
+pending.
 
 - Add watchlist scoring.
 - Add local cross-run watchlist ranking.
-- Add position sizing guardrails.
-- Track concentration by target, indication, company, and market.
+- Add first-pass position sizing guardrails.
+- Track first-pass concentration by target and indication.
+- Track concentration by company and market.
 - Add alerting for catalyst changes.
 
 ## Phase 8: Technical Timing And Backtesting
