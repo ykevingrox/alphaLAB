@@ -85,6 +85,10 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
   --output data/input/akeso_valuation.json
 ```
 
+Target-price assumption templates are planned but not implemented yet. The
+intended design is documented in
+[TARGET_PRICE_MODEL.md](TARGET_PRICE_MODEL.md).
+
 Edit the generated files before using them for research:
 
 - Replace `Example ...` placeholder values.
@@ -263,6 +267,36 @@ PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts \
   --format csv \
   --output data/processed/catalyst_alerts.csv
 ```
+
+## Planned Target Price Workflow
+
+The next valuation extension should connect catalyst alerts to target price
+ranges. It is not implemented yet, but the intended workflow is:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
+  data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
+  --company "Akeso" \
+  --assumptions data/input/akeso_target_price_assumptions.json
+```
+
+Expected outputs:
+
+- Bear, base, bull, and probability-weighted target price ranges.
+- Asset rNPV by scenario.
+- Catalyst-driven valuation delta.
+- Missing assumptions and human-review flags.
+- Sensitivity to probability of success, peak sales, and discount rate.
+
+These outputs should be used as research guidance only, not trading
+instructions.
 
 ## Troubleshooting
 

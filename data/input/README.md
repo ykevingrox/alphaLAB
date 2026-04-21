@@ -67,5 +67,11 @@ After rerunning research for the same company, check catalyst calendar changes:
 PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts
 ```
 
+Target-price assumption inputs are planned next. For the design, see:
+
+```text
+docs/TARGET_PRICE_MODEL.md
+```
+
 Keep source filenames or URLs in each evidence entry so generated memos remain
 auditable.

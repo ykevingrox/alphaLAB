@@ -4,7 +4,7 @@
 
 ## Current Local Input Contracts
 
-The current CLI supports two curated local JSON inputs while automatic document
+The current CLI supports four curated local JSON inputs while automatic document
 extraction is still pending:
 
 - Pipeline assets: generated with `pipeline-template`, checked with
@@ -18,6 +18,17 @@ extraction is still pending:
 
 All local input types preserve source references and validation warnings in the run
 manifest.
+
+Target-price assumptions are planned. They will need curated inputs for:
+
+- Current share price and shares outstanding
+- Cash, debt, and expected dilution
+- Asset-level peak sales assumptions
+- Probability of success by asset, phase, and indication
+- Economics share, royalties, or profit split
+- Launch year and discount rate
+- Event-impact assumptions for readouts, approvals, delays, financing, and
+  competitor data changes
 
 ### ClinicalTrials.gov
 
@@ -83,6 +94,7 @@ Use for:
 - Announcements
 - Investor disclosures
 - Listing status and Chapter 18A identifiers
+- Shares outstanding and financing terms for target-price assumptions
 
 HKEX Chapter 18A is especially relevant for biotech companies because listing
 documents must disclose core product details, regulatory status, and R&D stage.
@@ -107,6 +119,10 @@ Use for:
 
 Company materials must be treated as promotional until cross-checked against
 trial registries, regulatory disclosures, and independent data.
+
+For target-price modeling, investor materials can provide management guidance
+for addressable markets, launch timing, and pipeline milestones, but those
+assumptions should be tagged as company-sourced and reviewed skeptically.
 
 ### Regulatory Agencies
 
@@ -154,6 +170,14 @@ These are not required for the MVP, but they can substantially improve coverage
 for competitive landscape, sales estimates, drug approval history, and market
 data.
 
+For target-price ranges, paid or enhanced data can also help with:
+
+- Consensus forecasts
+- Peer valuation multiples
+- Epidemiology and addressable population estimates
+- Historical probability-of-success benchmarks
+- Historical catalyst-event price reactions
+
 ## Data Quality Rules
 
 - Prefer official registry data over media summaries.
@@ -162,3 +186,5 @@ data.
 - Mark inferred conclusions separately from directly sourced facts.
 - Track stale data explicitly.
 - Never let an LLM invent trial results, approval status, or market size.
+- Never let a target-price model hide assumptions behind a single precise
+  number.

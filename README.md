@@ -4,7 +4,8 @@ Biotech Alpha Lab is an AI-assisted investment research workspace focused on
 Hong Kong-listed innovative drug companies. The first version is deliberately
 research-first: it helps collect evidence, structure pipeline data, track
 clinical catalysts, compare competitors, and produce long-term investment
-memos. It does not place trades.
+memos. It can evolve toward catalyst-adjusted target price ranges, but it does
+not place trades.
 
 ## Initial Scope
 
@@ -14,6 +15,8 @@ memos. It does not place trades.
 - Style: long-term portfolio research, not short-term automated trading.
 - Workflow: single-company research before portfolio ranking.
 - Decision mode: decision support only; no broker integration in MVP.
+- Price guidance: scenario target-price ranges only; no single-number price
+  promise.
 
 ## Core Idea
 
@@ -23,10 +26,12 @@ metrics. The research object should be decomposed like this:
 ```text
 Company -> Pipeline asset -> Target -> Indication -> Trial phase
         -> Competitive landscape -> Catalyst -> Probability-adjusted value
+        -> Catalyst-adjusted target price range
 ```
 
 The system treats pipeline quality, clinical progress, competitive intensity,
-cash runway, and upcoming catalysts as first-class data.
+cash runway, upcoming catalysts, and explicit valuation assumptions as
+first-class data.
 
 ## Repository Layout
 
@@ -38,6 +43,8 @@ docs/
   DATA_SOURCES.md     Data sources and access notes
   ROADMAP.md          Suggested implementation sequence
   RUNBOOK.md          Step-by-step CLI operating guide
+  TARGET_PRICE_MODEL.md
+                      Catalyst-adjusted target price design
 src/biotech_alpha/
   alerts.py          Local catalyst-calendar change alerts across saved runs
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
@@ -260,6 +267,12 @@ If `market_cap` is omitted, provide `share_price` and `shares_outstanding`.
 The current valuation agent calculates enterprise value and revenue multiple
 when revenue is available.
 
+Target-price work is intentionally separated from the current valuation snapshot.
+The planned model is documented in
+[docs/TARGET_PRICE_MODEL.md](docs/TARGET_PRICE_MODEL.md). It will use curated
+asset assumptions, catalyst event impacts, and rNPV math to produce bear, base,
+bull, and probability-weighted target price ranges.
+
 The memo also includes a deterministic skeptical review. It turns missing
 inputs, weak clinical coverage, unmatched assets, short runway, high valuation
 multiples, and crowded competition into explicit counter-thesis risks.
@@ -299,3 +312,5 @@ cleaner market data, drug databases, and full competitive landscape coverage.
 - The system should preserve data snapshots used for each memo.
 - Backtests must avoid look-ahead bias.
 - LLM output should support research decisions, not execute trades.
+- Target-price outputs should be ranges with assumptions, not precise
+  predictions or automatic trading instructions.

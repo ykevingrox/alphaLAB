@@ -72,7 +72,8 @@ cash runway, curated competitive landscape findings, valuation context, key
 risks, evidence, and follow-up questions. A deterministic data-quality finding
 flags missing inputs and validation warnings. A deterministic skeptical review
 finding now produces counter-thesis risks from current structured inputs.
-Scenario valuation and deeper LLM scientific critique are pending.
+Catalyst-adjusted target price ranges and deeper LLM scientific critique are
+pending.
 
 - Combine pipeline, trial, catalyst, competition, cash runway, and valuation
   outputs.
@@ -96,11 +97,28 @@ advanced portfolio controls are pending.
 - Track first-pass concentration by company, market, target, and indication.
 - Add first-pass alerting for catalyst changes.
 
-## Phase 8: Technical Timing And Backtesting
+## Phase 8: Catalyst-Adjusted Target Price Ranges
+
+Status: planned. The current system has catalyst calendars, catalyst-change
+alerts, curated valuation context, and watchlist guardrails. It does not yet
+calculate asset rNPV, event-impact deltas, or target price ranges.
+
+- Add target-price assumptions template and validation.
+- Add transparent asset rNPV calculation.
+- Map catalyst alert types to probability, timing, peak-sales, or dilution
+  assumption deltas.
+- Generate bear, base, bull, and probability-weighted target price ranges.
+- Write `event_impact.json`, `target_price_scenarios.json`, and
+  `target_price_summary.csv` artifacts.
+- Add `Catalyst-Adjusted Valuation` section to memos.
+- Keep target-price outputs assumption-first and human-review gated.
+
+## Phase 9: Technical Timing And Backtesting
 
 Status: not started.
 
 - Add market data ingestion.
 - Add long-term technical trend analysis.
 - Backtest watchlist entry rules.
+- Backtest historical catalyst-event reactions and target-range calibration.
 - Avoid look-ahead bias by using historical source snapshots.

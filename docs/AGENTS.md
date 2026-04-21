@@ -187,7 +187,8 @@ Outputs:
 
 ## Valuation Agent
 
-Purpose: provide valuation context, not a single magic price.
+Purpose: provide valuation context and feed scenario valuation, not a single
+magic price.
 
 Current implementation note: the CLI accepts curated valuation snapshot JSON via
 `--valuation`, validates it with `valuation-validate`, calculates market cap,
@@ -201,10 +202,47 @@ Outputs:
 - Revenue multiples where meaningful
 - Calculation method
 - Human-review warnings
+- Shares outstanding and current share price when available
 - rNPV assumptions for key assets
 - Scenario valuation
 - Key assumptions
 - Sensitivity points
+
+## Catalyst Impact Agent
+
+Purpose: translate catalyst changes into assumption deltas for valuation.
+
+Planned implementation note: the current CLI can detect local catalyst calendar
+changes with `catalyst-alerts`. A future catalyst impact layer should map those
+changes to probability of success, launch timing, peak sales, dilution, or
+competitive intensity assumptions.
+
+Outputs:
+
+- Catalyst event type
+- Affected asset
+- Previous assumptions
+- Updated assumptions
+- Assumption deltas
+- Evidence and rationale
+- Human-review flag
+
+## rNPV Scenario Agent
+
+Purpose: convert asset assumptions and catalyst impacts into target price
+ranges.
+
+Outputs:
+
+- Bear, base, and bull target prices
+- Probability-weighted target price
+- Asset rNPV by scenario
+- Event value delta
+- Implied upside or downside
+- Key drivers
+- Missing assumptions
+- Sensitivity points
+- Human-review flag
 
 ## Technical Timing Agent
 
@@ -262,3 +300,4 @@ Outputs:
 - Required follow-up research
 - Suggested monitoring rules
 - Portfolio fit notes
+- Catalyst-adjusted target price range when assumptions are available

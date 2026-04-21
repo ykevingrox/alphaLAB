@@ -28,7 +28,7 @@ Specialized Agents
 Investment Committee Agent
     |
     v
-Research Memo + Watchlist Decision
+Research Memo + Watchlist Decision + Target Price Range
 ```
 
 ## Data Layers
@@ -70,6 +70,8 @@ Derived metrics:
 - Competition density by target and indication
 - Upcoming catalysts by time window
 - Valuation multiples where applicable
+- Asset rNPV and probability of success assumptions
+- Catalyst-adjusted target price scenarios
 
 ## Suggested Storage
 
@@ -97,6 +99,7 @@ Current CLI runs write:
 - Local ranked watchlist JSON or CSV under a user-selected output path,
   including research-only position and concentration guardrails
 - Local catalyst-change alert JSON or CSV under a user-selected output path
+- Future event-impact and target-price scenario JSON/CSV artifacts
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 
@@ -121,6 +124,8 @@ Recommended agents:
 - Competitive Landscape Agent
 - Cash Runway Agent
 - Valuation Agent
+- Catalyst Impact Agent
+- rNPV Scenario Agent
 - Technical Timing Agent
 - Risk Agent
 - Scientific Skeptic Agent
@@ -156,6 +161,12 @@ Current helper commands:
 - `watchlist-rank`
 - `catalyst-alerts`
 
+Planned target-price commands:
+
+- `target-price-template`
+- `target-price-validate`
+- `event-impact`
+
 Future UI:
 
 - Single-company research page
@@ -185,3 +196,7 @@ Each memo should record:
 The architecture intentionally ends at research and decision support. Any future
 trading execution layer must be separate, rule-based, logged, and manually
 confirmed unless the user explicitly designs a different risk regime.
+
+Target-price outputs are scenario ranges. They must preserve assumptions,
+sources, and sensitivity points, and they must not be treated as automatic
+trading instructions.

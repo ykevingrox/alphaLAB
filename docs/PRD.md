@@ -9,7 +9,9 @@ Biotech Alpha Lab
 Build an AI-assisted research system for long-term investing in innovative
 drug companies, starting with Hong Kong-listed biotech names. The system should
 help the user decide whether a company belongs in an observation pool, a core
-candidate pool, or an exclusion pool.
+candidate pool, or an exclusion pool. The system may also produce
+catalyst-adjusted target price ranges when enough assumptions are available,
+but it must remain a research and decision-support system.
 
 ## MVP Goal
 
@@ -26,7 +28,8 @@ covers:
 8. Catalyst calendar for the next 6-24 months
 9. Key risks
 10. Long-term investment score
-11. Evidence links and confidence levels
+11. Catalyst-adjusted valuation range when assumptions are available
+12. Evidence links and confidence levels
 
 Current implementation status:
 
@@ -47,11 +50,13 @@ Current implementation status:
   into counter-thesis risks.
 - Implemented: deterministic watchlist scorecard with dimension scores, bucket,
   and monitoring rules for single-company follow-up prioritization.
+- Implemented: local watchlist ranking, first-pass portfolio guardrails,
+  latest-run filtering, and catalyst-change alerts across saved runs.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
-  parsing, automatic competitor discovery, scenario valuation, and deeper LLM
-  scientific critique.
+  parsing, automatic competitor discovery, catalyst-adjusted target price
+  ranges, scenario valuation, and deeper LLM scientific critique.
 
 ## Non-Goals For MVP
 
@@ -60,6 +65,8 @@ Current implementation status:
 - No high-frequency or intraday trading.
 - No full-market stock screener.
 - No uncited investment recommendation.
+- No single-number target price without explicit assumptions and scenario
+  range.
 
 ## Target User
 
@@ -85,6 +92,13 @@ Maintain a calendar of expected clinical readouts, regulatory decisions,
 conference presentations, annual results, financing events, and business
 development announcements.
 
+### Catalyst-Adjusted Target Price Ranges
+
+When a material catalyst changes, estimate how the event changes asset rNPV,
+company equity value, and per-share target price ranges under bear, base, and
+bull scenarios. The output should show assumptions, sensitivity, and confidence
+before any price range.
+
 ### Contrarian Review
 
 Generate a skeptical review that attacks the investment thesis, highlights weak
@@ -109,6 +123,7 @@ Each company should be classified as one of:
 - Cash runway
 - Management and execution
 - Valuation reasonableness
+- Catalyst-adjusted rNPV impact
 - Catalyst visibility
 - Risk asymmetry
 - Evidence quality
@@ -130,6 +145,7 @@ Each material claim should include:
 - Look-ahead bias in backtests
 - Incomplete clinical trial registry data
 - Company announcements that overstate pipeline potential
+- False precision in target price outputs
 - Crowded targets and fast-changing competitive landscapes
 - Equity dilution risk in pre-profit biotech companies
 - Regulatory and reimbursement uncertainty
@@ -145,6 +161,7 @@ Hong Kong innovative drug company with:
 - A cash runway estimate
 - A competition table for major assets
 - A skeptical counter-thesis
+- Catalyst-adjusted target price scenarios when assumptions are provided
 - Clear confidence and evidence markers
 
 Near-term success criteria for the current CLI slice:
@@ -157,3 +174,13 @@ Near-term success criteria for the current CLI slice:
   curated competitive landscape findings, valuation context, skeptical review,
   watchlist scorecard, follow-up questions, and a manifest suitable for
   audit/reproduction.
+
+Near-term success criteria for the target-price extension:
+
+- The user can create and validate curated target-price assumption files.
+- The system can calculate transparent asset rNPV values from those inputs.
+- Catalyst alerts can be mapped to assumption deltas.
+- The system can output bear, base, bull, and probability-weighted target price
+  ranges.
+- Every target-price output lists key assumptions, missing assumptions,
+  sensitivity points, and human-review flags.
