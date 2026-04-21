@@ -51,6 +51,7 @@ class PipelineAsset:
     """A drug or product candidate disclosed by a company."""
 
     name: str
+    aliases: tuple[str, ...] = ()
     target: str | None = None
     modality: str | None = None
     mechanism: str | None = None
@@ -61,6 +62,44 @@ class PipelineAsset:
     partner: str | None = None
     next_milestone: str | None = None
     evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class TrialAssetMatch:
+    """Deterministic link between a disclosed asset and registry trial."""
+
+    asset_name: str
+    registry_id: str
+    match_reason: str
+    matched_text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class CompetitorAsset:
+    """A competing asset in the same target or indication space."""
+
+    company: str
+    asset_name: str
+    aliases: tuple[str, ...] = ()
+    target: str | None = None
+    mechanism: str | None = None
+    indication: str | None = None
+    phase: str | None = None
+    geography: str | None = None
+    differentiation: str | None = None
+    evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompetitiveMatch:
+    """Deterministic link between a company asset and a competitor asset."""
+
+    asset_name: str
+    competitor_company: str
+    competitor_asset: str
+    match_scope: str
+    confidence: float
 
 
 @dataclass(frozen=True)

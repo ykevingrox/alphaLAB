@@ -28,6 +28,24 @@ covers:
 10. Long-term investment score
 11. Evidence links and confidence levels
 
+Current implementation status:
+
+- Implemented: ClinicalTrials.gov search and normalization, including company,
+  asset-name, and alias searches when curated assets are provided.
+- Implemented: curated pipeline asset JSON input, validation, evidence capture,
+  and deterministic asset-trial matching.
+- Implemented: catalyst-calendar CSV from ClinicalTrials.gov primary completion
+  dates and curated asset milestone windows.
+- Implemented: curated financial snapshot JSON input, validation, and first-pass
+  cash runway estimation.
+- Implemented: curated competitor asset JSON input, validation, deterministic
+  target/indication matching, and competitive landscape findings.
+- Implemented: reproducible local artifacts, including manifest, raw responses,
+  normalized records, CSV tables, memo JSON, and memo Markdown.
+- Pending: automatic company document ingestion, automatic financial statement
+  parsing, automatic competitor discovery, valuation, and skeptical
+  counter-thesis agents.
+
 ## Non-Goals For MVP
 
 - No automatic order placement.
@@ -121,3 +139,13 @@ Hong Kong innovative drug company with:
 - A competition table for major assets
 - A skeptical counter-thesis
 - Clear confidence and evidence markers
+
+Near-term success criteria for the current CLI slice:
+
+- The user can generate and validate curated pipeline and financial input files.
+- A research run can preserve raw ClinicalTrials.gov responses and normalized
+  trial records.
+- A research run can emit trial summary and catalyst calendar CSV files.
+- A research run can produce a memo with source-backed evidence, key risks,
+  curated competitive landscape findings, follow-up questions, and a manifest
+  suitable for audit/reproduction.

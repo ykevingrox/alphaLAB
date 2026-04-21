@@ -40,7 +40,8 @@ class ClinicalTrialAgent:
         active = [
             trial
             for trial in trials
-            if trial.status in {"RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"}
+            if trial.status
+            in {"RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"}
         ]
         late_stage = [
             trial

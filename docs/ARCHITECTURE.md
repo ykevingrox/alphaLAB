@@ -75,9 +75,25 @@ Derived metrics:
 
 MVP can begin with local files:
 
+- `data/input/`
 - `data/raw/`
 - `data/processed/`
 - `data/memos/`
+
+Current CLI runs write:
+
+- Input validation reports in the run manifest
+- ClinicalTrials.gov raw responses under `data/raw/clinicaltrials/`
+- Normalized trial JSON and trial-summary CSV under
+  `data/processed/single_company/`
+- Catalyst-calendar CSV under `data/processed/single_company/`
+- Pipeline asset and asset-trial match JSON under
+  `data/processed/single_company/`
+- Competitor asset and competitive-match JSON under
+  `data/processed/single_company/`
+- Optional cash-runway JSON under `data/processed/single_company/`
+- Memo JSON and Markdown under `data/processed/single_company/` and
+  `data/memos/`
 
 Later versions can use:
 
@@ -110,8 +126,25 @@ Recommended agents:
 The first implementation can run as a CLI:
 
 ```bash
-biotech-alpha research --company "Akeso" --ticker "9926.HK"
+biotech-alpha research \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --pipeline-assets data/input/akeso_pipeline_assets.json \
+  --financials data/input/akeso_financials.json \
+  --competitors data/input/akeso_competitors.json
 ```
+
+Current helper commands:
+
+- `clinical-trials`
+- `clinical-trials-version`
+- `pipeline-template`
+- `pipeline-validate`
+- `financial-template`
+- `financial-validate`
+- `competitor-template`
+- `competitor-validate`
+- `research`
 
 Future UI:
 
@@ -129,8 +162,11 @@ Each memo should record:
 - Input company and ticker
 - Data source versions and timestamps
 - Raw files used
-- Agent versions or prompts
-- Model name
+- Search terms used for registry lookups
+- Input validation warnings
+- Derived artifact paths
+- Agent or deterministic finding versions where applicable
+- Model name when LLM agents are introduced
 - Generation timestamp
 - Confidence score
 

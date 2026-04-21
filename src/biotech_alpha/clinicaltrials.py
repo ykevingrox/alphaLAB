@@ -67,7 +67,8 @@ class ClinicalTrialsClient:
             with urlopen(request, timeout=20) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:  # noqa: BLE001 - keep stdlib client compact.
-            raise ClinicalTrialsError(f"ClinicalTrials.gov request failed: {url}") from exc
+            message = f"ClinicalTrials.gov request failed: {url}"
+            raise ClinicalTrialsError(message) from exc
 
 
 def extract_trial_summaries(response: dict[str, Any]) -> list[TrialSummary]:

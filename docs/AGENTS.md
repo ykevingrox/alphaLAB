@@ -37,13 +37,34 @@ Outputs:
 - Publication date
 - Reliability level
 
+## Data Quality Agent
+
+Purpose: flag missing curated inputs and validation warnings before a memo is
+treated as decision-ready.
+
+Current implementation note: the research pipeline emits a deterministic
+`data_quality_agent` finding that checks whether pipeline asset, financial
+snapshot, and competitor inputs were provided, and whether input validation
+reported warnings.
+
+Outputs:
+
+- Missing input categories
+- Input validation warning count
+- Human-review flag
+
 ## Pipeline Agent
 
 Purpose: extract pipeline assets from company documents.
 
+Current implementation note: automatic document extraction is not implemented
+yet. The CLI accepts curated JSON via `--pipeline-assets`, validates it with
+`pipeline-validate`, and preserves evidence entries for each asset.
+
 Outputs per asset:
 
 - Drug or asset name
+- Aliases or asset codes
 - Modality
 - Target
 - Mechanism of action
@@ -59,6 +80,12 @@ Outputs per asset:
 ## Clinical Trial Agent
 
 Purpose: match pipeline assets to clinical trial registry records.
+
+Current implementation note: ClinicalTrials.gov search and trial normalization
+are implemented. When curated assets are provided, the research pipeline also
+searches by asset name and alias, deduplicates by registry ID, and creates
+deterministic `TrialAssetMatch` records when asset terms appear in intervention
+or title text.
 
 Outputs per trial:
 
@@ -97,10 +124,16 @@ Outputs:
 
 Purpose: compare same-target and same-indication competitors.
 
+Current implementation note: the CLI accepts curated competitor asset JSON via
+`--competitors`, validates it with `competitor-validate`, matches competitor
+assets to company pipeline assets by normalized target and indication, and emits
+a `competitive_landscape_agent` finding.
+
 Outputs:
 
 - Competitor company
 - Competitor asset
+- Aliases or asset codes
 - Target
 - Indication
 - Stage
@@ -109,11 +142,16 @@ Outputs:
 - Safety comparison
 - Commercial position
 - Threat level
+- Match scope and confidence
 
 ## Cash Runway Agent
 
 Purpose: estimate whether the company has enough capital to reach the next
 meaningful milestone.
+
+Current implementation note: the CLI accepts curated financial snapshot JSON via
+`--financials`, validates it with `financial-validate`, estimates net cash,
+monthly burn, and runway months, and emits a `cash_runway_agent` finding.
 
 Outputs:
 
@@ -123,6 +161,8 @@ Outputs:
 - R&D expense
 - Selling expense
 - Estimated runway months
+- Calculation method
+- Human-review warnings
 - Financing risk
 - Dilution risk
 
@@ -173,6 +213,11 @@ Outputs:
 ## Investment Committee Agent
 
 Purpose: synthesize all agents into a decision-support memo.
+
+Current implementation note: a full LLM committee agent is pending. The current
+research pipeline creates a conservative deterministic memo from clinical trial
+findings, pipeline matches, cash runway findings, catalysts, evidence, key
+risks, and follow-up questions.
 
 Outputs:
 

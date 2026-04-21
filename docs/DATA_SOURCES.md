@@ -2,6 +2,21 @@
 
 ## Official And Public Sources
 
+## Current Local Input Contracts
+
+The current CLI supports two curated local JSON inputs while automatic document
+extraction is still pending:
+
+- Pipeline assets: generated with `pipeline-template`, checked with
+  `pipeline-validate`, and passed to `research --pipeline-assets`.
+- Financial snapshots: generated with `financial-template`, checked with
+  `financial-validate`, and passed to `research --financials`.
+- Competitor assets: generated with `competitor-template`, checked with
+  `competitor-validate`, and passed to `research --competitors`.
+
+All local input types preserve source references and validation warnings in the run
+manifest.
+
 ### ClinicalTrials.gov
 
 Use for global clinical trial records. The API endpoint is:
@@ -28,6 +43,14 @@ Useful fields:
 - Results
 
 The `/api/v2/version` endpoint returns the API version and data timestamp.
+
+Current implementation:
+
+- Queries ClinicalTrials.gov by company search term.
+- When pipeline assets are supplied, also queries by asset name and aliases.
+- Deduplicates normalized trial records by registry ID.
+- Preserves raw query responses and normalized trial summaries in local
+  artifacts.
 
 ### China Drug Clinical Trial Registration Platform
 
