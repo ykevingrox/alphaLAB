@@ -80,7 +80,7 @@ For the full operating guide, see [docs/RUNBOOK.md](docs/RUNBOOK.md).
 Run the test suite:
 
 ```bash
-python3 -m unittest discover -s tests
+PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
 Try the ClinicalTrials.gov client:

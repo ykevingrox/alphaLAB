@@ -330,8 +330,9 @@ If validation warns about placeholders:
 
 ## Current Limits
 
-- Pipeline, financial, and competitor inputs are curated JSON files.
-- Valuation input is a curated JSON file and provides context only.
+- Pipeline, financial, competitor, and valuation inputs are curated JSON files.
+- Valuation input provides context only; catalyst-adjusted target price
+  assumptions and event-impact modeling are planned but not implemented yet.
 - Automatic PDF/report extraction is not implemented yet.
 - China drug trial registry ingestion is not implemented yet.
 - Competitive matching is deterministic and coarse: target and indication only.
