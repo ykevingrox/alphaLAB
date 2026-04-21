@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Sequence
 
 from biotech_alpha.clinicaltrials import (
@@ -31,6 +32,13 @@ from biotech_alpha.valuation import (
     validate_valuation_snapshot_file,
     valuation_validation_report_as_dict,
     write_valuation_snapshot_template,
+)
+from biotech_alpha.watchlist import (
+    load_watchlist_entries,
+    rank_watchlist_entries,
+    watchlist_entries_as_dicts,
+    watchlist_entries_to_csv_text,
+    write_watchlist_csv,
 )
 
 
@@ -257,6 +265,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Valuation snapshot JSON file to validate.",
     )
 
+    watchlist_parser = subparsers.add_parser(
+        "watchlist-rank",
+        help="Rank saved single-company research runs by watchlist score.",
+    )
+    watchlist_parser.add_argument(
+        "--processed-dir",
+        default="data/processed/single_company",
+        help="Directory containing saved single-company processed artifacts.",
+    )
+    watchlist_parser.add_argument(
+        "--format",
+        choices=("json", "csv"),
+        default="json",
+        help="Output format. Defaults to json.",
+    )
+    watchlist_parser.add_argument(
+        "--output",
+        help="Optional file path to write the ranked watchlist.",
+    )
+
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
 
@@ -373,6 +401,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 1 if report.errors else 0
+
+    if args.command == "watchlist-rank":
+        entries = rank_watchlist_entries(
+            load_watchlist_entries(args.processed_dir)
+        )
+        if args.format == "csv":
+            if args.output:
+                path = write_watchlist_csv(args.output, entries)
+                print(
+                    json.dumps(
+                        {"path": str(path), "entry_count": len(entries)},
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            else:
+                print(watchlist_entries_to_csv_text(entries), end="")
+            return 0
+
+        payload = {
+            "entry_count": len(entries),
+            "entries": watchlist_entries_as_dicts(entries),
+        }
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                json.dumps(
+                    {"path": str(path), "entry_count": len(entries)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
 
     parser.error(f"Unknown command: {args.command}")
     return 2

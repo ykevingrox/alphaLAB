@@ -48,6 +48,7 @@ src/biotech_alpha/
   scorecard.py        Deterministic watchlist scoring and monitoring rules
   skeptic.py          Deterministic skeptical counter-thesis review
   valuation.py        Valuation snapshot loading and context metrics
+  watchlist.py        Local ranking over saved single-company research runs
   agents.py           Agent interface sketches
   cli.py              Small command-line entry point
 tests/
@@ -60,6 +61,7 @@ tests/
   test_scorecard.py
   test_skeptic.py
   test_valuation.py
+  test_watchlist.py
 ```
 
 ## Quick Start
@@ -125,6 +127,16 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
   --limit 20
+```
+
+Rank saved single-company runs into a local watchlist:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank
+
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank \
+  --format csv \
+  --output data/processed/watchlist_rank.csv
 ```
 
 The first-pass pipeline searches ClinicalTrials.gov, normalizes trial records,
@@ -250,6 +262,9 @@ The CLI also emits a deterministic watchlist scorecard. It combines clinical
 progress, pipeline-registry matching, cash runway, competition, valuation, data
 quality, and skeptical review risks into a `watchlist_score` and
 `watchlist_bucket`, plus monitoring rules in the saved scorecard artifact.
+Saved run manifests can then be ranked with `watchlist-rank`, which reads each
+manifest's scorecard and optional runway/valuation artifacts to produce a JSON
+or CSV watchlist table.
 
 ## Current Data Reality
 

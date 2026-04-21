@@ -25,6 +25,7 @@ Check the CLI surface:
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli --help
 PYTHONPATH=src python3 -m biotech_alpha.cli research --help
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
 ```
 
 Check ClinicalTrials.gov access:
@@ -187,6 +188,36 @@ The `research` command prints a compact JSON summary:
 - `input_warning_count`: total validation warnings attached to the run.
 - `needs_human_review`: whether any finding asks for review.
 - `artifacts`: file paths when saving is enabled.
+
+## Rank Saved Runs
+
+After running more than one company, rank saved runs into a local watchlist:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank
+```
+
+The command scans `data/processed/single_company`, loads each run manifest,
+reads the saved scorecard artifact, and prints ranked JSON rows. Each row
+includes:
+
+- `rank`: rank after sorting by descending `watchlist_score`.
+- `company`, `ticker`, `run_id`, and `retrieved_at`.
+- `watchlist_score`, `watchlist_bucket`, and `needs_human_review`.
+- Trial, pipeline, competitor, match, catalyst, and input-warning counts.
+- Optional `cash_runway_months`, `enterprise_value`, and `revenue_multiple`.
+- `monitoring_rules`, `memo_markdown`, and `manifest_json`.
+
+Write a reusable CSV table:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank \
+  --format csv \
+  --output data/processed/watchlist_rank.csv
+```
+
+Use `--processed-dir` when research artifacts were written somewhere other
+than the default `data/processed/single_company` directory.
 
 ## Troubleshooting
 

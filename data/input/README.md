@@ -55,5 +55,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --valuation data/input/akeso_valuation.json
 ```
 
+After several companies have saved runs, rank the local watchlist with:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank
+```
+
 Keep source filenames or URLs in each evidence entry so generated memos remain
 auditable.
