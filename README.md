@@ -45,6 +45,7 @@ src/biotech_alpha/
   models.py           Domain models for trials, pipeline assets, and memos
   pipeline.py         Pipeline asset loading and deterministic trial matching
   research.py         Single-company research pipeline orchestration
+  skeptic.py          Deterministic skeptical counter-thesis review
   valuation.py        Valuation snapshot loading and context metrics
   agents.py           Agent interface sketches
   cli.py              Small command-line entry point
@@ -55,6 +56,7 @@ tests/
   test_financials.py
   test_pipeline.py
   test_research.py
+  test_skeptic.py
   test_valuation.py
 ```
 
@@ -237,6 +239,10 @@ Valuation snapshot JSON provides market context without creating a target price:
 If `market_cap` is omitted, provide `share_price` and `shares_outstanding`.
 The current valuation agent calculates enterprise value and revenue multiple
 when revenue is available.
+
+The memo also includes a deterministic skeptical review. It turns missing
+inputs, weak clinical coverage, unmatched assets, short runway, high valuation
+multiples, and crowded competition into explicit counter-thesis risks.
 
 ## Current Data Reality
 

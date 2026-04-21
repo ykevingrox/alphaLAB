@@ -235,10 +235,12 @@ class SingleCompanyResearchTest(unittest.TestCase):
             memo_markdown = Path(artifacts.memo_markdown).read_text()
             self.assertIn("## Key Risks", memo_markdown)
             self.assertIn("## Competitive Landscape", memo_markdown)
+            self.assertIn("## Skeptical Review", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
             self.assertIn("enterprise value is 2300 HKD", memo_markdown)
+            self.assertIn("Cash runway is below 24 months", memo_markdown)
 
             raw_payload = json.loads(Path(artifacts.raw_clinical_trials).read_text())
             self.assertEqual(

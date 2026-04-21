@@ -206,6 +206,12 @@ Outputs:
 
 Purpose: attack the thesis.
 
+Current implementation note: the research pipeline emits a deterministic
+`scientific_skeptic_agent` finding. It checks clinical coverage, unmatched
+pipeline assets, missing competitor coverage, cash runway, valuation context,
+and input validation warnings. It is a counter-thesis checklist, not an LLM
+scientific review.
+
 Outputs:
 
 - Weakest evidence

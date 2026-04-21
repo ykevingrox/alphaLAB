@@ -42,11 +42,14 @@ Current implementation status:
   target/indication matching, and competitive landscape findings.
 - Implemented: curated valuation snapshot JSON input, validation, enterprise
   value, and revenue multiple context where possible.
+- Implemented: deterministic skeptical review that converts weak coverage,
+  unmatched assets, short runway, valuation warnings, and input quality issues
+  into counter-thesis risks.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
-  parsing, automatic competitor discovery, scenario valuation, and skeptical
-  counter-thesis agents.
+  parsing, automatic competitor discovery, scenario valuation, and deeper LLM
+  scientific critique.
 
 ## Non-Goals For MVP
 
@@ -149,5 +152,5 @@ Near-term success criteria for the current CLI slice:
   trial records.
 - A research run can emit trial summary and catalyst calendar CSV files.
 - A research run can produce a memo with source-backed evidence, key risks,
-  curated competitive landscape findings, valuation context, follow-up
-  questions, and a manifest suitable for audit/reproduction.
+  curated competitive landscape findings, valuation context, skeptical review,
+  follow-up questions, and a manifest suitable for audit/reproduction.

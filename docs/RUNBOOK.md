@@ -162,6 +162,11 @@ Important files:
 - `<run_id>_memo.json`: structured memo.
 - `<run_id>_memo.md`: human-readable memo.
 
+The Markdown memo includes a `Skeptical Review` section. This section is
+generated from deterministic checks over current inputs, including trial
+coverage, unmatched pipeline assets, competitor coverage, cash runway,
+valuation context, and validation warnings.
+
 ## How To Read The CLI Summary
 
 The `research` command prints a compact JSON summary:
@@ -200,6 +205,8 @@ If `needs_human_review` is `true`:
 - Check `input_warning_count`.
 - Open the manifest and inspect `input_validation`.
 - Missing curated inputs intentionally trigger the `data_quality_agent`.
+- The `scientific_skeptic_agent` is expected to flag counter-thesis points even
+  when the run otherwise succeeds.
 
 If validation warns about placeholders:
 
@@ -217,3 +224,5 @@ If validation warns about placeholders:
 - Cash runway is a first-pass estimate, not scenario modeling.
 - The memo is deterministic and conservative; a full LLM investment committee is
   still pending.
+- The skeptical review is deterministic and checklist-based; it does not yet
+  evaluate trial design, endpoints, efficacy, or safety from source documents.

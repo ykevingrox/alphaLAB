@@ -50,6 +50,7 @@ from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
 )
+from biotech_alpha.skeptic import scientific_skeptic_finding
 from biotech_alpha.valuation import (
     ValuationMetrics,
     ValuationSnapshot,
@@ -383,6 +384,19 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
             lines.append(f"- {finding.summary}")
     else:
         lines.append("- No curated competitive landscape input was provided.")
+    lines.extend(["", "## Skeptical Review", ""])
+    skeptic_findings = [
+        finding
+        for finding in memo.findings
+        if finding.agent_name == "scientific_skeptic_agent"
+    ]
+    if skeptic_findings:
+        for finding in skeptic_findings:
+            lines.append(f"- {finding.summary}")
+            for risk in finding.risks:
+                lines.append(f"  - {risk}")
+    else:
+        lines.append("- No skeptical review finding was generated.")
     lines.extend(["", "## Upcoming Clinical Catalysts", ""])
     if memo.catalysts:
         for catalyst in memo.catalysts:
@@ -681,6 +695,19 @@ def _build_clinical_first_memo(
                 metrics=valuation_metrics,
             )
         )
+    findings.append(
+        scientific_skeptic_finding(
+            company=context.company,
+            trials=trials,
+            pipeline_assets=pipeline_assets,
+            asset_trial_matches=asset_trial_matches,
+            competitor_assets=competitor_assets,
+            competitive_matches=competitive_matches,
+            cash_runway_estimate=cash_runway_estimate,
+            valuation_metrics=valuation_metrics,
+            input_warning_count=_input_warning_count(input_validation),
+        )
+    )
     evidence = (*trial_evidence, *asset_evidence)
     if financial_snapshot and financial_snapshot.source:
         evidence = (
