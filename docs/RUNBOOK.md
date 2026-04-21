@@ -24,6 +24,7 @@ Check the CLI surface:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli --help
+PYTHONPATH=src python3 -m biotech_alpha.cli company-report --help
 PYTHONPATH=src python3 -m biotech_alpha.cli research --help
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
 PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts --help
@@ -39,8 +40,27 @@ PYTHONPATH=src python3 -m biotech_alpha.cli clinical-trials-version
 
 ## Minimal Research Smoke Test
 
-This runs only the company-level ClinicalTrials.gov search and does not write
-artifacts:
+The high-level command runs the current report pipeline, auto-discovers matching
+curated inputs under `data/input`, and writes a missing-input report when inputs
+are absent:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --limit 3
+```
+
+Expected behavior:
+
+- A memo is written under `data/memos/`.
+- A run manifest is written under `data/processed/single_company/`.
+- `<run_id>_missing_inputs_report.json` lists any missing curated inputs.
+- `needs_human_review` may be `true` when important inputs are missing.
+
+The lower-level `research` command is still useful for debugging and exact
+input control. This version runs only the company-level ClinicalTrials.gov
+search and does not write artifacts:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli research \
@@ -160,6 +180,8 @@ Important files:
 
 - `<run_id>_manifest.json`: run metadata, counts, artifact paths, source
   versions, search terms, and input validation reports.
+- `<run_id>_missing_inputs_report.json`: one-command report completeness gaps
+  and suggested curated input paths.
 - `<run_id>_search.json`: raw ClinicalTrials.gov responses by search term.
 - `<run_id>_trials.json`: normalized trial records.
 - `<run_id>_trial_summary.csv`: review-friendly trial table.

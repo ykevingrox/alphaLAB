@@ -7,6 +7,10 @@ clinical catalysts, compare competitors, produce long-term investment memos,
 and generate first-pass catalyst-adjusted target price ranges when curated
 assumptions are supplied. It does not place trades.
 
+The current MVP stays focused on Hong Kong biotech, while keeping the
+orchestration layer compatible with future market adapters and industry
+plugins.
+
 ## Initial Scope
 
 - Market: Hong Kong equities first, with A-share and US references as needed.
@@ -48,6 +52,7 @@ docs/
 src/biotech_alpha/
   alerts.py          Local catalyst-calendar change alerts across saved runs
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
+  company_report.py   One-command report orchestration
   competition.py      Competitive landscape inputs and deterministic matching
   financials.py       Financial snapshot loading and cash runway estimation
   models.py           Domain models for trials, pipeline assets, and memos
@@ -64,6 +69,7 @@ tests/
   test_alerts.py
   test_cli.py
   test_clinicaltrials.py
+  test_company_report.py
   test_competition.py
   test_financials.py
   test_pipeline.py
@@ -89,6 +95,17 @@ Try the ClinicalTrials.gov client:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli clinical-trials Akeso --limit 3
+```
+
+Run a one-command first-pass report. It uses any matching curated inputs found
+under `data/input`, still runs when inputs are missing, and writes a
+`missing_inputs_report.json` for the next pass:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --limit 20
 ```
 
 Create and validate curated input files:

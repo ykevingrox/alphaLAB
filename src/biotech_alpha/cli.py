@@ -18,6 +18,7 @@ from biotech_alpha.clinicaltrials import (
     extract_trial_summaries,
     summaries_as_dicts,
 )
+from biotech_alpha.company_report import company_report_summary, run_company_report
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
     validate_competitor_file,
@@ -150,6 +151,69 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Directory for raw, processed, and memo artifacts. Defaults to data.",
     )
     research_parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Run without writing artifacts to disk.",
+    )
+
+    company_report_parser = subparsers.add_parser(
+        "company-report",
+        help="Run a one-command company report with auto-discovered inputs.",
+    )
+    company_report_parser.add_argument(
+        "--company",
+        help="Company name to research, such as DualityBio or 映恩生物.",
+    )
+    company_report_parser.add_argument(
+        "--ticker",
+        help="Optional listed ticker, such as 09606.HK.",
+    )
+    company_report_parser.add_argument(
+        "--market",
+        help="Optional market label. Defaults from ticker or HK.",
+    )
+    company_report_parser.add_argument(
+        "--sector",
+        default="biotech",
+        help="Sector label for future industry plugins. Defaults to biotech.",
+    )
+    company_report_parser.add_argument(
+        "--search-term",
+        help="Optional ClinicalTrials.gov search term.",
+    )
+    company_report_parser.add_argument(
+        "--input-dir",
+        default="data/input",
+        help="Directory to scan for curated input files. Defaults to data/input.",
+    )
+    company_report_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory for raw, processed, and memo artifacts. Defaults to data.",
+    )
+    company_report_parser.add_argument(
+        "--registry",
+        default="data/input/company_registry.json",
+        help="Optional company registry JSON for aliases and tickers.",
+    )
+    company_report_parser.add_argument(
+        "--no-asset-queries",
+        action="store_true",
+        help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
+    )
+    company_report_parser.add_argument(
+        "--max-asset-query-terms",
+        type=int,
+        default=20,
+        help="Maximum number of asset name/alias searches to add. Defaults to 20.",
+    )
+    company_report_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of ClinicalTrials.gov studies to request.",
+    )
+    company_report_parser.add_argument(
         "--no-save",
         action="store_true",
         help="Run without writing artifacts to disk.",
@@ -431,6 +495,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             client=client,
         )
         print(json.dumps(result_summary(result), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "company-report":
+        result = run_company_report(
+            company=args.company,
+            ticker=args.ticker,
+            market=args.market,
+            sector=args.sector,
+            search_term=args.search_term,
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
+            registry_path=args.registry,
+            include_asset_queries=not args.no_asset_queries,
+            max_asset_query_terms=args.max_asset_query_terms,
+            limit=args.limit,
+            save=not args.no_save,
+            client=client,
+        )
+        print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "pipeline-template":

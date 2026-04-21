@@ -1,5 +1,60 @@
 # Roadmap
 
+## MVP Strategy
+
+The near-term priority remains a working Hong Kong biotech MVP. Future expansion
+to other Hong Kong sectors, US stocks, and A-shares should influence module
+boundaries, but it should not distract the current implementation.
+
+Design rules for new work:
+
+- Keep core orchestration company-, market-, and sector-aware.
+- Put biotech-specific concepts behind industry boundaries.
+- Put HKEX-specific discovery and filing logic behind market boundaries.
+- Preserve curated JSON contracts because future auto-extraction can populate
+  the same contracts.
+- Prefer one-command workflows for users, while keeping lower-level commands for
+  debugging and reproducibility.
+
+## Milestone A: One-Command HK Biotech Report
+
+Status: started. The `company-report` command resolves a company identity,
+auto-discovers existing curated input files, runs the current single-company
+research pipeline, writes artifacts, and emits a missing-input report.
+
+- Accept company name or ticker.
+- Read optional local company registry aliases.
+- Auto-discover curated inputs under `data/input`.
+- Run a useful first-pass report even when curated inputs are missing.
+- Write `missing_inputs_report.json` so the next pass can be upgraded.
+
+## Milestone B: HK Biotech Source Pack
+
+Status: planned.
+
+- Discover HKEX announcements, annual reports, interim reports, results
+  announcements, company investor pages, and trial registries.
+- Save source manifests before extraction.
+- Keep source discovery separate from biotech analysis.
+
+## Milestone C: Auto-Extract Into Current Contracts
+
+Status: planned.
+
+- Extract draft pipeline assets, financial snapshots, valuation snapshots,
+  competitor seeds, and target-price assumption skeletons from source packs.
+- Mark low-confidence fields for review.
+- Keep generated drafts compatible with existing validators.
+
+## Milestone D: Validation-Centric Report
+
+Status: planned.
+
+- Distinguish official-source facts, model-inferred values, missing inputs, and
+  human-review fields in every report.
+- Block or downgrade conclusions when critical inputs are missing.
+- Preserve report reproducibility through manifests and evidence records.
+
 ## Phase 0: Repository Foundation
 
 Status: implemented.

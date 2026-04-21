@@ -3,6 +3,18 @@
 This directory is for curated single-company inputs that are not downloaded
 automatically yet.
 
+The high-level `company-report` command scans this directory for matching files
+by company name, ticker, aliases, and expected suffixes:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
+  --company "Akeso" \
+  --ticker "9926.HK"
+```
+
+If a matching file is missing, the run still completes and writes a
+`missing_inputs_report.json` with suggested paths.
+
 Generate starter files with:
 
 ```bash

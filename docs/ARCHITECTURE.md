@@ -7,6 +7,29 @@ reasoning. Traditional code should fetch, parse, normalize, calculate, and
 backtest. LLM agents should read documents, extract facts, compare narratives,
 and write evidence-grounded memos.
 
+The current product focus remains the Hong Kong biotech MVP, but new code should
+avoid making biotech or Hong Kong assumptions part of the core orchestration
+layer. Market-specific source discovery and industry-specific analysis should
+sit behind adapters or plugins as the system grows.
+
+## Compatibility Boundaries
+
+Keep these boundaries stable while iterating:
+
+- `CompanyIdentity`: company name, ticker, market, sector, aliases, and search
+  term resolution. It can be backed by a local registry today and market data
+  adapters later.
+- `MarketAdapter`: future boundary for HKEX, SEC, A-share exchange filings,
+  currencies, calendars, and source discovery.
+- `IndustryPlugin`: future boundary for biotech pipeline analysis, then other
+  sectors such as semiconductors, consumer, internet, or financials.
+- `ResearchInput`: curated or auto-extracted inputs that feed deterministic
+  research modules.
+- `Evidence`: all material extracted facts must preserve source, source date,
+  retrieval time, confidence, and whether the value is inferred.
+- `ResearchResult`: structured output that can be rendered by CLI now and UI or
+  API later.
+
 ## High-Level Flow
 
 ```text
@@ -138,6 +161,10 @@ Recommended agents:
 The first implementation can run as a CLI:
 
 ```bash
+biotech-alpha company-report \
+  --company "Akeso" \
+  --ticker "9926.HK"
+
 biotech-alpha research \
   --company "Akeso" \
   --ticker "9926.HK" \
@@ -152,6 +179,7 @@ Current helper commands:
 
 - `clinical-trials`
 - `clinical-trials-version`
+- `company-report`
 - `pipeline-template`
 - `pipeline-validate`
 - `financial-template`

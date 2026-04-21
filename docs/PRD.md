@@ -13,6 +13,11 @@ candidate pool, or an exclusion pool. The system may also produce
 catalyst-adjusted target price ranges when enough assumptions are available,
 but it must remain a research and decision-support system.
 
+The MVP remains focused on Hong Kong biotech companies. However, the product
+should be designed so future market adapters and industry plugins can support
+other Hong Kong sectors, US equities, and A-shares without rewriting the core
+research orchestration.
+
 ## MVP Goal
 
 Given one stock code or company name, generate a structured research memo that
@@ -33,6 +38,9 @@ covers:
 
 Current implementation status:
 
+- Implemented: one-command `company-report` entry that resolves a company
+  identity, auto-discovers existing curated inputs, runs the current research
+  pipeline, and writes a missing-input report.
 - Implemented: ClinicalTrials.gov search and normalization, including company,
   asset-name, and alias searches when curated assets are provided.
 - Implemented: curated pipeline asset JSON input, validation, evidence capture,
@@ -83,6 +91,10 @@ long-term biotech investing.
 
 Input a company name or ticker. The system returns a structured memo with
 pipeline, cash runway, catalysts, competition, and risks.
+
+The high-level MVP command should work even when curated inputs are absent, but
+the resulting report must clearly show which inputs were missing and which
+conclusions require follow-up.
 
 ### Pipeline Tracking
 

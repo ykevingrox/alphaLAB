@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from biotech_alpha.cli import main
 
@@ -438,6 +439,35 @@ class CliTest(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("scenario,currency,pipeline_rnpv", output.getvalue())
             self.assertIn("base,HKD", output.getvalue())
+
+    def test_company_report_command_prints_summary(self) -> None:
+        fake_summary = {
+            "identity": {"company": "Example Bio"},
+            "research": {"decision": "insufficient_data"},
+            "missing_input_count": 5,
+        }
+        with patch("biotech_alpha.cli.run_company_report") as run_mock:
+            with patch("biotech_alpha.cli.company_report_summary") as summary_mock:
+                run_mock.return_value = object()
+                summary_mock.return_value = fake_summary
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exit_code = main(
+                        [
+                            "company-report",
+                            "--company",
+                            "Example Bio",
+                            "--limit",
+                            "1",
+                            "--no-save",
+                        ]
+                    )
+
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["identity"]["company"], "Example Bio")
+        self.assertEqual(payload["missing_input_count"], 5)
+        run_mock.assert_called_once()
 
 
 def _target_price_payload() -> dict[str, object]:
