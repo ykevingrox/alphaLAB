@@ -381,6 +381,101 @@ class CliTest(unittest.TestCase):
             self.assertEqual(validate_exit, 1)
             self.assertTrue(report["errors"])
 
+    def test_event_impact_outputs_json_and_writes_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assumptions_path = Path(tmpdir) / "target_price.json"
+            assumptions_path.write_text(
+                json.dumps(_target_price_payload()),
+                encoding="utf-8",
+            )
+            output_dir = Path(tmpdir) / "target_price_outputs"
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "event-impact",
+                        "--company",
+                        "Example Biotech",
+                        "--assumptions",
+                        str(assumptions_path),
+                        "--output-dir",
+                        str(output_dir),
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertGreater(payload["summary"]["base_target_price"], 0)
+            self.assertIn("analysis", payload)
+            self.assertIn("event_impact", payload["artifacts"])
+            for path in payload["artifacts"].values():
+                self.assertTrue(Path(path).exists())
+
+    def test_event_impact_outputs_csv_without_saving(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assumptions_path = Path(tmpdir) / "target_price.json"
+            assumptions_path.write_text(
+                json.dumps(_target_price_payload()),
+                encoding="utf-8",
+            )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "event-impact",
+                        "--company",
+                        "Example Biotech",
+                        "--assumptions",
+                        str(assumptions_path),
+                        "--format",
+                        "csv",
+                        "--no-save",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("scenario,currency,pipeline_rnpv", output.getvalue())
+            self.assertIn("base,HKD", output.getvalue())
+
+
+def _target_price_payload() -> dict[str, object]:
+    return {
+        "as_of_date": "2026-04-21",
+        "currency": "HKD",
+        "share_price": 12.4,
+        "shares_outstanding": 1000000000,
+        "cash_and_equivalents": 1200000000,
+        "total_debt": 300000000,
+        "expected_dilution_pct": 0.0,
+        "assets": [
+            {
+                "name": "Known Drug",
+                "indication": "NSCLC",
+                "phase": "Phase 2",
+                "peak_sales": 3000000000,
+                "probability_of_success": 0.35,
+                "economics_share": 1.0,
+                "operating_margin": 0.35,
+                "launch_year": 2030,
+                "discount_rate": 0.12,
+                "source": "model.xlsx",
+                "source_date": "2026-04-21",
+            }
+        ],
+        "event_impacts": [
+            {
+                "event_type": "positive_readout",
+                "asset_name": "Known Drug",
+                "probability_of_success_delta": 0.15,
+                "peak_sales_delta_pct": 0.1,
+                "launch_year_delta": 0,
+                "discount_rate_delta": 0.0,
+            }
+        ],
+    }
+
 
 if __name__ == "__main__":
     unittest.main()

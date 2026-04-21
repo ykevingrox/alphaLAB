@@ -141,6 +141,46 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            target_price_path = Path(tmpdir) / "target_price.json"
+            target_price_path.write_text(
+                json.dumps(
+                    {
+                        "as_of_date": "2026-04-20",
+                        "currency": "HKD",
+                        "share_price": 12.4,
+                        "shares_outstanding": 1000000000,
+                        "cash_and_equivalents": 1200000000,
+                        "total_debt": 300000000,
+                        "expected_dilution_pct": 0.0,
+                        "assets": [
+                            {
+                                "name": "Known Drug",
+                                "indication": "Cancer",
+                                "phase": "Phase 2",
+                                "peak_sales": 3000000000,
+                                "probability_of_success": 0.35,
+                                "economics_share": 1.0,
+                                "operating_margin": 0.35,
+                                "launch_year": 2030,
+                                "discount_rate": 0.12,
+                                "source": "model.xlsx",
+                                "source_date": "2026-04-20",
+                            }
+                        ],
+                        "event_impacts": [
+                            {
+                                "event_type": "positive_readout",
+                                "asset_name": "Known Drug",
+                                "probability_of_success_delta": 0.15,
+                                "peak_sales_delta_pct": 0.1,
+                                "launch_year_delta": 0,
+                                "discount_rate_delta": 0.0,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = run_single_company_research(
                 company="Example Biotech",
                 ticker="9999.HK",
@@ -150,6 +190,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 financials_path=financials_path,
                 competitors_path=competitors_path,
                 valuation_path=valuation_path,
+                target_price_assumptions_path=target_price_path,
                 client=client,
                 now=now,
             )
@@ -169,6 +210,11 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(result.cash_runway_estimate.runway_months, 18)
             self.assertIsNotNone(result.valuation_metrics)
             self.assertEqual(result.valuation_metrics.enterprise_value, 2300)
+            self.assertIsNotNone(result.target_price_analysis)
+            self.assertGreater(
+                result.target_price_analysis.probability_weighted_target_price,
+                0,
+            )
             self.assertGreater(result.scorecard.total_score, 55)
             self.assertEqual(result.scorecard.bucket, "watchlist")
             self.assertEqual(len(result.memo.catalysts), 2)
@@ -186,6 +232,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(summary["cash_runway_months"], 18)
             self.assertEqual(summary["enterprise_value"], 2300)
             self.assertEqual(summary["revenue_multiple"], 11.5)
+            self.assertGreater(summary["probability_weighted_target_price"], 0)
+            self.assertIsNotNone(summary["target_price_summary"])
             self.assertEqual(summary["watchlist_score"], result.scorecard.total_score)
             self.assertEqual(summary["watchlist_bucket"], "watchlist")
             self.assertEqual(summary["input_warning_count"], 1)
@@ -204,6 +252,9 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIsNotNone(artifacts.cash_runway)
             self.assertIsNotNone(artifacts.valuation)
             self.assertIsNotNone(artifacts.scorecard)
+            self.assertIsNotNone(artifacts.event_impact)
+            self.assertIsNotNone(artifacts.target_price_scenarios)
+            self.assertIsNotNone(artifacts.target_price_summary_csv)
             self.assertIsNotNone(artifacts.memo_json)
             self.assertIsNotNone(artifacts.memo_markdown)
             for path in (
@@ -219,6 +270,9 @@ class SingleCompanyResearchTest(unittest.TestCase):
                 artifacts.cash_runway,
                 artifacts.valuation,
                 artifacts.scorecard,
+                artifacts.event_impact,
+                artifacts.target_price_scenarios,
+                artifacts.target_price_summary_csv,
                 artifacts.memo_json,
                 artifacts.memo_markdown,
             ):
@@ -243,6 +297,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Competitive Landscape", memo_markdown)
             self.assertIn("## Skeptical Review", memo_markdown)
             self.assertIn("## Watchlist Scorecard", memo_markdown)
+            self.assertIn("## Catalyst-Adjusted Valuation", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
@@ -267,10 +322,12 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["competitive_matches"], 1)
             self.assertEqual(manifest["counts"]["cash_runway"], 1)
             self.assertEqual(manifest["counts"]["valuation"], 1)
+            self.assertEqual(manifest["counts"]["target_price"], 1)
             self.assertEqual(manifest["counts"]["scorecard"], 1)
             self.assertIn("financials", manifest["input_validation"])
             self.assertIn("competitors", manifest["input_validation"])
             self.assertIn("valuation", manifest["input_validation"])
+            self.assertIn("target_price", manifest["input_validation"])
             self.assertIn(
                 "replace placeholder source",
                 manifest["input_validation"]["financials"]["warnings"],
@@ -280,6 +337,10 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(cash_runway["estimate"]["runway_months"], 18)
             valuation = json.loads(Path(artifacts.valuation).read_text())
             self.assertEqual(valuation["metrics"]["enterprise_value"], 2300)
+            event_impact = json.loads(Path(artifacts.event_impact).read_text())
+            self.assertGreater(event_impact["event_value_delta"], 0)
+            target_price_csv = Path(artifacts.target_price_summary_csv).read_text()
+            self.assertIn("base,HKD", target_price_csv)
             scorecard = json.loads(Path(artifacts.scorecard).read_text())
             self.assertEqual(scorecard["bucket"], "watchlist")
             competitive_matches = json.loads(

@@ -72,7 +72,8 @@ cash runway, curated competitive landscape findings, valuation context, key
 risks, evidence, and follow-up questions. A deterministic data-quality finding
 flags missing inputs and validation warnings. A deterministic skeptical review
 finding now produces counter-thesis risks from current structured inputs.
-Catalyst-adjusted target price ranges and deeper LLM scientific critique are
+When target-price assumptions are supplied, the memo includes a
+`Catalyst-Adjusted Valuation` section. Deeper LLM scientific critique is
 pending.
 
 - Combine pipeline, trial, catalyst, competition, cash runway, and valuation
@@ -99,10 +100,12 @@ advanced portfolio controls are pending.
 
 ## Phase 8: Catalyst-Adjusted Target Price Ranges
 
-Status: partially implemented. The current system has catalyst calendars,
-catalyst-change alerts, curated valuation context, watchlist guardrails, and
-target-price assumption templates and validation. It does not yet calculate
-asset rNPV, event-impact deltas, or target price ranges.
+Status: implemented as a first-pass deterministic model. The current system has
+catalyst calendars, catalyst-change alerts, curated valuation context,
+watchlist guardrails, target-price assumption templates and validation, asset
+rNPV calculation, event-impact deltas, target price ranges, standalone
+`event-impact` CLI output, and optional research memo integration. Deeper
+calibration and backtesting remain Phase 9 work.
 
 - Add target-price assumptions template and validation.
 - Add transparent asset rNPV calculation.

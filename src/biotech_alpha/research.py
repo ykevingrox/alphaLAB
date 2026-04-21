@@ -57,6 +57,19 @@ from biotech_alpha.scorecard import (
     scorecard_payload,
 )
 from biotech_alpha.skeptic import scientific_skeptic_finding
+from biotech_alpha.target_price import (
+    TargetPriceAnalysis,
+    TargetPriceAssumptions,
+    build_target_price_analysis,
+    event_impact_payload,
+    load_target_price_assumptions,
+    target_price_finding,
+    target_price_payload,
+    target_price_summary,
+    target_price_validation_report_as_dict,
+    validate_target_price_assumptions_file,
+    write_target_price_summary_csv,
+)
 from biotech_alpha.valuation import (
     ValuationMetrics,
     ValuationSnapshot,
@@ -101,6 +114,9 @@ class ResearchArtifacts:
     cash_runway: Path | None = None
     valuation: Path | None = None
     scorecard: Path | None = None
+    event_impact: Path | None = None
+    target_price_scenarios: Path | None = None
+    target_price_summary_csv: Path | None = None
     memo_json: Path | None = None
     memo_markdown: Path | None = None
 
@@ -122,6 +138,8 @@ class SingleCompanyResearchResult:
     cash_runway_estimate: CashRunwayEstimate | None
     valuation_snapshot: ValuationSnapshot | None
     valuation_metrics: ValuationMetrics | None
+    target_price_assumptions: TargetPriceAssumptions | None
+    target_price_analysis: TargetPriceAnalysis | None
     scorecard: WatchlistScorecard
     input_validation: dict[str, Any]
     clinical_trial_finding: AgentFinding
@@ -141,6 +159,7 @@ def run_single_company_research(
     competitors_path: str | Path | None = None,
     financials_path: str | Path | None = None,
     valuation_path: str | Path | None = None,
+    target_price_assumptions_path: str | Path | None = None,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
     limit: int = 20,
@@ -190,6 +209,16 @@ def run_single_company_research(
         if valuation_path
         else None
     )
+    target_price_assumptions = (
+        load_target_price_assumptions(target_price_assumptions_path)
+        if target_price_assumptions_path
+        else None
+    )
+    target_price_analysis = (
+        build_target_price_analysis(target_price_assumptions)
+        if target_price_assumptions
+        else None
+    )
     competitors = (
         load_competitor_assets(competitors_path)
         if competitors_path
@@ -211,6 +240,7 @@ def run_single_company_research(
         competitors_path=competitors_path,
         financials_path=financials_path,
         valuation_path=valuation_path,
+        target_price_assumptions_path=target_price_assumptions_path,
     )
     search_terms = _clinical_trial_search_terms(
         primary_term=query,
@@ -273,6 +303,7 @@ def run_single_company_research(
         cash_runway_estimate=cash_runway_estimate,
         valuation_snapshot=valuation_snapshot,
         valuation_metrics=valuation_metrics,
+        target_price_analysis=target_price_analysis,
         scorecard=scorecard,
         skeptic_finding=skeptic_preview,
         input_validation=input_validation,
@@ -302,6 +333,8 @@ def run_single_company_research(
             cash_runway_estimate=cash_runway_estimate,
             valuation_snapshot=valuation_snapshot,
             valuation_metrics=valuation_metrics,
+            target_price_assumptions=target_price_assumptions,
+            target_price_analysis=target_price_analysis,
             scorecard=scorecard,
             input_validation=input_validation,
             memo=memo,
@@ -321,6 +354,8 @@ def run_single_company_research(
         cash_runway_estimate=cash_runway_estimate,
         valuation_snapshot=valuation_snapshot,
         valuation_metrics=valuation_metrics,
+        target_price_assumptions=target_price_assumptions,
+        target_price_analysis=target_price_analysis,
         scorecard=scorecard,
         input_validation=input_validation,
         clinical_trial_finding=clinical_finding,
@@ -359,6 +394,21 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
         "revenue_multiple": (
             result.valuation_metrics.revenue_multiple
             if result.valuation_metrics
+            else None
+        ),
+        "probability_weighted_target_price": (
+            result.target_price_analysis.probability_weighted_target_price
+            if result.target_price_analysis
+            else None
+        ),
+        "implied_upside_downside_pct": (
+            result.target_price_analysis.implied_upside_downside_pct
+            if result.target_price_analysis
+            else None
+        ),
+        "target_price_summary": (
+            target_price_summary(result.target_price_analysis)
+            if result.target_price_analysis
             else None
         ),
         "watchlist_score": result.scorecard.total_score,
@@ -446,6 +496,19 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
             lines.append(f"- {finding.summary}")
     else:
         lines.append("- No watchlist scorecard was generated.")
+    lines.extend(["", "## Catalyst-Adjusted Valuation", ""])
+    target_price_findings = [
+        finding
+        for finding in memo.findings
+        if finding.agent_name == "target_price_scenario_agent"
+    ]
+    if target_price_findings:
+        for finding in target_price_findings:
+            lines.append(f"- {finding.summary}")
+            for risk in finding.risks:
+                lines.append(f"  - {risk}")
+    else:
+        lines.append("- No catalyst-adjusted target price range was generated.")
     lines.extend(["", "## Upcoming Clinical Catalysts", ""])
     if memo.catalysts:
         for catalyst in memo.catalysts:
@@ -645,6 +708,7 @@ def _input_validation_reports(
     competitors_path: str | Path | None,
     financials_path: str | Path | None,
     valuation_path: str | Path | None,
+    target_price_assumptions_path: str | Path | None,
 ) -> dict[str, Any]:
     reports: dict[str, Any] = {}
     if pipeline_assets_path:
@@ -662,6 +726,10 @@ def _input_validation_reports(
     if valuation_path:
         reports["valuation"] = valuation_validation_report_as_dict(
             validate_valuation_snapshot_file(valuation_path)
+        )
+    if target_price_assumptions_path:
+        reports["target_price"] = target_price_validation_report_as_dict(
+            validate_target_price_assumptions_file(target_price_assumptions_path)
         )
     return reports
 
@@ -686,6 +754,7 @@ def _build_clinical_first_memo(
     cash_runway_estimate: CashRunwayEstimate | None,
     valuation_snapshot: ValuationSnapshot | None,
     valuation_metrics: ValuationMetrics | None,
+    target_price_analysis: TargetPriceAnalysis | None,
     scorecard: WatchlistScorecard,
     skeptic_finding: AgentFinding,
     input_validation: dict[str, Any],
@@ -746,6 +815,13 @@ def _build_clinical_first_memo(
                 metrics=valuation_metrics,
             )
         )
+    if target_price_analysis:
+        findings.append(
+            target_price_finding(
+                company=context.company,
+                analysis=target_price_analysis,
+            )
+        )
     findings.append(skeptic_finding)
     findings.append(scorecard_finding(company=context.company, scorecard=scorecard))
     evidence = (*trial_evidence, *asset_evidence)
@@ -800,6 +876,13 @@ def _build_clinical_first_memo(
             f" Enterprise value was estimated at "
             f"{valuation_metrics.enterprise_value:g} {valuation_metrics.currency}."
         )
+    if target_price_analysis:
+        summary += (
+            f" Catalyst-adjusted probability-weighted target price was "
+            f"{target_price_analysis.probability_weighted_target_price:.2f} "
+            f"{target_price_analysis.currency}, with implied upside/downside of "
+            f"{target_price_analysis.implied_upside_downside_pct:.1f}%."
+        )
 
     return InvestmentMemo(
         company=context.company,
@@ -832,6 +915,8 @@ def _build_clinical_first_memo(
             "products.",
             "Estimate cash runway and financing risk from the latest financial "
             "statement.",
+            "Review catalyst-adjusted target-price assumptions before using any "
+            "price range as research guidance.",
         ),
         evidence=evidence,
     )
@@ -992,6 +1077,8 @@ def _write_research_artifacts(
     cash_runway_estimate: CashRunwayEstimate | None,
     valuation_snapshot: ValuationSnapshot | None,
     valuation_metrics: ValuationMetrics | None,
+    target_price_assumptions: TargetPriceAssumptions | None,
+    target_price_analysis: TargetPriceAnalysis | None,
     scorecard: WatchlistScorecard,
     input_validation: dict[str, Any],
     memo: InvestmentMemo,
@@ -1015,6 +1102,13 @@ def _write_research_artifacts(
     cash_runway_path = processed_dir / f"{run_id}_cash_runway.json"
     valuation_path = processed_dir / f"{run_id}_valuation.json"
     scorecard_path = processed_dir / f"{run_id}_scorecard.json"
+    event_impact_path = processed_dir / f"{run_id}_event_impact.json"
+    target_price_scenarios_path = (
+        processed_dir / f"{run_id}_target_price_scenarios.json"
+    )
+    target_price_summary_csv_path = (
+        processed_dir / f"{run_id}_target_price_summary.csv"
+    )
     memo_json_path = processed_dir / f"{run_id}_memo.json"
     memo_markdown_path = memo_dir / f"{run_id}_memo.md"
 
@@ -1096,6 +1190,19 @@ def _write_research_artifacts(
             valuation_path,
             valuation_payload(valuation_snapshot, valuation_metrics),
         )
+    if target_price_assumptions and target_price_analysis:
+        _write_json(
+            event_impact_path,
+            event_impact_payload(target_price_assumptions, target_price_analysis),
+        )
+        _write_json(
+            target_price_scenarios_path,
+            target_price_payload(target_price_assumptions, target_price_analysis),
+        )
+        write_target_price_summary_csv(
+            target_price_summary_csv_path,
+            target_price_analysis,
+        )
     _write_json(scorecard_path, scorecard_payload(scorecard))
     _write_json(memo_json_path, asdict(memo))
     memo_markdown_path.write_text(memo_to_markdown(memo), encoding="utf-8")
@@ -1121,6 +1228,21 @@ def _write_research_artifacts(
             else None
         ),
         scorecard=scorecard_path,
+        event_impact=(
+            event_impact_path
+            if target_price_assumptions and target_price_analysis
+            else None
+        ),
+        target_price_scenarios=(
+            target_price_scenarios_path
+            if target_price_assumptions and target_price_analysis
+            else None
+        ),
+        target_price_summary_csv=(
+            target_price_summary_csv_path
+            if target_price_assumptions and target_price_analysis
+            else None
+        ),
         memo_json=memo_json_path,
         memo_markdown=memo_markdown_path,
     )
@@ -1143,6 +1265,7 @@ def _write_research_artifacts(
                 "competitive_matches": len(competitive_matches),
                 "cash_runway": 1 if cash_runway_estimate else 0,
                 "valuation": 1 if valuation_metrics else 0,
+                "target_price": 1 if target_price_analysis else 0,
                 "scorecard": 1,
                 "catalysts": len(memo.catalysts),
                 "evidence": len(memo.evidence),

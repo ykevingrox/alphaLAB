@@ -96,11 +96,12 @@ Current CLI runs write:
 - Optional cash-runway JSON under `data/processed/single_company/`
 - Optional valuation JSON under `data/processed/single_company/`
 - Curated target-price assumptions under `data/input/`
+- Optional event-impact and target-price scenario JSON/CSV artifacts under
+  `data/processed/single_company/`
 - Watchlist scorecard JSON under `data/processed/single_company/`
 - Local ranked watchlist JSON or CSV under a user-selected output path,
   including research-only position and concentration guardrails
 - Local catalyst-change alert JSON or CSV under a user-selected output path
-- Future event-impact and target-price scenario JSON/CSV artifacts
 - Memo JSON and Markdown under `data/processed/single_company/` and
   `data/memos/`
 
@@ -143,7 +144,8 @@ biotech-alpha research \
   --pipeline-assets data/input/akeso_pipeline_assets.json \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
-  --valuation data/input/akeso_valuation.json
+  --valuation data/input/akeso_valuation.json \
+  --target-price-assumptions data/input/akeso_target_price_assumptions.json
 ```
 
 Current helper commands:
@@ -160,13 +162,10 @@ Current helper commands:
 - `valuation-validate`
 - `target-price-template`
 - `target-price-validate`
+- `event-impact`
 - `research`
 - `watchlist-rank`
 - `catalyst-alerts`
-
-Planned target-price command:
-
-- `event-impact`
 
 Future UI:
 

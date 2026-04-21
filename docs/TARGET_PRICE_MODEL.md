@@ -63,6 +63,11 @@ For pre-profit biotech companies, the pipeline rNPV block will often dominate
 the target-price range. For revenue-stage companies, revenue multiple context
 can be used as a cross-check, not as the only valuation method.
 
+The current deterministic implementation keeps commercial business value and
+platform optionality at zero until explicit curated inputs are added. It uses
+net cash plus pipeline rNPV, then divides by diluted shares after the supplied
+`expected_dilution_pct`.
+
 ## Asset rNPV
 
 A first-pass asset rNPV can be approximated with:
@@ -153,7 +158,7 @@ Suggested shape:
 
 ## Current CLI
 
-The implemented template and validation commands are:
+The implemented template, validation, and event-impact commands are:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
@@ -163,18 +168,26 @@ PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
-```
 
-The planned event-impact command is:
-
-```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
   --company "Akeso" \
   --assumptions data/input/akeso_target_price_assumptions.json
 ```
 
-The first implementation can read saved catalyst alerts and curated assumptions,
-then write:
+The full research command can also include the same assumption file:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli research \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --pipeline-assets data/input/akeso_pipeline_assets.json \
+  --financials data/input/akeso_financials.json \
+  --competitors data/input/akeso_competitors.json \
+  --valuation data/input/akeso_valuation.json \
+  --target-price-assumptions data/input/akeso_target_price_assumptions.json
+```
+
+The standalone command writes:
 
 - `event_impact.json`
 - `target_price_scenarios.json`
@@ -183,12 +196,14 @@ then write:
 ## Implementation Plan
 
 1. Add curated target-price assumptions template and validator. Implemented.
-2. Add transparent asset rNPV calculation.
-3. Add event-impact rules for common catalyst types.
+2. Add transparent asset rNPV calculation. Implemented.
+3. Add event-impact assumption deltas for catalyst types. Implemented.
 4. Add target-price scenario output with bear, base, and bull cases.
-5. Add sensitivity table for probability of success, peak sales, and discount
-   rate.
-6. Add memo section: `Catalyst-Adjusted Valuation`.
+   Implemented.
+5. Add sensitivity points for probability of success, peak sales, and discount
+   rate. Implemented as first-pass text.
+6. Add memo section: `Catalyst-Adjusted Valuation`. Implemented.
 7. Add tests for missing assumptions, negative values, and scenario math.
+   Implemented.
 8. Add backtest hooks later to compare historical catalyst events against
    price reactions without look-ahead bias.

@@ -193,7 +193,8 @@ magic price.
 Current implementation note: the CLI accepts curated valuation snapshot JSON via
 `--valuation`, validates it with `valuation-validate`, calculates market cap,
 enterprise value, and revenue multiple where possible, and emits a
-`valuation_agent` finding.
+`valuation_agent` finding. Target-price scenario valuation is handled by
+`event-impact` or `research --target-price-assumptions`.
 
 Outputs:
 
@@ -212,10 +213,10 @@ Outputs:
 
 Purpose: translate catalyst changes into assumption deltas for valuation.
 
-Planned implementation note: the current CLI can detect local catalyst calendar
-changes with `catalyst-alerts`. A future catalyst impact layer should map those
-changes to probability of success, launch timing, peak sales, dilution, or
-competitive intensity assumptions.
+Current implementation note: the CLI can detect local catalyst calendar changes
+with `catalyst-alerts`. Curated target-price assumptions can then map a catalyst
+event to probability of success, launch timing, peak sales, or discount-rate
+deltas through the `event-impact` command.
 
 Outputs:
 

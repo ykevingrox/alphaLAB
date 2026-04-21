@@ -52,14 +52,14 @@ Current implementation status:
   and monitoring rules for single-company follow-up prioritization.
 - Implemented: local watchlist ranking, first-pass portfolio guardrails,
   latest-run filtering, and catalyst-change alerts across saved runs.
-- Implemented: target-price assumption template and validation for future
-  catalyst-adjusted rNPV scenarios.
+- Implemented: target-price assumption template, validation, deterministic
+  rNPV scenario calculation, event-impact artifact output, and optional memo
+  integration.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
 - Pending: automatic company document ingestion, automatic financial statement
-  parsing, automatic competitor discovery, catalyst-adjusted target price
-  ranges, event-impact modeling, scenario valuation, and deeper LLM scientific
-  critique.
+  parsing, automatic competitor discovery, calibrated historical
+  catalyst-reaction backtests, and deeper LLM scientific critique.
 
 ## Non-Goals For MVP
 
@@ -175,8 +175,8 @@ Near-term success criteria for the current CLI slice:
 - A research run can emit trial summary and catalyst calendar CSV files.
 - A research run can produce a memo with source-backed evidence, key risks,
   curated competitive landscape findings, valuation context, skeptical review,
-  watchlist scorecard, follow-up questions, and a manifest suitable for
-  audit/reproduction.
+  watchlist scorecard, optional catalyst-adjusted valuation section, follow-up
+  questions, and a manifest suitable for audit/reproduction.
 
 Near-term success criteria for the target-price extension:
 

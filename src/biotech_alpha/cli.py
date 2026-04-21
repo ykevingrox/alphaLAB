@@ -35,8 +35,14 @@ from biotech_alpha.pipeline import (
 )
 from biotech_alpha.research import result_summary, run_single_company_research
 from biotech_alpha.target_price import (
+    build_target_price_analysis,
+    load_target_price_assumptions,
+    target_price_payload,
+    target_price_summary,
+    target_price_summary_csv_text,
     target_price_validation_report_as_dict,
     validate_target_price_assumptions_file,
+    write_target_price_artifacts,
     write_target_price_assumptions_template,
 )
 from biotech_alpha.valuation import (
@@ -116,6 +122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     research_parser.add_argument(
         "--valuation",
         help="Optional JSON file containing a market valuation snapshot.",
+    )
+    research_parser.add_argument(
+        "--target-price-assumptions",
+        help="Optional JSON file containing catalyst-adjusted target-price inputs.",
     )
     research_parser.add_argument(
         "--no-asset-queries",
@@ -358,6 +368,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Target-price assumptions JSON file to validate.",
     )
 
+    event_impact_parser = subparsers.add_parser(
+        "event-impact",
+        help="Calculate catalyst-adjusted target-price scenarios.",
+    )
+    event_impact_parser.add_argument(
+        "--company",
+        required=True,
+        help="Company name for artifact paths and output labels.",
+    )
+    event_impact_parser.add_argument(
+        "--assumptions",
+        required=True,
+        help="Target-price assumptions JSON file to calculate.",
+    )
+    event_impact_parser.add_argument(
+        "--output-dir",
+        default="data/processed/target_price",
+        help="Directory for event-impact artifacts.",
+    )
+    event_impact_parser.add_argument(
+        "--format",
+        choices=("json", "csv"),
+        default="json",
+        help="Output format for stdout. Defaults to json.",
+    )
+    event_impact_parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Run without writing target-price artifacts to disk.",
+    )
+
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient()
 
@@ -381,6 +422,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             competitors_path=args.competitors,
             financials_path=args.financials,
             valuation_path=args.valuation,
+            target_price_assumptions_path=args.target_price_assumptions,
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
             limit=args.limit,
@@ -589,6 +631,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         return 1 if report.errors else 0
+
+    if args.command == "event-impact":
+        assumptions = load_target_price_assumptions(args.assumptions)
+        analysis = build_target_price_analysis(assumptions)
+        artifacts = {}
+        if not args.no_save:
+            artifacts = {
+                key: str(path)
+                for key, path in write_target_price_artifacts(
+                    output_dir=args.output_dir,
+                    company=args.company,
+                    assumptions=assumptions,
+                    analysis=analysis,
+                ).items()
+            }
+        if args.format == "csv":
+            print(target_price_summary_csv_text(analysis), end="")
+            return 0
+
+        print(
+            json.dumps(
+                {
+                    "company": args.company,
+                    "summary": target_price_summary(analysis),
+                    "analysis": target_price_payload(assumptions, analysis)[
+                        "analysis"
+                    ],
+                    "artifacts": artifacts,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
 
     parser.error(f"Unknown command: {args.command}")
     return 2

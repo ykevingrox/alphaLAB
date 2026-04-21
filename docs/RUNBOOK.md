@@ -134,6 +134,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
+  --target-price-assumptions data/input/akeso_target_price_assumptions.json \
   --limit 20
 ```
 
@@ -194,6 +195,9 @@ The `research` command prints a compact JSON summary:
 - `cash_runway_months`: runway estimate if financial input was supplied.
 - `enterprise_value`: enterprise value if valuation input was supplied.
 - `revenue_multiple`: revenue multiple if revenue was supplied.
+- `probability_weighted_target_price`: target price if assumptions were
+  supplied.
+- `implied_upside_downside_pct`: implied move versus the supplied share price.
 - `watchlist_score`: deterministic 0-100 follow-up priority score.
 - `watchlist_bucket`: score bucket for single-company triage.
 - `input_warning_count`: total validation warnings attached to the run.
@@ -274,11 +278,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts \
   --output data/processed/catalyst_alerts.csv
 ```
 
-## Planned Target Price Workflow
+## Target Price Workflow
 
-The CLI can already create and validate target-price assumption files. The next
-valuation extension should connect catalyst alerts to target price ranges. The
-planned event-impact command is:
+The CLI can create, validate, and calculate catalyst-adjusted target-price
+assumption files. Run the standalone event-impact command with a reviewed
+assumption file:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
@@ -286,7 +290,13 @@ PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
   --assumptions data/input/akeso_target_price_assumptions.json
 ```
 
-Expected outputs:
+This writes:
+
+- `data/processed/target_price/<company>/event_impact.json`
+- `data/processed/target_price/<company>/target_price_scenarios.json`
+- `data/processed/target_price/<company>/target_price_summary.csv`
+
+The outputs include:
 
 - Bear, base, bull, and probability-weighted target price ranges.
 - Asset rNPV by scenario.
@@ -331,9 +341,9 @@ If validation warns about placeholders:
 
 - Pipeline, financial, competitor, valuation, and target-price assumption inputs
   are curated JSON files.
-- Valuation input provides context only; target-price assumptions can be
-  validated, but event-impact modeling and rNPV target ranges are not
-  implemented yet.
+- Target-price output is a deterministic first-pass rNPV model. It does not yet
+  include launch curves, patent cliffs, geography splits, or calibrated
+  historical event-reaction backtests.
 - Automatic PDF/report extraction is not implemented yet.
 - China drug trial registry ingestion is not implemented yet.
 - Competitive matching is deterministic and coarse: target and indication only.

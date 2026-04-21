@@ -3,9 +3,9 @@
 Biotech Alpha Lab is an AI-assisted investment research workspace focused on
 Hong Kong-listed innovative drug companies. The first version is deliberately
 research-first: it helps collect evidence, structure pipeline data, track
-clinical catalysts, compare competitors, and produce long-term investment
-memos. It can evolve toward catalyst-adjusted target price ranges, but it does
-not place trades.
+clinical catalysts, compare competitors, produce long-term investment memos,
+and generate first-pass catalyst-adjusted target price ranges when curated
+assumptions are supplied. It does not place trades.
 
 ## Initial Scope
 
@@ -55,7 +55,7 @@ src/biotech_alpha/
   research.py         Single-company research pipeline orchestration
   scorecard.py        Deterministic watchlist scoring and monitoring rules
   skeptic.py          Deterministic skeptical counter-thesis review
-  target_price.py     Target-price assumptions templates and validation
+  target_price.py     Target-price assumptions, rNPV, and scenarios
   valuation.py        Valuation snapshot loading and context metrics
   watchlist.py        Local ranking over saved single-company research runs
   agents.py           Agent interface sketches
@@ -133,6 +133,10 @@ PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli event-impact \
+  --company "Akeso" \
+  --assumptions data/input/akeso_target_price_assumptions.json
 ```
 
 Run the first single-company research pipeline:
@@ -145,6 +149,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
+  --target-price-assumptions data/input/akeso_target_price_assumptions.json \
   --limit 20
 ```
 
@@ -177,9 +182,10 @@ data/memos/
 Each saved run includes a manifest JSON, raw registry responses, normalized
 trial JSON, a trial-summary CSV table, catalyst-calendar CSV table, pipeline
 asset JSON, asset-trial match JSON, competitor asset JSON, competitive-match
-JSON, optional cash-runway JSON, optional valuation JSON, and memo outputs.
-The manifest also records input validation reports so placeholder fields and
-other data-quality warnings remain attached to the run.
+JSON, optional cash-runway JSON, optional valuation JSON, optional
+event-impact JSON, optional target-price scenario JSON and CSV, and memo
+outputs. The manifest also records input validation reports so placeholder
+fields and other data-quality warnings remain attached to the run.
 
 When `--pipeline-assets` is provided, the pipeline searches ClinicalTrials.gov
 by the company search term plus each asset `name` and `aliases`, then deduplicates
@@ -277,12 +283,12 @@ If `market_cap` is omitted, provide `share_price` and `shares_outstanding`.
 The current valuation agent calculates enterprise value and revenue multiple
 when revenue is available.
 
-Target-price work is intentionally separated from the current valuation snapshot.
-The planned model is documented in
-[docs/TARGET_PRICE_MODEL.md](docs/TARGET_PRICE_MODEL.md). The current CLI can
-generate and validate curated target-price assumption files. The next step is
-to connect those assumptions to catalyst event impacts and rNPV math to produce
-bear, base, bull, and probability-weighted target price ranges.
+Target-price work is intentionally separated from the current valuation
+snapshot. The model is documented in
+[docs/TARGET_PRICE_MODEL.md](docs/TARGET_PRICE_MODEL.md). The CLI can generate
+and validate curated target-price assumption files, then calculate event-impact
+deltas, asset rNPV, bear/base/bull ranges, and a probability-weighted target
+price through `event-impact` or `research --target-price-assumptions`.
 
 The memo also includes a deterministic skeptical review. It turns missing
 inputs, weak clinical coverage, unmatched assets, short runway, high valuation
