@@ -77,7 +77,7 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 80 unit tests passed.
+- 82 unit tests passed.
 - Compile check passed.
 - `git diff --check` passed.
 - 88-character scan passed.
@@ -89,7 +89,8 @@ Latest smoke command:
   --company "映恩生物" \
   --ticker "09606.HK" \
   --auto-inputs \
-  --limit 3
+  --overwrite-auto-inputs \
+  --limit 2
 ```
 
 Latest smoke result:

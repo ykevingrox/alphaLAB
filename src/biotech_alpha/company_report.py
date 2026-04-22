@@ -109,8 +109,9 @@ MISSING_INPUT_SPECS = {
         "severity": "medium",
         "reason": "Valuation snapshot is needed for market context.",
         "next_action": (
-            "Create the valuation template, then fill market cap or share price "
-            "and shares outstanding, cash, debt, revenue if available, and source."
+            "Until a source-backed market-data connector exists, create the "
+            "valuation template and fill market cap or share price, shares "
+            "outstanding, cash, debt, revenue if available, and source."
         ),
         "template_command": "valuation-template",
     },
