@@ -443,5 +443,6 @@ adapter, and starting a technical / K-line agent.
 - **Done** — Multi-source macro-signals fallback implementation:
   `Yahoo -> Stooq -> stale cache`, preserving current
   `macro_context.live_signals` output contract and audit keys.
-- **Not started** — Short exponential backoff on Yahoo 429/503 inside
-  `hk_macro_signals_yahoo` so first cold runs warm cache more often.
+- **Deferred** — Short exponential backoff on Yahoo 429/503 inside
+  `hk_macro_signals_yahoo` (operator preference is to rely on Stooq +
+  stale-cache fallback for now, then revisit retries later).

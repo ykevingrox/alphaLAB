@@ -550,54 +550,43 @@ multi-source chain
 (`CachingMacroSignalsProvider`) keeps back-to-back HK biotech runs to
 one upstream fetch per TTL. Anthropic provider support is implemented
 through the same `LLMClient` protocol; remaining M4 work is live smoke
-validation and sector-news enrichment.
+validation and extraction-quality hardening.
 
 Two immediate tracks:
 
-- Anthropic live smoke + trace verification. Runtime routing now
-  supports both `openai-compatible` and `anthropic` providers; we
-  still need one real Anthropic macro-context run to validate network
-  behavior and trace fields against production responses.
-- Macro-signals live smoke + resiliency tuning. With fallback +
+- Macro-signals live smoke + resiliency check. With fallback +
   breadth + sector news implemented, capture one successful four-agent
-  run showing non-`insufficient_data` macro regime, then add short
-  upstream backoff for Yahoo 429/503.
+  run showing non-`insufficient_data` macro regime and cache reuse.
+- Extraction-quality hardening. Continue reducing malformed
+  milestone/placeholder artifacts that inflate triage false positives.
 
 ### Next Action
 
-1. Run an Anthropic live smoke for `MacroContextLLMAgent`:
-   `BIOTECH_ALPHA_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` +
-   `--llm-agents macro-context` and confirm trace output fields
-   (`prompt_tokens`, `completion_tokens`, `finish_reason`) are
-   populated as expected.
-2. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
+1. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
    once Yahoo rate-limits recover (or from a fresh IP) and confirm
    the macro agent returns a non-`insufficient_data` regime with
    cited live values. Document the resulting
    `data/cache/macro_signals/HK_yahoo-hk+stooq-hk.json` and confirm
    that a subsequent run on a second HK ticker reuses it without
    hitting upstream.
-3. Add short retry/backoff on Yahoo 429/503 before surrendering to
-   fallback, so first cold runs warm cache more often.
+2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
+   operator preference). Validate that Stooq + stale-cache still
+   produce non-empty `live_signals` in degraded runs.
+3. Tighten deterministic extraction around malformed milestone strings
+   (e.g. legacy-year leakage) to improve upstream context quality for
+   triage/skeptic agents.
 
 ### Acceptance Criteria
 
-- `pytest` passes with the new `AnthropicLLMClient` unit tests.
-  Online tests are self-skipping behind
-  `BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1` and additionally require
-  `ANTHROPIC_API_KEY`.
-- `LLMConfig.provider="anthropic"` plus `ANTHROPIC_API_KEY=...` runs
-  `company-report --llm-agents macro-context` end-to-end and writes
-  a trace entry tagged with the Anthropic model.
 - `--macro-signals yahoo-hk` live smoke produces a non-
   `insufficient_data` macro regime at least once (recorded in
   `data/memos/<run_id>_llm_findings.json`) and the second back-to-back
   run shows `cache: hit` in its `macro_context.live_signals.notes`.
-- Anthropic live smoke succeeds and writes trace entries tagged with
-  the Anthropic model.
 - Multi-source fallback path keeps one-command runs resilient under
   single-provider outages and still writes stable
   `macro_context.live_signals` keys.
+- Anthropic implementation remains test-covered offline; online smoke
+  is deferred until an API key is available.
 - No regression on the existing four-agent Qwen smoke or on the
   macro-signals offline tests.
 
@@ -620,22 +609,19 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Anthropic live smoke + trace verification for `macro-context`.
-2. Add a short exponential backoff on Yahoo 429/503 inside
-   `hk_macro_signals_yahoo` before surrendering to the stale-cache
-   fallback, so the first cold run has a better chance of warming
-   the cache.
-3. Add auto competitor drafts once pipeline extraction is reliable.
-4. Keep broadening fixtures across representative HK biotech disclosure
+1. Four-agent live smoke with `--macro-signals yahoo-hk` capturing a
+   non-`insufficient_data` macro regime plus cache reuse on second run.
+2. Add auto competitor drafts once pipeline extraction is reliable.
+3. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-5. Tighten validator checks for stale placeholders and weak evidence
+4. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-6. Add a US-market sibling market-data provider, so the auto-draft path
+5. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-7. Consider a deterministic post-processor that turns LLM findings into
+6. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-8. Consider a `K-line technical agent` (name TBD) that reads a
+7. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.
