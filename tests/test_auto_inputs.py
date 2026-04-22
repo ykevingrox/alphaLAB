@@ -41,6 +41,8 @@ DB-1317 (ADAM9 ADC): A global Phase 1a/1b clinical trial in solid tumors.
 DB-1324 (CDH17 ADC): A global Phase 1/2 trial in gastrointestinal tumors.
 DB-2304 payload P2025 exposures increased dose-proportionally.
 Proprietary payloads P1003 and P1021 improved systemic stability.
+DB-1311/BNT324 is being evaluated in combination with BNT116.
+B7-H4 DB-1312/BG-C9074 Global mono solid tumors.
 """
 
 
@@ -63,6 +65,8 @@ class AutoInputsTest(unittest.TestCase):
         self.assertNotIn("P2025", names)
         self.assertNotIn("P1003", names)
         self.assertNotIn("P1021", names)
+        self.assertNotIn("BNT116", names)
+        self.assertNotIn("C9074", names)
         first = payload["assets"][0]
         self.assertEqual(first["aliases"], ["BNT323"])
         self.assertEqual(first["target"], "HER2")

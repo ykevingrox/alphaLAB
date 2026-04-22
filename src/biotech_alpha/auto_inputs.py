@@ -439,7 +439,8 @@ def _download_and_extract_document(
 
 def _asset_mentions(text: str) -> list[dict[str, str]]:
     pattern = re.compile(
-        r"\b(?!(?:NCT|RMB|HKD)\b)([A-Z]{1,6}-?\d{3,5}(?:/[A-Z]{1,6}-?\d{3,5})?)\b"
+        r"(?<!-)\b(?!(?:NCT|RMB|HKD)\b)"
+        r"([A-Z]{1,6}-?\d{3,5}(?:/[A-Z]{1,6}-?\d{3,5})?)\b"
     )
     mentions = []
     matches = list(pattern.finditer(text))
@@ -459,6 +460,11 @@ def _asset_mentions(text: str) -> list[dict[str, str]]:
             current=name,
         )
         if _payload_only_context(
+            name=name,
+            context=_nearby_text(text, match.start(), match.end()),
+        ):
+            continue
+        if _combination_partner_context(
             name=name,
             context=_nearby_text(text, match.start(), match.end()),
         ):
@@ -670,6 +676,18 @@ def _payload_only_context(*, name: str, context: str) -> bool:
     ):
         return True
     return False
+
+
+def _combination_partner_context(*, name: str, context: str) -> bool:
+    if not re.match(r"^[A-Z]{2,6}\d{3,5}$", name):
+        return False
+    return bool(
+        re.search(
+            rf"\bin combination with\s+{re.escape(name)}\b",
+            context,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _nearby_text(text: str, start: int, end: int, size: int = 120) -> str:
