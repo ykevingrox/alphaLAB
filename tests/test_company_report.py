@@ -101,6 +101,23 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(paths.conference_catalysts, conference)
             self.assertIsNone(paths.competitors)
 
+    def test_discovers_inputs_without_cross_ticker_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            wrong = root / "02142_hk_pipeline_assets.json"
+            right = root / "09606_hk_pipeline_assets.json"
+            wrong.write_text("{}", encoding="utf-8")
+            right.write_text("{}", encoding="utf-8")
+            identity = resolve_company_identity(
+                company="DualityBio",
+                ticker="09606.HK",
+                registry_path=None,
+            )
+
+            paths = discover_company_inputs(identity, input_dir=root)
+
+            self.assertEqual(paths.pipeline_assets, right)
+
     def test_company_report_runs_with_missing_input_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             client = FakeClinicalTrialsClient()

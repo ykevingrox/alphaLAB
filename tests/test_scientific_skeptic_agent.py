@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 
 from biotech_alpha.agent_runtime import AgentGraph, FactStore
 from biotech_alpha.agents import AgentContext
@@ -119,6 +121,35 @@ class ScientificSkepticLLMAgentHappyPathTest(unittest.TestCase):
 
         self.assertIsNotNone(step.error)
         self.assertIn("LLM call failed", step.error or "")
+
+    def test_writes_debug_prompt_when_store_has_debug_keys(self) -> None:
+        payload = {
+            "summary": "Pipeline concentration and milestone quality risks remain high.",
+            "bear_case": ["Lead assets have delayed timelines."],
+            "risks": [
+                {
+                    "description": "Lead milestones have slippage risk.",
+                    "severity": "high",
+                }
+            ],
+            "confidence": 0.6,
+        }
+        client = FakeLLMClient()
+        client.queue(json.dumps(payload))
+        agent = ScientificSkepticLLMAgent(llm_client=client)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FactStore(_initial_facts())
+            store.put("_llm_prompt_debug_dir", Path(tmpdir))
+            store.put("_llm_prompt_debug_run_id", "run123")
+            step = agent.run(_ctx(), store)
+            self.assertIsNone(step.error)
+            prompt_path = (
+                Path(tmpdir) / "run123_scientific_skeptic_llm_agent_prompt.txt"
+            )
+            self.assertTrue(prompt_path.exists())
+            text = prompt_path.read_text(encoding="utf-8")
+            self.assertIn("--- system ---", text)
+            self.assertIn("--- user ---", text)
 
 
 class ScientificSkepticLLMAgentInGraphTest(unittest.TestCase):

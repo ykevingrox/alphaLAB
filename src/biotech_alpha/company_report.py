@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -316,10 +317,24 @@ def _run_llm_agent_pipeline(
 
     trace_recorder = getattr(llm_client, "trace", None)
     graph = AgentGraph(trace_recorder=trace_recorder)
+    debug_prompt = os.getenv("BIOTECH_ALPHA_LLM_DEBUG_PROMPT", "").strip().lower()
+    debug_prompt_enabled = debug_prompt in {"1", "true", "yes", "on"}
+    prompt_debug_dir = Path(output_dir) / "traces"
+    if debug_prompt_enabled and save:
+        prompt_debug_dir.mkdir(parents=True, exist_ok=True)
 
     def _publish(ctx, store):  # noqa: ANN001 - runtime adapter
         for key, value in facts.items():
             store.put(key, value)
+        if debug_prompt_enabled and save:
+            store.put(
+                "_llm_prompt_debug_dir",
+                prompt_debug_dir,
+            )
+            store.put(
+                "_llm_prompt_debug_run_id",
+                research_result.run_id,
+            )
         return None
 
     graph.add(DeterministicAgent("publish_research_facts", _publish))
@@ -557,11 +572,13 @@ def discover_company_inputs(
 
     files = tuple(path for path in root.rglob("*.json") if path.is_file())
     tokens = _identity_tokens(identity)
+    ticker_tokens = _identity_ticker_tokens(identity)
     discovered: dict[str, Path | None] = {}
     for key, suffixes in INPUT_SUFFIXES.items():
         discovered[key] = _select_input_file(
             files=files,
             tokens=tokens,
+            ticker_tokens=ticker_tokens,
             suffixes=suffixes,
         )
 
@@ -916,6 +933,7 @@ def _select_input_file(
     *,
     files: tuple[Path, ...],
     tokens: tuple[str, ...],
+    ticker_tokens: tuple[str, ...],
     suffixes: tuple[str, ...],
 ) -> Path | None:
     candidates = []
@@ -924,6 +942,8 @@ def _select_input_file(
         if not any(suffix in stem for suffix in suffixes):
             continue
         if not tokens or not any(token in stem for token in tokens):
+            continue
+        if ticker_tokens and not all(token in stem for token in ticker_tokens):
             continue
         candidates.append(path)
     if not candidates:
@@ -947,6 +967,18 @@ def _identity_tokens(identity: CompanyIdentity) -> tuple[str, ...]:
             if len(token) >= 2:
                 tokens.append(token)
     return tuple(dict.fromkeys(tokens))
+
+
+def _identity_ticker_tokens(identity: CompanyIdentity) -> tuple[str, ...]:
+    ticker = (identity.ticker or "").strip().lower()
+    if not ticker:
+        return ()
+    tokens = [
+        token
+        for token in re.split(r"[^0-9a-zA-Z]+", ticker)
+        if len(token) >= 2 and any(character.isdigit() for character in token)
+    ]
+    return tuple(tokens)
 
 
 def _identity_slug(identity: CompanyIdentity) -> str:

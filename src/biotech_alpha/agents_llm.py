@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from biotech_alpha.agent_runtime import Agent, AgentStepResult, FactStore
@@ -150,6 +151,12 @@ class ScientificSkepticLLMAgent(Agent):
     ) -> AgentStepResult:
         variables = self._collect_variables(context, store)
         system, user = SCIENTIFIC_SKEPTIC_PROMPT.render(variables)
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
 
         try:
             call = self.llm_client.complete(
@@ -227,6 +234,34 @@ def _format_lines(items: Any) -> str:
         return items
     lines = [f"- {item}" for item in items if str(item).strip()]
     return "\n".join(lines) if lines else "(none)"
+
+
+def _write_debug_prompt(
+    *,
+    store: FactStore,
+    agent_name: str,
+    system: str,
+    user: str,
+) -> None:
+    debug_dir = store.get("_llm_prompt_debug_dir")
+    run_id = store.get("_llm_prompt_debug_run_id")
+    if not isinstance(debug_dir, Path) or not isinstance(run_id, str):
+        return
+    path = debug_dir / f"{run_id}_{agent_name}_prompt.txt"
+    path.write_text(
+        "\n".join(
+            (
+                f"agent={agent_name}",
+                "--- system ---",
+                system,
+                "",
+                "--- user ---",
+                user,
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
 
 
 def _json_block(value: Any) -> str:
