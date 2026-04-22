@@ -273,6 +273,12 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   on several HK biotech names hit Yahoo once per TTL and transient
   429s serve slightly-stale cache plus a note instead of losing the
   live feed. Gitignored under `data/cache/macro_signals/`.
+- **Planned (after Anthropic adapter)** — Multi-source macro-signals
+  fallback chain so one vendor outage does not erase macro context.
+  First target: `FallbackMacroSignalsProvider` with
+  `Yahoo -> Stooq -> stale cache`, while keeping
+  `macro_context.live_signals` schema and audit fields (`source`,
+  `fetched_at`, `notes`) stable.
 - **Not started** — One short retry on Yahoo 429/503 inside
   `hk_macro_signals_yahoo` before surrendering to the stale-cache
   fallback, so the first cold run has a better chance of warming the
@@ -432,6 +438,9 @@ adapter, and starting a technical / K-line agent.
   companies reuse one successful fetch; transient Yahoo 429s serve
   slightly-stale cache plus a note instead of losing the live feed.
 - **Not started** — Add a Claude adapter so the runtime is not single-vendor.
+- **Planned (after Claude adapter)** — Multi-source macro-signals
+  fallback implementation: `Yahoo -> Stooq -> stale cache`, preserving
+  current `macro_context.live_signals` output contract and audit keys.
 - **Not started** — Short exponential backoff on Yahoo 429/503 inside
-  `hk_macro_signals_yahoo`, plus extending the feed to HIBOR tenors,
+  `hk_macro_signals_yahoo`, then extend the feed to HIBOR tenors,
   Hang Seng Biotech sub-index, and source-tagged sector news headlines.

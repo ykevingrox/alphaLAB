@@ -523,11 +523,12 @@ Two immediate tracks:
   Chat Completions, so we need a parallel
   `AnthropicLLMClient` exposed through the same `LLMClient` protocol
   and routed by `LLMConfig.provider` (default "openai-compatible").
-- Macro-signals live smoke. With the cache in place a single
-  successful Yahoo fetch (from a fresh IP or after rate-limit
-  reset) will service every HK company for the next 6 hours; we
-  want to capture that run end-to-end and record the resulting
-  non-`insufficient_data` macro regime in the validation log.
+- Macro-signals live smoke + multi-source design. With the cache in
+  place a single successful Yahoo fetch (from a fresh IP or after
+  rate-limit reset) will service every HK company for the next 6
+  hours; we want to capture that run end-to-end and then define a
+  source fallback chain (`Yahoo -> Stooq -> stale cache`) so one
+  vendor's outage no longer gates macro context quality.
 
 ### Next Action
 
@@ -547,8 +548,16 @@ Two immediate tracks:
    `data/cache/macro_signals/HK_yahoo-hk.json` and confirm that a
    subsequent run on a second HK ticker reuses it without hitting
    Yahoo.
-3. Later: extend `hk_macro_signals_yahoo` to add HIBOR tenor levels,
-   `^HSBIO` sub-index, and source-tagged sector news headlines.
+3. Design-only checkpoint (no code yet): add a short section in
+   HANDOFF/ROADMAP that fixes the multi-source fallback plan and
+   sequencing:
+   - dependency: execute only after Anthropic adapter is merged;
+   - first implementation target: `FallbackMacroSignalsProvider`
+     chaining `Yahoo -> Stooq -> stale cache`;
+   - compatibility rule: keep the existing `live_signals` shape,
+     `source`, `fetched_at`, and `notes` keys stable;
+   - acceptance: one provider outage still yields non-empty
+     `live_signals` for HK runs when a secondary source is healthy.
 
 ### Acceptance Criteria
 
@@ -563,6 +572,10 @@ Two immediate tracks:
   `insufficient_data` macro regime at least once (recorded in
   `data/memos/<run_id>_llm_findings.json`) and the second back-to-back
   run shows `cache: hit` in its `macro_context.live_signals.notes`.
+- Multi-source fallback plan is documented (without implementation)
+  in both `docs/HANDOFF.md` and `docs/ROADMAP.md`, with explicit
+  dependency ordering (`Anthropic` first, fallback implementation
+  second) and stable output contract requirements.
 - No regression on the existing four-agent Qwen smoke or on the
   macro-signals offline tests.
 
@@ -587,24 +600,28 @@ set -a; source .env; set +a
 
 1. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
    through `LLMConfig.provider`, so the runtime is not single-vendor.
-2. Extend `hk_macro_signals_yahoo` to add HIBOR tenor levels, Hang
-   Seng Biotech sub-index (^HSBIO), and a small list of source-tagged
-   sector news headlines.
-3. Add a short exponential backoff on Yahoo 429/503 inside
+2. Multi-source macro-signals fallback implementation (after
+   Anthropic): add `FallbackMacroSignalsProvider` with
+   `Yahoo -> Stooq -> stale cache`, preserving current
+   `macro_context.live_signals` schema and audit fields.
+3. Extend macro signals to add HIBOR tenor levels, Hang Seng Biotech
+   sub-index (^HSBIO), and a small list of source-tagged sector news
+   headlines.
+4. Add a short exponential backoff on Yahoo 429/503 inside
    `hk_macro_signals_yahoo` before surrendering to the stale-cache
    fallback, so the first cold run has a better chance of warming
    the cache.
-4. Add auto competitor drafts once pipeline extraction is reliable.
-4. Keep broadening fixtures across representative HK biotech disclosure
+5. Add auto competitor drafts once pipeline extraction is reliable.
+6. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-5. Tighten validator checks for stale placeholders and weak evidence
+7. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-6. Add a US-market sibling market-data provider, so the auto-draft path
+8. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-7. Consider a deterministic post-processor that turns LLM findings into
+9. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-8. Consider a `K-line technical agent` (name TBD) that reads a
+10. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.
