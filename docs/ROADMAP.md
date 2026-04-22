@@ -240,18 +240,36 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   `findings[]` severity. Composable with both other agents; the
   skeptic's prompt renders the financial-triage payload in its own
   block alongside the pipeline-triage payload.
-- **Not started** — Macro context agent (sector / policy / rate-sensitivity
-  narrative; feeds the skeptic via `FactStore`). Fourth LLM agent.
+- **Done** — Fourth LLM agent (`MacroContextLLMAgent`): macro regime
+  read with `macro_regime` enum
+  (expansion / contraction / transition / insufficient_data),
+  `sector_drivers[]`, `sector_headwinds[]`. Consumes a deterministic
+  `macro_context` stub (market, sector, report-run date, source
+  publication dates, `known_unknowns`). Prompt mandates
+  `insufficient_data` when the stub is too thin, so the agent cannot
+  hallucinate macro themes during the stub-only phase. Live smoke on
+  09606.HK: 4/4 OK, 11919 tokens, skeptic consumed the macro finding.
+- **Done** — Per-agent LLM call budget caps.
+  `LLMConfig.per_agent_call_budget` (env
+  `BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET`) caps how many calls any
+  single agent can make within one client lifetime;
+  `OpenAICompatibleLLMClient` refuses pre-dispatch with
+  `LLMBudgetError` (subclass of `LLMError`) so no token is spent and
+  no trace entry is written for the refused call. A provider-agnostic
+  `BudgetEnforcingLLMClient` wrapper applies the same logic to any
+  `LLMClient`, useful for tests or adapters that lack native budget
+  support.
+- **Not started** — Enrich `macro_context` with a lightweight live
+  source (HSI / HSBIO index trend, HKD/USD, HIBOR) so the macro agent
+  can stop defaulting to `insufficient_data`. Opt-in via
+  `--macro-signals yahoo-hk`.
 - **Not started** — Technical / K-line agent (long-horizon trend read on top
   of a future market-data pipeline).
 - **Not started** — Orchestration fall-back: when an LLM agent fails schema
   validation three times, auto-downgrade to a shorter prompt variant or
   mark `needs_human_review=True` before giving up.
-- **Not started** — Multi-model support: Claude adapter reusing
-  `LLMConfig` / `OpenAICompatibleLLMClient` abstractions with provider
-  routing by `model` prefix.
-- **Not started** — Per-agent budget caps inside `LLMTraceRecorder` so a
-  single runaway agent cannot exhaust the run budget.
+- **Not started** — Multi-model support: Claude adapter routed by a new
+  `LLMConfig.provider` field so the runtime is not single-vendor.
 
 ## Next Execution Plan (Suggested)
 
@@ -337,13 +355,13 @@ and web ingestion out).
 
 ### Sprint 4: Multi-LLM Agent Collaboration
 
-**Sprint status:** triple-agent collaboration landed on 2026-04-22. The
-runtime now runs three distinct LLM agents (pipeline-triage +
-financial-triage -> scientific-skeptic) in a single AgentGraph with
-shared facts. Pipeline and financial triage run in parallel in the same
-DAG layer; the skeptic waits and then consumes both payloads through the
-FactStore. Sprint continues with a fourth (macro) agent and runtime
-robustness.
+**Sprint status:** four-agent collaboration landed on 2026-04-22.
+Pipeline-triage, financial-triage, and macro-context all run in
+parallel in the same AgentGraph layer; the scientific-skeptic waits
+and consumes all three payloads through the FactStore. Per-agent LLM
+budget caps and `--market-data-freshness-days` landed in the same
+pass. Sprint continues with enriching macro signals, adding a Claude
+adapter, and starting a technical / K-line agent.
 
 - **Done** — LLM + Agent runtime skeleton (config, client, trace, prompt,
   schema, FactStore, AgentGraph, opt-in CLI flag).
@@ -368,9 +386,21 @@ robustness.
   (consistent / stretch / inconsistent / insufficient_data) plus
   per-metric severity findings. First non-pipeline LLM agent; validated
   on live DualityBio run at 3/3 OK and 10515 tokens combined.
-- **In progress** — `MacroContextLLMAgent`: rate / HK-biotech-sentiment /
-  policy read. Feeds the skeptic as a fourth upstream dependency.
+- **Done** — `MacroContextLLMAgent`: stub-based macro regime read with
+  `macro_regime` enum, `sector_drivers[]`, `sector_headwinds[]`. Four
+  LLM agents now compose cleanly (pipeline + financial + macro ->
+  skeptic) and the skeptic's prompt renders all three upstream
+  payloads. Live smoke on 09606.HK: 4/4 OK at 11919 tokens.
+- **Done** — Per-agent LLM call budget cap via
+  `LLMConfig.per_agent_call_budget`, enforced by
+  `OpenAICompatibleLLMClient` and a separate
+  `BudgetEnforcingLLMClient` wrapper. Refusal raises
+  `LLMBudgetError` pre-dispatch so no token is spent.
+- **Done** — `--market-data-freshness-days` CLI flag wraps the
+  `hk_public_quote_provider` with `functools.partial` so operators
+  can tune Tencent staleness without patching code; default stays at
+  3 days.
 - **Not started** — Add a Claude adapter so the runtime is not single-vendor.
-- **Not started** — Per-agent LLM call budget cap.
-- **Not started** — `--market-data-freshness-days` CLI flag so Tencent
-  staleness is operator-tunable without patching code.
+- **Not started** — Enrich `macro_context` with a live source
+  (HSI / HSBIO / HKD-USD / HIBOR) so the macro agent can start
+  returning real regimes instead of `insufficient_data`.

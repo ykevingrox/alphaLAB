@@ -269,6 +269,55 @@ Use this shape:
     despite reported primary endpoint achievement". No hallucinated
     financial risks, because `financial-triage` had already vetted the
     runway.
+- `company-report --market-data-freshness-days N` now tunes the Tencent
+  staleness window without patching code. Implemented by wrapping
+  `hk_public_quote_provider` with `functools.partial` when the flag is
+  set; positional-only `provider(identity)` contract is preserved.
+  Fractional days accepted; non-positive values and the flag paired
+  with `--market-data none` are rejected up front.
+- Per-agent LLM call budget caps (M4a) are live:
+  - `LLMConfig.per_agent_call_budget` (env
+    `BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET`) caps calls any single
+    agent can make within one client lifetime.
+  - `OpenAICompatibleLLMClient` tracks both total and per-agent
+    counters and raises `LLMBudgetError` (subclass of `LLMError`) pre-
+    dispatch when either cap is exhausted, so no token is spent and no
+    trace entry is written for the refused call.
+  - New provider-agnostic `BudgetEnforcingLLMClient` wrapper can sit in
+    front of any `LLMClient` (real or fake) to apply the same logic,
+    usable for tests or adapters that lack native budget support.
+- Fourth LLM agent `MacroContextLLMAgent` is live (M4b):
+  - New fact `macro_context`: minimal deterministic stub carrying
+    market, sector, report-run date, `financial_as_of_date`, source
+    publication dates / titles / types, plus an explicit
+    `known_unknowns` list naming the macro signals the
+    deterministic layer cannot yet provide (HSI trend, rates/FX,
+    news titles, regulatory posture).
+  - `MACRO_CONTEXT_PROMPT` / `MacroContextLLMAgent` output strict JSON:
+    `macro_regime` ∈
+    {"expansion","contraction","transition","insufficient_data"},
+    `summary`, `sector_drivers[]`, `sector_headwinds[]`, optional
+    `confidence`. Prompt mandates returning `insufficient_data` when
+    the stub is too thin to form a view, so the agent cannot
+    hallucinate macro themes during the current stub-only phase.
+  - `--llm-agents macro-context` registers the agent, composable with
+    the other three. Skeptic `depends_on` it when requested and
+    renders a `macro_context` block in its prompt.
+- Live Bailian Qwen four-agent smoke validated on 2026-04-22:
+  - `company-report --ticker 09606.HK --auto-inputs --market-data
+    hk-public --llm-agents pipeline-triage financial-triage
+    macro-context scientific-skeptic`: 4 LLM calls, 4 OK, 9571 prompt
+    + 2348 completion tokens = 11919 total, 52.4 s combined latency
+    (financial 8 s, macro 5.8 s, pipeline 22 s in parallel, then
+    skeptic 16.6 s).
+  - Macro agent correctly returned `macro_regime = insufficient_data`
+    with three factually-framed headwinds (rate env unknown, HSI
+    trend unavailable, HK biotech IPO sentiment unclear), instead
+    of inventing macro prints.
+  - Skeptic consumed the macro finding honestly and surfaced it as
+    a distinct medium-severity risk: "Macro regime is undefined due
+    to missing interest rate and regulatory data, increasing
+    uncertainty around cost of capital and approval pathways".
 
 ## Current Repo State
 
@@ -282,9 +331,10 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-22 after M3 triple-agent rollout (pipeline
-triage + financial triage + scientific skeptic running together in the
-AgentGraph, with multi-anchor source excerpts):
+Last validated on 2026-04-22 after M4 four-agent rollout (pipeline
+triage + financial triage + macro context + scientific skeptic running
+together in the AgentGraph, with multi-anchor source excerpts,
+per-agent LLM budget caps, and `--market-data-freshness-days`):
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -296,15 +346,16 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 167 unit tests ran, 162 passed, 5 skipped (online Yahoo / online Tencent /
-  two online Bailian Qwen integration tests + financial triage online
-  self-skip without the matching `BIOTECH_ALPHA_ONLINE_*_TESTS=1` env
-  flag).
+- 190 unit tests ran, 184 passed, 6 skipped (online Yahoo / online
+  Tencent / four online Bailian Qwen integration tests including the
+  new macro-context online self-skip; all guarded behind
+  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
-  plus `tests/test_pipeline_triage_agent.py` and
-  `tests/test_financial_triage_agent.py` (new).
+  plus the three new test files `tests/test_pipeline_triage_agent.py`,
+  `tests/test_financial_triage_agent.py`, and
+  `tests/test_macro_context_agent.py`.
 - Deterministic `company-report --auto-inputs --market-data hk-public`
   smoke still produces `research_ready_with_review` reports for
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) with Tencent
@@ -329,12 +380,18 @@ Latest smoke commands:
   --ticker 09606.HK --auto-inputs --overwrite-auto-inputs \
   --market-data hk-public
 
-# LLM + agent runtime opt-in (triple agent)
+# LLM + agent runtime opt-in (four agent)
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
-  --llm-agents pipeline-triage financial-triage scientific-skeptic
+  --llm-agents pipeline-triage financial-triage macro-context \
+    scientific-skeptic
+
+# Tuning Tencent staleness without code changes
+.venv/bin/python -m biotech_alpha.cli company-report \
+  --ticker 09606.HK --auto-inputs \
+  --market-data hk-public --market-data-freshness-days 0.5
 
 # One-shot LLM ping for provider/model smoke
 PYTHONPATH=src .venv/bin/python scripts/llm_smoke.py
@@ -348,26 +405,24 @@ Latest smoke result:
 - LLM agent pipeline writes `data/memos/<run_id>_llm_findings.json` and
   `data/traces/<run_id>.jsonl`. The trace JSONL captures timestamp, agent,
   model, prompt_hash, token counts, latency, retries, and `ok`/`error`.
-- Triple-agent DualityBio smoke (`pipeline-triage` + `financial-triage`
-  + `scientific-skeptic`):
-  - 3 LLM calls, 3 OK, 8502 prompt + 2013 completion tokens (10515
-    total), 42.3 s combined latency (triage agents ran in parallel in
-    the same DAG layer: financial 8 s, pipeline 20 s; skeptic 14 s).
-  - Financial triage (confidence 0.95): confirmed deterministic
-    ~98-month runway is internally consistent, flagged RMB/HKD
-    currency mismatch between `financial_snapshot` and
-    `market_snapshot` as a low-severity caveat.
-  - Pipeline triage (confidence 0.95): DB-1312 "in 2017" milestone
-    high-severity, two medium-severity `\n2026` malformed milestones,
-    and the first-ever "DB-1303 is Phase 3 but has no next_milestone"
-    flag surfaced by multi-anchor excerpt.
-  - Skeptic (confidence 0.75) consumed all three upstream findings and
-    added analyst-grade observations: "Heavy reliance on a single
-    partner (BioNTech) for key late-stage assets creates concentration
-    risk" and "DB-1303 is in Phase 3 but lacks a defined next milestone
-    despite reported primary endpoint achievement". Because financial
-    triage had already vetted the runway, the skeptic no longer
-    hallucinated fake burn-rate concerns.
+- Four-agent DualityBio smoke (`pipeline-triage` + `financial-triage`
+  + `macro-context` + `scientific-skeptic`):
+  - 4 LLM calls, 4 OK, 9571 prompt + 2348 completion tokens (11919
+    total), 52.4 s combined latency (financial 8 s, macro 5.8 s,
+    pipeline 22 s ran in parallel in the same DAG layer; skeptic
+    16.6 s).
+  - Financial triage confirmed deterministic runway is consistent and
+    flagged only the expected RMB/HKD currency mismatch caveat.
+  - Pipeline triage surfaced the DB-1312 "in 2017" milestone, the
+    malformed `\n2026` strings, and the DB-1303 "Phase 3 with no
+    next_milestone" cross-asset flag.
+  - Macro agent correctly returned `macro_regime =
+    insufficient_data` (stub-only phase, no live feeds yet) with
+    factually-framed headwinds instead of inventing rate or index
+    prints.
+  - Skeptic (confidence 0.7) consumed all three upstream findings
+    and added analyst-grade observations including the macro
+    uncertainty as a distinct medium-severity risk.
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
@@ -376,63 +431,64 @@ Latest smoke result:
 
 ### Current Task
 
-Three LLM agents (pipeline-triage + financial-triage + scientific-skeptic)
-now compose reliably in a single AgentGraph under Qwen3.6. Next, bring
-**macro context** into the graph so the research covers all four classic
-biotech analyst domains (pipeline, financial, macro, skeptic/synthesis)
-and start reducing the agent-runtime rough edges that make live usage
-fragile.
+Four LLM agents (pipeline-triage + financial-triage + macro-context +
+scientific-skeptic) now compose reliably in a single AgentGraph under
+Qwen3.6, covering the four classic biotech analyst domains. Per-agent
+LLM budget caps and Tencent staleness tuning are in place. Next,
+remove single-vendor risk and begin enriching the macro-context stub
+so `insufficient_data` stops being the default answer.
 
-The immediate two parallel tracks:
+Two immediate tracks:
 
-- New `MacroContextLLMAgent` so the graph is no longer only bottoms-up
-  from company filings. It should pull in a short macro/sector context
-  block (rate environment, HK biotech index trend, recent sector
-  regulatory news) and produce a structured call on whether the macro
-  backdrop supports or pressures HK biotech long-term.
-- Operational robustness: per-agent LLM call budget caps, and
-  `--market-data-freshness-days` on `company-report` so operators can
-  tune Tencent staleness without patching code.
+- Enrich `macro_context` fact with a lightweight live source so the
+  macro agent can form an actual regime read instead of returning
+  `insufficient_data`. Options (in increasing order of scope): HSI /
+  HSBIO index level and 30-day trend from a single Yahoo / Tencent
+  call; HIBOR + USD/HKD spot; then sector news headlines. All
+  data must be source-tagged; no model-estimated numbers.
+- `LLMClient` provider abstraction hardening for a Claude adapter.
+  Today `OpenAICompatibleLLMClient` special-cases Bailian via
+  `_is_bailian_endpoint`; Claude's API shape (Anthropic Messages API)
+  does not fit OpenAI Chat Completions, so we need a parallel
+  `AnthropicLLMClient` exposed through the same `LLMClient` protocol
+  and routed by `LLMConfig.provider` (default "openai-compatible").
 
 ### Next Action
 
-1. Expose `--market-data-freshness-days` on `company-report` and thread
-   it into the `hk_public_quote_provider`. Default stays 3 days. Add a
-   CLI test covering a custom value.
-
-2. Add per-agent LLM call budget caps:
-   - Introduce `LLMConfig.per_agent_max_calls` (default None = no cap)
-     and track call counts in `LLMTraceRecorder` keyed by agent name.
-   - `OpenAICompatibleLLMClient.complete` refuses to call when the agent
-     has exceeded its cap and raises a typed `LLMBudgetError`.
-   - Agents surface it via `AgentStepResult.error` just like any other
-     `LLMError`.
-
-3. Add `MacroContextLLMAgent` in `src/biotech_alpha/agents_llm.py`:
-   - New fact `macro_context`: minimal dict with as-of date, market,
-     headline news titles (from a new lightweight auto-input or a stub),
-     HK biotech index level / trend, and a short note on rate/FX
-     environment.
-   - Output: strict JSON with `macro_regime` ∈
-     {"supportive","neutral","pressuring"}, `summary`,
-     `sector_drivers[]`, `sector_headwinds[]`, `confidence`.
-   - Register under `--llm-agents macro-context`, composable with the
-     other three agents. Skeptic `depends_on` macro-context when
-     requested so it can cite the regime in its counter-thesis.
+1. Add a lightweight `macro_signals` auto-input that records a small,
+   source-tagged dict: HSI level / 30-day trend, HKD/USD spot, HIBOR
+   tenor level, each with source URL and fetched_at. Thread it into
+   `_build_macro_context` under a new `live_signals` key. Keep all
+   fields optional so macro-context agent behaviour degrades to
+   `insufficient_data` when the feed is unreachable.
+2. CLI `--macro-signals yahoo-hk` opt-in flag (default off) to turn on
+   the feed. Add a CLI test that asserts the flag threads through and
+   that the agent's `macro_context` fact gains a non-empty
+   `live_signals` block.
+3. Add `AnthropicLLMClient` mirroring the `LLMClient` protocol, with
+   its own adapter module `src/biotech_alpha/llm/anthropic.py`.
+   Extend `LLMConfig` with `provider: Literal["openai-compatible",
+   "anthropic"] = "openai-compatible"` and an `ANTHROPIC_API_KEY` env
+   read. Route in `_build_llm_client`. At least one agent (pick
+   `MacroContextLLMAgent`) should pass an offline happy-path test
+   against a fake Anthropic response shape, and an online smoke for
+   anyone with `ANTHROPIC_API_KEY` set.
 
 ### Acceptance Criteria
 
-- `company-report --market-data-freshness-days N` passes N through to
-  the Tencent provider. Without the flag behaviour is unchanged.
-- A single LLM agent cannot make more than its budgeted calls in a run;
-  the refusal path is tested via `FakeLLMClient` plus a wrapper that
-  enforces the cap.
-- `--llm-agents pipeline-triage financial-triage macro-context
-  scientific-skeptic` runs end-to-end on Qwen3.6, shows 4 calls in the
-  cost summary, and the skeptic's prompt is shown to render a
-  non-empty `macro_context` block.
-- No regression on the existing 3-agent smoke: same token order of
-  magnitude, same quality of findings.
+- With `--macro-signals yahoo-hk`, the `macro_context` fact carries a
+  non-empty `live_signals` block and the macro agent's output has
+  `macro_regime` other than `insufficient_data` at least some of the
+  time (it is allowed to still return `insufficient_data` when the
+  feed itself has gaps).
+- Without the flag, behaviour is identical to today.
+- `pytest` passes with the new `AnthropicLLMClient` unit tests. Online
+  tests are self-skipping behind `BIOTECH_ALPHA_ONLINE_LLM_TESTS=1`
+  and additionally require `ANTHROPIC_API_KEY`.
+- `LLMConfig.provider="anthropic"` plus `ANTHROPIC_API_KEY=...` runs
+  `company-report --llm-agents macro-context` end-to-end and writes a
+  trace entry tagged with the Anthropic model.
+- No regression on the existing four-agent Qwen smoke.
 
 ### Validation
 
@@ -453,22 +509,25 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Expose `--market-data-freshness-days` on `company-report`.
-2. Per-agent LLM call budget cap inside `LLMConfig` /
-   `LLMTraceRecorder` / `OpenAICompatibleLLMClient`.
-3. `MacroContextLLMAgent`: rate / HK-biotech-sentiment / policy read.
-4. Claude adapter alongside the OpenAI-compatible adapter so the runtime
-   is not single-vendor (still routed through `LLMConfig`).
-5. Add auto competitor drafts once pipeline extraction is reliable.
-6. Keep broadening fixtures across representative HK biotech disclosure
+1. `macro_signals` auto-input (HSI + HKD/USD + HIBOR) threaded into
+   `macro_context.live_signals` so the macro agent can stop returning
+   `insufficient_data`. Opt-in via `--macro-signals yahoo-hk`.
+2. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
+   through `LLMConfig.provider`, so the runtime is not single-vendor.
+3. Add auto competitor drafts once pipeline extraction is reliable.
+4. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-7. Tighten validator checks for stale placeholders and weak evidence
+5. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-8. Add a US-market sibling market-data provider once HK freshness lands,
-   so the auto-draft path is not HK-only.
-9. Consider a deterministic post-processor that turns LLM findings into
+6. Add a US-market sibling market-data provider, so the auto-draft path
+   is not HK-only.
+7. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
+8. Consider a `K-line technical agent` (name TBD) that reads a
+   small window of OHLCV plus a few classic indicators and flags
+   technical divergences vs the fundamental / macro read. Useful as
+   an entry / exit sanity layer.
 
 ## Do Not Break
 
