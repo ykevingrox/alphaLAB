@@ -50,6 +50,7 @@ HKEX_ACTIVE_STOCKS_URL = (
     f"{HKEX_BASE_URL}/ncms/script/eds/activestock_sehk_e.json"
 )
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
+PIPELINE_EXTRACTOR_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -303,6 +304,7 @@ def draft_pipeline_assets(
         "company": identity.company,
         "ticker": identity.ticker,
         "generated_by": "auto_inputs.hkex_annual_results",
+        "generated_extractor_version": PIPELINE_EXTRACTOR_VERSION,
         "needs_human_review": True,
         "assets": assets,
     }
@@ -412,10 +414,15 @@ def _draft_asset_from_context(
     packed_context = _packed_left_context(context=context, asset_name=primary)
     target = _target_from_context(local_context)
     modality = _modality_from_context(local_context)
+    mechanism = _mechanism_from_context(local_context, target=target)
     indication = _indication_from_context(local_context)
     if packed_context:
         target = _target_from_context(packed_context)
         modality = _modality_from_context(packed_context)
+        mechanism = (
+            _mechanism_from_context(packed_context, target=target)
+            or mechanism
+        )
         indication = _indication_from_context(packed_context) or indication
     source_year = _year_from_source_date(source.publication_date)
     return {
@@ -423,7 +430,7 @@ def _draft_asset_from_context(
         "aliases": aliases,
         "target": target,
         "modality": modality,
-        "mechanism": None,
+        "mechanism": mechanism,
         "indication": indication,
         "phase": _phase_from_asset_context(
             context=context,
@@ -941,6 +948,7 @@ def _target_from_context(context: str) -> str | None:
         "TL1A",
         "IL23p19",
         "APRIL",
+        "CRH",
         "MSLN",
         "BDCA2",
         "ADAM9",
@@ -953,8 +961,23 @@ def _target_from_context(context: str) -> str | None:
         if found_local:
             return "/".join(dict.fromkeys(found_local))
     lowered = re.sub(r"\s+", " ", context).lower()
+    anti_match = re.search(r"\banti-([a-z0-9-]{2,20})", lowered)
+    if anti_match:
+        anti_target = anti_match.group(1).replace("-", "")
+        for target in targets:
+            if anti_target == target.lower().replace("-", ""):
+                return target
     found = [target for target in targets if target.lower() in lowered]
     return "/".join(dict.fromkeys(found)) if found else None
+
+
+def _mechanism_from_context(
+    context: str, *, target: str | None = None
+) -> str | None:
+    lowered = re.sub(r"\s+", " ", context).lower()
+    if not target and "undisclosed" in lowered:
+        return "undisclosed target"
+    return None
 
 
 def _modality_from_context(context: str) -> str | None:
@@ -1344,6 +1367,13 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _pipeline_draft_needs_refresh(path: Path) -> bool:
     if not path.exists():
         return False
+    try:
+        payload = _read_json(path)
+    except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
+        return True
+    if payload.get("generated_by") == "auto_inputs.hkex_annual_results":
+        if payload.get("generated_extractor_version") != PIPELINE_EXTRACTOR_VERSION:
+            return True
     try:
         report = validate_pipeline_asset_file(path)
     except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.

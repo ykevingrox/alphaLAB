@@ -9,6 +9,7 @@ from unittest.mock import patch
 import requests
 
 from biotech_alpha.auto_inputs import (
+    PIPELINE_EXTRACTOR_VERSION,
     SourceDocument,
     _resolve_hkex_stock_id,
     draft_competitor_assets,
@@ -141,6 +142,23 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(names.count("DB-9999"), 1)
         self.assertEqual(_asset_by_name(payload, "DB-9999")["phase"], "Phase 2")
 
+    def test_drafts_pipeline_asset_prefers_nearby_anti_target(self) -> None:
+        text = """
+        Spruce obtained rights to develop and commercialize HAT001/HBM9013,
+        a potent and selective anti-CRH-neutralizing antibody.
+        In June 2025, Harbour BioMed entered a collaboration to advance
+        HBM7020, BCMAxCD3 bispecific T-cell engager, for autoimmune diseases.
+        """
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Harbour BioMed", ticker="02142.HK"),
+            text=text,
+            source=_hbm_source(),
+        )
+
+        hat001 = _asset_by_name(payload, "HAT001")
+        self.assertEqual(hat001["target"], "CRH")
+        self.assertNotIn("BCMA", hat001["target"])
+
     def test_drafts_competitor_assets_from_pipeline_targets(self) -> None:
         identity = CompanyIdentity(company="DualityBio", ticker="09606.HK")
         source = _source()
@@ -272,6 +290,8 @@ class AutoInputsTest(unittest.TestCase):
                     {
                         "company": "DualityBio",
                         "ticker": "09606.HK",
+                        "generated_by": "auto_inputs.hkex_annual_results",
+                        "generated_extractor_version": PIPELINE_EXTRACTOR_VERSION,
                         "assets": [
                             {
                                 "name": "DB-1303",
@@ -664,6 +684,7 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(hbm2001["indication"], "IBD")
         j9003 = _asset_by_name(payload, "J9003")
         self.assertIsNone(j9003["target"])
+        self.assertEqual(j9003["mechanism"], "undisclosed target")
         self.assertEqual(j9003["modality"], "antibody")
         self.assertEqual(j9003["indication"], "IBD")
         r2006 = _asset_by_name(payload, "R2006")
@@ -671,6 +692,7 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(r2006["indication"], "autoimmune diseases")
         r7027 = _asset_by_name(payload, "R7027")
         self.assertIsNone(r7027["target"])
+        self.assertEqual(r7027["mechanism"], "undisclosed target")
         self.assertEqual(r7027["modality"], "bispecific antibody")
         self.assertEqual(r7027["indication"], "autoimmune diseases")
         hbm1020 = _asset_by_name(payload, "HBM1020")

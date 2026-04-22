@@ -352,7 +352,10 @@ resilience and validator tightening remain).
   drafts with malformed or stale milestone warnings are now refreshed
   automatically from the latest source-backed extractor, and milestone
   whitespace is normalized so `planned to start in \n2026` becomes
-  `planned to start in 2026`.
+  `planned to start in 2026`. Target/mechanism cleanup now handles
+  HAT001/HBM9013 (`anti-CRH`, avoiding HBM7020 BCMA/CD3 leakage) and
+  undisclosed-target packed rows such as J9003/R7027 without inventing
+  source-unsupported targets.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

@@ -454,7 +454,7 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 246 unit tests ran, 239 passed, 7 skipped (online Yahoo / online
+- 247 unit tests ran, 240 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
@@ -464,7 +464,9 @@ Latest result:
   reusing an existing generated pipeline draft during
   `generate_auto_inputs` while still returning source documents, and
   automatically refreshing old generated drafts when pipeline
-  validation flags malformed/stale milestone values.
+  validation flags malformed/stale milestone values. The latest +1
+  covers target decontamination for HAT001/HBM9013 so nearby HBM7020
+  BCMA/CD3 text does not leak into the anti-CRH asset.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same 233-test baseline.
@@ -599,6 +601,19 @@ Latest smoke result:
     --no-save` removed stale milestone warnings; remaining warnings are
     unresolved packed-table fields (missing phase / target) that the
     source text does not yet resolve reliably.
+- Harbour BioMed packed-table target/mechanism cleanup landed:
+  - Generated pipeline drafts now carry
+    `generated_extractor_version = 2`; older generated drafts refresh
+    automatically so stale local generated files pick up extractor fixes.
+  - HAT001/HBM9013 now prefers the nearby `anti-CRH` target instead of
+    leaking BCMA/CD3 from the following HBM7020 paragraph.
+  - `J9003` and `R7027` preserve `target = null` because the source says
+    `Undisclosed`, but now set `mechanism = "undisclosed target"` so the
+    validator no longer reports missing target/mechanism.
+  - No-LLM quick smoke after the fix:
+    `report "02142.HK" --json --no-llm --no-save` now leaves only six
+    source-unsupported `missing phase` warnings: `HAT001`, `HBM2001`,
+    `J9003`, `R2006`, `R7027`, and `HBM1020`.
 
 ## Execution Plan
 
@@ -616,18 +631,19 @@ validation and extraction-quality hardening.
 
 Two immediate tracks:
 
-- Extraction-quality hardening. Continue reducing packed-table
-  phase/target gaps that inflate triage false positives.
+- Extraction-quality hardening. Continue reducing packed-table phase
+  gaps where the source text reliably supports them; leave phase null
+  when PDF table coordinates are lost.
 - Macro-signals resiliency check. News-backed non-`insufficient_data`
   macro context and cache reuse are confirmed; quantitative chart/HIBOR
   subfeeds still need a follow-up when provider access recovers.
 
 ### Next Action
 
-1. Improve packed-table extraction for the remaining Harbour BioMed
-   generated warnings: `HAT001`, `HBM2001`, `J9003`, `R2006`,
-   `R7027`, and `HBM1020` still lack reliable phase and/or
-   target/mechanism fields.
+1. Decide whether any remaining Harbour BioMed `missing phase` warnings
+   are source-backed enough to extract. Current unresolved assets:
+   `HAT001`, `HBM2001`, `J9003`, `R2006`, `R7027`, and `HBM1020`.
+   Do not infer phase from lost table coordinates.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -670,8 +686,8 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Improve packed-table extraction for remaining Harbour BioMed
-   phase/target gaps without inventing source-unsupported fields.
+1. Improve only source-backed packed-table phase gaps; otherwise leave
+   the remaining Harbour BioMed missing-phase warnings for human review.
 2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 3. Keep broadening fixtures across representative HK biotech disclosure
