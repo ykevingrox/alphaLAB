@@ -14,9 +14,14 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
+
+import tempfile
+from datetime import timedelta
+from pathlib import Path
 
 from biotech_alpha.macro_signals_providers import (
+    CachingMacroSignalsProvider,
     YAHOO_CHART_URL,
     _parse_hsi_trend,
     _parse_spot_rate,
@@ -312,6 +317,200 @@ class MacroContextLiveSignalsIntegrationTest(unittest.TestCase):
         joined = "\n".join(fact["known_unknowns"])
         self.assertIn("HSI", joined)
         self.assertIn("USD/HKD", joined)
+
+
+class CachingMacroSignalsProviderTest(unittest.TestCase):
+    """Exercise the disk cache wrapper with a controllable clock."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.cache_dir = Path(self._tmp.name) / "macro_signals"
+        self.calls: list[str] = []
+
+        def _ok(market: str) -> dict[str, Any] | None:
+            self.calls.append(market)
+            return {
+                "fetched_at": "2026-04-22T10:00:00+00:00",
+                "provider": "yahoo-hk",
+                "hsi": {"symbol": "^HSI", "level": 26163.24},
+                "hkd_usd": {"symbol": "HKD=X", "spot": 7.83},
+                "notes": [],
+            }
+
+        self.ok_provider = _ok
+
+    def _make(
+        self,
+        *,
+        inner: Callable[[str], Any],
+        now_iso: str,
+        ttl_hours: float = 6.0,
+    ) -> CachingMacroSignalsProvider:
+        clock = {"now": datetime.fromisoformat(now_iso)}
+
+        def _now() -> datetime:
+            return clock["now"]
+
+        provider = CachingMacroSignalsProvider(
+            inner=inner,
+            provider_label="yahoo-hk",
+            cache_dir=self.cache_dir,
+            ttl=timedelta(hours=ttl_hours),
+            now_fn=_now,
+        )
+        return provider, clock  # type: ignore[return-value]
+
+    def test_miss_then_hit_within_ttl_only_calls_upstream_once(
+        self,
+    ) -> None:
+        provider, clock = self._make(
+            inner=self.ok_provider,
+            now_iso="2026-04-22T10:00:00+00:00",
+        )
+        first = provider("HK")
+        second = provider("HK")
+        self.assertEqual(self.calls, ["HK"])
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        assert first is not None and second is not None
+        self.assertTrue(
+            any("cache: miss" in note for note in first["notes"])
+        )
+        self.assertTrue(
+            any("cache: hit" in note for note in second["notes"])
+        )
+        # Same-market request from a DIFFERENT company does not refetch.
+        self.assertEqual(self.calls, ["HK"])
+
+    def test_expired_entry_triggers_refetch(self) -> None:
+        provider, clock = self._make(
+            inner=self.ok_provider,
+            now_iso="2026-04-22T10:00:00+00:00",
+            ttl_hours=1.0,
+        )
+        provider("HK")
+        clock["now"] = datetime.fromisoformat(
+            "2026-04-22T12:00:00+00:00"
+        )
+        provider("HK")
+        self.assertEqual(self.calls, ["HK", "HK"])
+
+    def test_stale_if_error_serves_expired_cache(self) -> None:
+        toggled: dict[str, bool] = {"fail": False}
+
+        def _flaky(market: str) -> dict[str, Any] | None:
+            self.calls.append(market)
+            if toggled["fail"]:
+                return None
+            return {
+                "fetched_at": "2026-04-22T10:00:00+00:00",
+                "provider": "yahoo-hk",
+                "hsi": {"symbol": "^HSI", "level": 26163.24},
+                "hkd_usd": None,
+                "notes": [],
+            }
+
+        provider, clock = self._make(
+            inner=_flaky,
+            now_iso="2026-04-22T10:00:00+00:00",
+            ttl_hours=1.0,
+        )
+        # Prime the cache.
+        provider("HK")
+        # Expire the cache; upstream now fails.
+        clock["now"] = datetime.fromisoformat(
+            "2026-04-22T12:00:00+00:00"
+        )
+        toggled["fail"] = True
+        served = provider("HK")
+        self.assertIsNotNone(served)
+        assert served is not None
+        self.assertEqual(served["hsi"]["level"], 26163.24)
+        self.assertTrue(
+            any("cache: stale" in note for note in served["notes"])
+        )
+
+    def test_no_cache_and_upstream_failure_returns_none(self) -> None:
+        def _fail(market: str) -> dict[str, Any] | None:
+            self.calls.append(market)
+            return None
+
+        provider, _clock = self._make(
+            inner=_fail,
+            now_iso="2026-04-22T10:00:00+00:00",
+        )
+        self.assertIsNone(provider("HK"))
+
+    def test_upstream_exception_is_swallowed(self) -> None:
+        def _boom(market: str) -> dict[str, Any] | None:
+            raise RuntimeError("network on fire")
+
+        provider, _clock = self._make(
+            inner=_boom,
+            now_iso="2026-04-22T10:00:00+00:00",
+        )
+        self.assertIsNone(provider("HK"))
+
+    def test_cache_keyed_by_market_and_provider(self) -> None:
+        provider, _clock = self._make(
+            inner=self.ok_provider,
+            now_iso="2026-04-22T10:00:00+00:00",
+        )
+        provider("HK")
+        provider("US")
+        # Distinct markets should not share cache entries.
+        self.assertEqual(self.calls, ["HK", "US"])
+        self.assertTrue(
+            (self.cache_dir / "HK_yahoo-hk.json").exists()
+        )
+        self.assertTrue(
+            (self.cache_dir / "US_yahoo-hk.json").exists()
+        )
+
+
+class CliResolverCacheFlagsTest(unittest.TestCase):
+    """Ensure the CLI resolver respects --no-macro-signals-cache and TTL."""
+
+    def test_defaults_return_caching_wrapper(self) -> None:
+        from biotech_alpha.cli import _resolve_macro_signals_provider
+
+        provider = _resolve_macro_signals_provider("yahoo-hk")
+        self.assertIsInstance(provider, CachingMacroSignalsProvider)
+        assert isinstance(provider, CachingMacroSignalsProvider)
+        self.assertIs(provider.inner, hk_macro_signals_yahoo)
+        self.assertEqual(provider.provider_label, "yahoo-hk")
+        self.assertEqual(provider.ttl, timedelta(hours=6.0))
+
+    def test_disable_cache_returns_bare_callable(self) -> None:
+        from biotech_alpha.cli import _resolve_macro_signals_provider
+
+        provider = _resolve_macro_signals_provider(
+            "yahoo-hk", disable_cache=True
+        )
+        self.assertIs(provider, hk_macro_signals_yahoo)
+
+    def test_zero_ttl_returns_bare_callable(self) -> None:
+        from biotech_alpha.cli import _resolve_macro_signals_provider
+
+        provider = _resolve_macro_signals_provider(
+            "yahoo-hk", cache_ttl_hours=0
+        )
+        self.assertIs(provider, hk_macro_signals_yahoo)
+
+    def test_custom_ttl_is_preserved(self) -> None:
+        from biotech_alpha.cli import _resolve_macro_signals_provider
+
+        provider = _resolve_macro_signals_provider(
+            "yahoo-hk", cache_ttl_hours=1.5
+        )
+        assert isinstance(provider, CachingMacroSignalsProvider)
+        self.assertEqual(provider.ttl, timedelta(hours=1.5))
+
+    def test_none_choice_still_returns_none(self) -> None:
+        from biotech_alpha.cli import _resolve_macro_signals_provider
+
+        self.assertIsNone(_resolve_macro_signals_provider("none"))
 
 
 if __name__ == "__main__":

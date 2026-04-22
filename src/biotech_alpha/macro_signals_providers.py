@@ -21,7 +21,11 @@ HIBOR provider, wire it into the same return shape.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
@@ -230,3 +234,147 @@ def _iso_date_from_epoch(value: Any) -> str | None:
     return (
         datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
     )
+
+
+DEFAULT_CACHE_DIR = Path("data/cache/macro_signals")
+DEFAULT_CACHE_TTL = timedelta(hours=6)
+
+
+@dataclass
+class CachingMacroSignalsProvider:
+    """Disk-backed TTL cache wrapping any :data:`MacroSignalsProvider`.
+
+    Macro signals are shared across every company sitting in the same
+    market (all HK biotech names see the same HSI level and USD/HKD
+    spot), so a single successful fetch should serve every run in the
+    same research session. This wrapper turns that property into:
+
+    * **Cache hit** (fresh): the cached dict is returned with a note
+      ``cache: hit (fetched_at=<iso>)`` added to ``notes``. The upstream
+      provider is not called; no network hop is made.
+    * **Cache miss or expired**: the upstream provider is called; on
+      success the result is written to disk and returned with a note
+      ``cache: miss (stored)``.
+    * **Upstream failure with expired cache present** ("stale-if-
+      error"): the expired cache is returned with
+      ``cache: stale (served on upstream failure)``. This converts a
+      transient Yahoo 429 into a slightly-stale regime read instead of
+      losing the live feed entirely.
+    * **Upstream failure with no cache**: ``None`` is returned, matching
+      the pre-cache behaviour.
+
+    Cache keys are keyed on ``(market, provider_label)`` so a later
+    ``hk-tencent`` provider would not collide with ``yahoo-hk``.
+    """
+
+    inner: MacroSignalsProvider
+    provider_label: str
+    cache_dir: Path = DEFAULT_CACHE_DIR
+    ttl: timedelta = DEFAULT_CACHE_TTL
+    now_fn: Callable[[], datetime] = lambda: datetime.now(tz=timezone.utc)
+
+    def __call__(self, market: str) -> dict[str, Any] | None:
+        if not market:
+            return None
+        cache_path = self._cache_path(market)
+        now = self.now_fn()
+        cached = _read_cache_entry(cache_path)
+
+        if cached is not None:
+            cached_at = _parse_iso(cached.get("cached_at"))
+            if cached_at is not None and now - cached_at <= self.ttl:
+                return _attach_note(
+                    cached.get("payload"),
+                    f"cache: hit (cached_at={cached_at.isoformat()})",
+                )
+
+        try:
+            fresh = self.inner(market)
+        except Exception:  # noqa: BLE001 - defensive: never propagate
+            fresh = None
+
+        if fresh is not None:
+            try:
+                _write_cache_entry(cache_path, now=now, payload=fresh)
+            except OSError:
+                # Disk write failure must not corrupt the caller's result.
+                pass
+            return _attach_note(fresh, "cache: miss (stored)")
+
+        if cached is not None:
+            cached_at = _parse_iso(cached.get("cached_at"))
+            stamp = cached_at.isoformat() if cached_at else "unknown"
+            return _attach_note(
+                cached.get("payload"),
+                f"cache: stale (served on upstream failure, "
+                f"cached_at={stamp})",
+            )
+
+        return None
+
+    def _cache_path(self, market: str) -> Path:
+        safe_market = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_" for ch in market
+        )
+        safe_provider = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_"
+            for ch in self.provider_label
+        )
+        return self.cache_dir / f"{safe_market}_{safe_provider}.json"
+
+
+def _read_cache_entry(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not isinstance(data.get("payload"), dict):
+        return None
+    return data
+
+
+def _write_cache_entry(
+    path: Path, *, now: datetime, payload: dict[str, Any]
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"cached_at": now.isoformat(), "payload": payload}
+    # Atomic write: tempfile in the same directory, then rename, so a
+    # crash mid-flush cannot leave a partial JSON blob for the next run.
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=str(path.parent),
+        delete=False,
+        suffix=".tmp",
+    ) as handle:
+        json.dump(entry, handle, ensure_ascii=False, indent=2)
+        tmp_path = Path(handle.name)
+    tmp_path.replace(path)
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _attach_note(
+    payload: dict[str, Any] | None, note: str
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return payload
+    cloned = dict(payload)
+    notes = list(cloned.get("notes") or [])
+    notes.append(note)
+    cloned["notes"] = notes
+    return cloned

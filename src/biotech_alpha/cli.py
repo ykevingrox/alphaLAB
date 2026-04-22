@@ -257,6 +257,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--macro-signals-cache-ttl-hours",
+        type=float,
+        default=6.0,
+        help=(
+            "TTL in hours for the disk-backed macro-signals cache. "
+            "Macro signals (HSI, USD/HKD) are shared across every company "
+            "in the same market, so one successful fetch per TTL serves "
+            "every run in the same session. Default 6 hours; set to 0 "
+            "to force a fresh fetch every run. Only meaningful together "
+            "with --macro-signals."
+        ),
+    )
+    company_report_parser.add_argument(
+        "--no-macro-signals-cache",
+        action="store_true",
+        help=(
+            "Bypass the macro-signals disk cache entirely. Equivalent to "
+            "--macro-signals-cache-ttl-hours 0 but also disables the "
+            "stale-if-error fallback."
+        ),
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -630,6 +652,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         macro_signals_provider = _resolve_macro_signals_provider(
             getattr(args, "macro_signals", "none"),
+            cache_ttl_hours=getattr(
+                args, "macro_signals_cache_ttl_hours", 6.0
+            ),
+            disable_cache=getattr(args, "no_macro_signals_cache", False),
         )
         llm_agents = tuple(getattr(args, "llm_agents", ()) or ())
         llm_client = _build_llm_client(llm_agents)
@@ -959,8 +985,19 @@ def _resolve_market_data_provider(
     return None
 
 
-def _resolve_macro_signals_provider(choice: str):
+def _resolve_macro_signals_provider(
+    choice: str,
+    *,
+    cache_ttl_hours: float | None = 6.0,
+    disable_cache: bool = False,
+):
     """Return a macro-signals provider callable for a CLI choice, or None.
+
+    When a real provider is selected, the returned callable is wrapped
+    in :class:`CachingMacroSignalsProvider` so every company in the
+    same session reuses a single fresh fetch. Pass
+    ``disable_cache=True`` (or ``cache_ttl_hours=0``) to return the
+    bare provider without the cache wrapper.
 
     Providers are only consulted when ``macro-context`` is also in
     ``--llm-agents``; ``_run_llm_agent_pipeline`` guards the call so
@@ -968,13 +1005,28 @@ def _resolve_macro_signals_provider(choice: str):
     no-op rather than an error.
     """
 
-    if choice == "yahoo-hk":
-        from biotech_alpha.macro_signals_providers import (
-            hk_macro_signals_yahoo,
-        )
+    if choice != "yahoo-hk":
+        return None
 
+    from biotech_alpha.macro_signals_providers import (
+        CachingMacroSignalsProvider,
+        DEFAULT_CACHE_DIR,
+        hk_macro_signals_yahoo,
+    )
+
+    if disable_cache:
         return hk_macro_signals_yahoo
-    return None
+    if cache_ttl_hours is not None and cache_ttl_hours <= 0:
+        return hk_macro_signals_yahoo
+    from datetime import timedelta
+
+    ttl = timedelta(hours=cache_ttl_hours or 6.0)
+    return CachingMacroSignalsProvider(
+        inner=hk_macro_signals_yahoo,
+        provider_label="yahoo-hk",
+        cache_dir=DEFAULT_CACHE_DIR,
+        ttl=ttl,
+    )
 
 
 def _build_llm_client(llm_agents: tuple[str, ...]):

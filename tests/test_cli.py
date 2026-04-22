@@ -709,22 +709,26 @@ class ResolveMacroSignalsProviderTest(unittest.TestCase):
     def test_none_returns_none(self) -> None:
         self.assertIsNone(_resolve_macro_signals_provider("none"))
 
-    def test_yahoo_hk_returns_live_callable(self) -> None:
+    def test_yahoo_hk_returns_cached_live_callable(self) -> None:
         from biotech_alpha.macro_signals_providers import (
+            CachingMacroSignalsProvider,
             hk_macro_signals_yahoo,
         )
 
-        self.assertIs(
-            _resolve_macro_signals_provider("yahoo-hk"),
-            hk_macro_signals_yahoo,
-        )
+        provider = _resolve_macro_signals_provider("yahoo-hk")
+        self.assertIsInstance(provider, CachingMacroSignalsProvider)
+        assert isinstance(provider, CachingMacroSignalsProvider)
+        self.assertIs(provider.inner, hk_macro_signals_yahoo)
 
 
 class CompanyReportMacroSignalsCliTest(unittest.TestCase):
     """Verify --macro-signals threads into run_company_report."""
 
     def test_flag_passes_through_to_run_company_report(self) -> None:
+        from datetime import timedelta
+
         from biotech_alpha.macro_signals_providers import (
+            CachingMacroSignalsProvider,
             hk_macro_signals_yahoo,
         )
 
@@ -750,7 +754,70 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(run.call_count, 1)
             provider = run.call_args.kwargs["macro_signals_provider"]
+            self.assertIsInstance(provider, CachingMacroSignalsProvider)
+            assert isinstance(provider, CachingMacroSignalsProvider)
+            self.assertIs(provider.inner, hk_macro_signals_yahoo)
+            self.assertEqual(provider.ttl, timedelta(hours=6.0))
+
+    def test_no_cache_flag_returns_bare_callable(self) -> None:
+        from biotech_alpha.macro_signals_providers import (
+            hk_macro_signals_yahoo,
+        )
+
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--macro-signals",
+                    "yahoo-hk",
+                    "--no-macro-signals-cache",
+                    "--no-save",
+                ]
+            )
+            provider = run.call_args.kwargs["macro_signals_provider"]
             self.assertIs(provider, hk_macro_signals_yahoo)
+
+    def test_custom_ttl_flag_threads_through(self) -> None:
+        from datetime import timedelta
+
+        from biotech_alpha.macro_signals_providers import (
+            CachingMacroSignalsProvider,
+        )
+
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--macro-signals",
+                    "yahoo-hk",
+                    "--macro-signals-cache-ttl-hours",
+                    "1.5",
+                    "--no-save",
+                ]
+            )
+            provider = run.call_args.kwargs["macro_signals_provider"]
+            assert isinstance(provider, CachingMacroSignalsProvider)
+            self.assertEqual(provider.ttl, timedelta(hours=1.5))
 
     def test_default_has_no_macro_provider(self) -> None:
         with patch(
