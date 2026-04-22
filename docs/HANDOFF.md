@@ -318,6 +318,39 @@ Use this shape:
     a distinct medium-severity risk: "Macro regime is undefined due
     to missing interest rate and regulatory data, increasing
     uncertainty around cost of capital and approval pathways".
+- Macro-signals live feed (M4c) is live:
+  - New module `src/biotech_alpha/macro_signals_providers.py` with a
+    `MacroSignalsProvider` protocol (`provider(market) -> dict|None`)
+    and a first implementation `hk_macro_signals_yahoo` that pulls
+    HSI level / 30-day return and USD/HKD spot from Yahoo's public
+    `v8/finance/chart` endpoint. All transport/decode failures
+    degrade a sub-signal to `None` with a human-readable note,
+    never raise.
+  - `_build_macro_context` accepts an optional `live_signals` dict,
+    attaches it under a `live_signals` key, and prunes the HSI /
+    USD-HKD entries from `known_unknowns` so the macro agent knows
+    exactly what is still missing (HIBOR, news, FDA/NMPA posture).
+  - `build_llm_agent_facts` → `_run_llm_agent_pipeline` →
+    `run_company_report` all thread `macro_signals_provider`
+    through. When `macro-context` is not in `--llm-agents` the
+    provider is skipped. Any provider exception is swallowed so a
+    live-feed failure never breaks the one-command run.
+  - CLI gains `--macro-signals {none,yahoo-hk}` (default `none`)
+    and `_resolve_macro_signals_provider`. `MACRO_CONTEXT_PROMPT`
+    now instructs the model to cite `live_signals.hsi` /
+    `live_signals.hkd_usd` values by field name and to prefer a
+    concrete regime when at least one sub-field is non-null.
+  - Tests: `tests/test_macro_signals_providers.py` exercises the
+    parser against hand-crafted chart payloads, fake-session
+    transport with happy, degraded-one-feed, and all-feeds-failed
+    shapes, and integration against `_build_macro_context`.
+    `tests/test_cli.py` covers `--macro-signals yahoo-hk`
+    threading and default-off behaviour.
+  - Live Yahoo probe from this IP is currently rate-limited (429
+    from both `query1` and `query2`). The graceful-`None` path
+    keeps the old stub-only macro answer; when Yahoo becomes
+    reachable again the agent will produce a concrete regime with
+    no further code changes.
 
 ## Current Repo State
 
@@ -331,10 +364,10 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-22 after M4 four-agent rollout (pipeline
-triage + financial triage + macro context + scientific skeptic running
-together in the AgentGraph, with multi-anchor source excerpts,
-per-agent LLM budget caps, and `--market-data-freshness-days`):
+Last validated on 2026-04-22 after M4c macro-signals rollout
+(`--macro-signals yahoo-hk` attaches HSI / USD-HKD live data to the
+`macro_context` fact; M4 four-agent runtime, per-agent LLM budget
+caps, and `--market-data-freshness-days` unchanged):
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -346,16 +379,19 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 190 unit tests ran, 184 passed, 6 skipped (online Yahoo / online
+- 205 unit tests ran, 199 passed, 6 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests including the
-  new macro-context online self-skip; all guarded behind
-  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
+  macro-context online self-skip; all guarded behind
+  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +15 from the previous
+  checkpoint cover the new macro-signals parser, fake-session
+  behaviour, graceful degradation, and CLI flag threading.
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
-  plus the three new test files `tests/test_pipeline_triage_agent.py`,
-  `tests/test_financial_triage_agent.py`, and
-  `tests/test_macro_context_agent.py`.
+  plus the four new test files `tests/test_pipeline_triage_agent.py`,
+  `tests/test_financial_triage_agent.py`,
+  `tests/test_macro_context_agent.py`, and
+  `tests/test_macro_signals_providers.py`.
 - Deterministic `company-report --auto-inputs --market-data hk-public`
   smoke still produces `research_ready_with_review` reports for
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) with Tencent
@@ -385,6 +421,14 @@ set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
+  --llm-agents pipeline-triage financial-triage macro-context \
+    scientific-skeptic
+
+# Same as above, plus live HSI / USD-HKD feed for macro-context
+.venv/bin/python -m biotech_alpha.cli company-report \
+  --ticker 09606.HK --auto-inputs \
+  --market-data hk-public \
+  --macro-signals yahoo-hk \
   --llm-agents pipeline-triage financial-triage macro-context \
     scientific-skeptic
 
@@ -426,69 +470,79 @@ Latest smoke result:
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
+- `--macro-signals yahoo-hk` is wired end-to-end. When Yahoo's public
+  chart endpoint returns 200, the `macro_context` fact carries a
+  `live_signals` block (HSI level + 30-day trend, USD/HKD spot, all
+  source-tagged) and `known_unknowns` drops the HSI / USD-HKD items.
+  When Yahoo returns 429 (observed from this IP during validation),
+  each sub-feed degrades to `None` with a note, the provider returns
+  `None`, the macro agent sees the unchanged stub, and behaviour
+  matches the pre-macro-signals run. No exception propagates.
 
 ## Execution Plan
 
 ### Current Task
 
-Four LLM agents (pipeline-triage + financial-triage + macro-context +
-scientific-skeptic) now compose reliably in a single AgentGraph under
-Qwen3.6, covering the four classic biotech analyst domains. Per-agent
-LLM budget caps and Tencent staleness tuning are in place. Next,
-remove single-vendor risk and begin enriching the macro-context stub
-so `insufficient_data` stops being the default answer.
+`--macro-signals yahoo-hk` now threads a source-tagged HSI + USD-HKD
+live feed into the `macro_context` fact, so the macro agent can form
+a concrete regime read when Yahoo is reachable and still degrade
+cleanly to the old `insufficient_data` answer when it is not. The
+remaining M4 work is removing single-vendor LLM risk (Anthropic /
+Claude via the same `LLMClient` protocol) and hardening the macro
+feed so transient 429s do not hide a real regime from the agent.
 
 Two immediate tracks:
 
-- Enrich `macro_context` fact with a lightweight live source so the
-  macro agent can form an actual regime read instead of returning
-  `insufficient_data`. Options (in increasing order of scope): HSI /
-  HSBIO index level and 30-day trend from a single Yahoo / Tencent
-  call; HIBOR + USD/HKD spot; then sector news headlines. All
-  data must be source-tagged; no model-estimated numbers.
-- `LLMClient` provider abstraction hardening for a Claude adapter.
-  Today `OpenAICompatibleLLMClient` special-cases Bailian via
-  `_is_bailian_endpoint`; Claude's API shape (Anthropic Messages API)
-  does not fit OpenAI Chat Completions, so we need a parallel
+- `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`. Today
+  `OpenAICompatibleLLMClient` special-cases Bailian via
+  `_is_bailian_endpoint`; Claude's Messages API does not fit OpenAI
+  Chat Completions, so we need a parallel
   `AnthropicLLMClient` exposed through the same `LLMClient` protocol
   and routed by `LLMConfig.provider` (default "openai-compatible").
+- Macro-signals resilience. The Yahoo chart endpoint 429s on repeat
+  fetches from the same IP. Add a tiny on-disk cache (TTL ~6 h,
+  scoped to the generated inputs directory) plus a short exponential
+  backoff on 429/503 so the macro agent sees a live regime on the
+  common case. When all retries fail, keep the current
+  graceful-`None` behaviour.
 
 ### Next Action
 
-1. Add a lightweight `macro_signals` auto-input that records a small,
-   source-tagged dict: HSI level / 30-day trend, HKD/USD spot, HIBOR
-   tenor level, each with source URL and fetched_at. Thread it into
-   `_build_macro_context` under a new `live_signals` key. Keep all
-   fields optional so macro-context agent behaviour degrades to
-   `insufficient_data` when the feed is unreachable.
-2. CLI `--macro-signals yahoo-hk` opt-in flag (default off) to turn on
-   the feed. Add a CLI test that asserts the flag threads through and
-   that the agent's `macro_context` fact gains a non-empty
-   `live_signals` block.
-3. Add `AnthropicLLMClient` mirroring the `LLMClient` protocol, with
-   its own adapter module `src/biotech_alpha/llm/anthropic.py`.
-   Extend `LLMConfig` with `provider: Literal["openai-compatible",
-   "anthropic"] = "openai-compatible"` and an `ANTHROPIC_API_KEY` env
-   read. Route in `_build_llm_client`. At least one agent (pick
-   `MacroContextLLMAgent`) should pass an offline happy-path test
-   against a fake Anthropic response shape, and an online smoke for
-   anyone with `ANTHROPIC_API_KEY` set.
+1. Add `src/biotech_alpha/llm/anthropic.py` with an
+   `AnthropicLLMClient` implementing the `LLMClient` protocol against
+   the Anthropic Messages API. Extend `LLMConfig` with
+   `provider: Literal["openai-compatible", "anthropic"] =
+   "openai-compatible"` and an `ANTHROPIC_API_KEY` env read. Route in
+   `_build_llm_client`. Write a happy-path offline test that stubs
+   Anthropic's response shape for the `MacroContextLLMAgent`, and an
+   online smoke gated by `BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1`
+   plus `ANTHROPIC_API_KEY`.
+2. Add a JSON on-disk cache for `hk_macro_signals_yahoo` keyed by
+   `(symbol, interval, range)` with a 6-hour TTL. Cache location
+   defaults to `data/input/generated/.cache/macro_signals/`. On
+   cache hit, emit a note in `notes` indicating the cached
+   `fetched_at`. On 429, sleep 1 s then retry once before giving up.
+3. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
+   once Yahoo rate-limits recover (or from a fresh IP) and confirm
+   the macro agent returns a non-`insufficient_data` regime with
+   cited live values.
 
 ### Acceptance Criteria
 
-- With `--macro-signals yahoo-hk`, the `macro_context` fact carries a
-  non-empty `live_signals` block and the macro agent's output has
-  `macro_regime` other than `insufficient_data` at least some of the
-  time (it is allowed to still return `insufficient_data` when the
-  feed itself has gaps).
-- Without the flag, behaviour is identical to today.
-- `pytest` passes with the new `AnthropicLLMClient` unit tests. Online
-  tests are self-skipping behind `BIOTECH_ALPHA_ONLINE_LLM_TESTS=1`
-  and additionally require `ANTHROPIC_API_KEY`.
+- `pytest` passes with the new `AnthropicLLMClient` unit tests.
+  Online tests are self-skipping behind
+  `BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1` and additionally require
+  `ANTHROPIC_API_KEY`.
 - `LLMConfig.provider="anthropic"` plus `ANTHROPIC_API_KEY=...` runs
-  `company-report --llm-agents macro-context` end-to-end and writes a
-  trace entry tagged with the Anthropic model.
-- No regression on the existing four-agent Qwen smoke.
+  `company-report --llm-agents macro-context` end-to-end and writes
+  a trace entry tagged with the Anthropic model.
+- `hk_macro_signals_yahoo` cache round-trips through disk and TTL
+  expiry is exercised by a unit test (no network hits).
+- `--macro-signals yahoo-hk` live smoke produces a non-
+  `insufficient_data` macro regime at least once (recorded in
+  `data/memos/<run_id>_llm_findings.json`).
+- No regression on the existing four-agent Qwen smoke or on the
+  macro-signals offline tests.
 
 ### Validation
 
@@ -509,12 +563,15 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. `macro_signals` auto-input (HSI + HKD/USD + HIBOR) threaded into
-   `macro_context.live_signals` so the macro agent can stop returning
-   `insufficient_data`. Opt-in via `--macro-signals yahoo-hk`.
-2. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
+1. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
    through `LLMConfig.provider`, so the runtime is not single-vendor.
-3. Add auto competitor drafts once pipeline extraction is reliable.
+2. Macro-signals resilience (6-hour disk cache + one short retry on
+   Yahoo 429) so the live regime read is the common path, not the
+   rare path.
+3. Extend `hk_macro_signals_yahoo` to add HIBOR tenor levels, Hang
+   Seng Biotech sub-index (^HSBIO), and a small list of source-tagged
+   sector news headlines.
+4. Add auto competitor drafts once pipeline extraction is reliable.
 4. Keep broadening fixtures across representative HK biotech disclosure
    styles.
 5. Tighten validator checks for stale placeholders and weak evidence

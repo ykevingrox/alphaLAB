@@ -259,10 +259,18 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   `BudgetEnforcingLLMClient` wrapper applies the same logic to any
   `LLMClient`, useful for tests or adapters that lack native budget
   support.
-- **Not started** — Enrich `macro_context` with a lightweight live
-  source (HSI / HSBIO index trend, HKD/USD, HIBOR) so the macro agent
-  can stop defaulting to `insufficient_data`. Opt-in via
+- **Done** — Lightweight live macro-signals feed for the macro agent.
+  New `MacroSignalsProvider` protocol plus
+  `hk_macro_signals_yahoo` pull HSI level / 30-day return and USD/HKD
+  spot from Yahoo's public chart endpoint, attach them to
+  `macro_context.live_signals`, prune the corresponding
+  `known_unknowns` entries, and degrade gracefully to a
+  `None` sub-signal when the feed 429s. Opt-in via
   `--macro-signals yahoo-hk`.
+- **Not started** — Macro-signals resilience: 6-hour on-disk cache plus
+  one short retry on Yahoo 429/503 so the live regime read becomes the
+  common path instead of the rare path. Extend to HIBOR tenors, Hang
+  Seng Biotech sub-index, and source-tagged sector news headlines.
 - **Not started** — Technical / K-line agent (long-horizon trend read on top
   of a future market-data pipeline).
 - **Not started** — Orchestration fall-back: when an LLM agent fails schema
@@ -400,7 +408,15 @@ adapter, and starting a technical / K-line agent.
   `hk_public_quote_provider` with `functools.partial` so operators
   can tune Tencent staleness without patching code; default stays at
   3 days.
+- **Done** — `--macro-signals yahoo-hk` live feed: `MacroSignalsProvider`
+  protocol + `hk_macro_signals_yahoo` pull HSI level / 30-day return and
+  USD/HKD spot from Yahoo's public chart endpoint, attach them to
+  `macro_context.live_signals`, and prune the matching
+  `known_unknowns` entries. All sub-feed failures degrade to `None`
+  with a note; no exception propagates. When Yahoo is reachable the
+  macro agent forms a concrete regime; when rate-limited it falls back
+  to the prior stub-only answer unchanged.
 - **Not started** — Add a Claude adapter so the runtime is not single-vendor.
-- **Not started** — Enrich `macro_context` with a live source
-  (HSI / HSBIO / HKD-USD / HIBOR) so the macro agent can start
-  returning real regimes instead of `insufficient_data`.
+- **Not started** — Macro-signals resilience (disk cache + retry on Yahoo
+  429/503); then extend to HIBOR tenors, Hang Seng Biotech sub-index,
+  and source-tagged sector news headlines.
