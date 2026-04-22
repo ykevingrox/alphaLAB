@@ -98,6 +98,8 @@ writes a catalyst-calendar CSV.
   - Regulatory milestones
   - Conferences
   - Earnings and annual results
+- Add curated conference catalyst input contracts with explicit source type,
+  confidence tags, and human-review flags.
 
 ## Phase 4: Cash Runway
 
@@ -183,3 +185,73 @@ Status: not started.
 - Backtest watchlist entry rules.
 - Backtest historical catalyst-event reactions and target-range calibration.
 - Avoid look-ahead bias by using historical source snapshots.
+
+## Next Execution Plan (Suggested)
+
+The highest-priority path is to make one-command `company-report` reliable for
+daily use with minimal manual prep.
+
+**Doc discipline:** Each sprint below lists **implementation status** so this
+section stays aligned with the repo. Update statuses when scope changes.
+
+**Last status pass:** 2026-04-22 (match to `git` history for this file when in doubt).
+
+### Sprint 1: Reliability And Coverage Baseline
+
+**Sprint status:** in progress (core paths covered; ticker fixtures still open).
+
+- **Done** — Expand and harden one-command tests for `company-report`, including
+  missing-input fallback, `auto_inputs` success paths, `auto_inputs` exception
+  fallback, manual-over-generated precedence, ticker-only identity, and
+  conference input discovery.
+  **Where:** `tests/test_company_report.py`, `tests/test_cli.py` (watchlist
+  filter), `tests/test_research.py` (manifest quality gate).
+
+- **Not started** — Add fixture-based regression tests for representative HK
+  biotech tickers to catch schema or parsing drift early (network-free fixtures
+  preferred).
+
+- **Done** — Standardize run-level quality gates in summaries and manifests so
+  users can quickly see whether output is decision-ready; optional watchlist
+  filtering by minimum gate.
+  **Where:** `company_report_summary` / `missing_inputs_payload` and research
+  run `manifest` (`quality_gate`), `watchlist-rank --min-quality-gate` in
+  `src/biotech_alpha/cli.py` and `src/biotech_alpha/watchlist.py`.
+
+### Sprint 2: Input Quality Upgrade
+
+**Sprint status:** partially started (HKEX annual-results extraction exists;
+resilience and validator tightening remain).
+
+- **Not started** — Improve HKEX source discovery robustness and retry behavior
+  for annual-results fetch and extraction.
+
+- **Partially done** — Extend generated draft inputs with clearer confidence
+  tags and explicit `needs_human_review` markers (conference draft JSON from
+  annual-results text exists; broader contracts still shallow).
+  **Where:** `src/biotech_alpha/auto_inputs.py` (`draft_conference_catalysts`).
+
+- **Not started** — Add stricter validators for placeholder values, stale dates,
+  and missing evidence metadata (beyond current warning-only checks).
+
+### Sprint 3: Research Depth Upgrade
+
+**Sprint status:** partially started (curated conference path in; China registry
+and web ingestion out).
+
+- **Not started** — Add first-pass China trial registry ingestion to improve
+  China-heavy program coverage.
+
+- **Partially done** — Conference catalyst layer: curated JSON contract + CLI
+  template/validate + research pipeline + memo section split + optional
+  auto-draft from HKEX PDF text (not full public-web scraping).
+  **Where:** `src/biotech_alpha/conference.py`, `src/biotech_alpha/research.py`,
+  `src/biotech_alpha/auto_inputs.py`, `tests/test_conference.py`.
+
+- **Not started** — Improve competitor intelligence from deterministic
+  target/indication matching toward better data-maturity and differentiation
+  checks.
+
+- **Not started** — Keep memo outputs deterministic-first while introducing a
+  bounded, auditable scientific critique layer (LLM-backed critique still out of
+  scope for the current deterministic memo).

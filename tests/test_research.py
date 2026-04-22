@@ -298,6 +298,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Skeptical Review", memo_markdown)
             self.assertIn("## Watchlist Scorecard", memo_markdown)
             self.assertIn("## Catalyst-Adjusted Valuation", memo_markdown)
+            self.assertIn("## Conference Catalysts", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
@@ -324,6 +325,10 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["valuation"], 1)
             self.assertEqual(manifest["counts"]["target_price"], 1)
             self.assertEqual(manifest["counts"]["scorecard"], 1)
+            self.assertEqual(
+                manifest["quality_gate"]["level"],
+                "research_ready_with_review",
+            )
             self.assertIn("financials", manifest["input_validation"])
             self.assertIn("competitors", manifest["input_validation"])
             self.assertIn("valuation", manifest["input_validation"])

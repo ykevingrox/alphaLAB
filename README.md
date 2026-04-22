@@ -55,6 +55,7 @@ src/biotech_alpha/
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
   company_report.py   One-command report orchestration
   competition.py      Competitive landscape inputs and deterministic matching
+  conference.py       Conference catalyst inputs and validation
   financials.py       Financial snapshot loading and cash runway estimation
   models.py           Domain models for trials, pipeline assets, and memos
   pipeline.py         Pipeline asset loading and deterministic trial matching
@@ -73,6 +74,7 @@ tests/
   test_clinicaltrials.py
   test_company_report.py
   test_competition.py
+  test_conference.py
   test_financials.py
   test_pipeline.py
   test_research.py
@@ -112,8 +114,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
 
 For the HK biotech MVP, add `--auto-inputs` to let the system discover the
 latest HKEX annual results announcement, download the source PDF, extract text,
-generate draft pipeline and financial input files, validate them, and then run
-the report:
+generate draft pipeline, financial, and conference-catalyst input files,
+validate them, and then run the report:
 
 ```bash
 .venv/bin/python -m biotech_alpha.cli company-report \
@@ -158,6 +160,14 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
 
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_conference_catalysts.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate \
+  data/input/akeso_conference_catalysts.json
+
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
   --company "Akeso" \
   --ticker "9926.HK" \
@@ -181,6 +191,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
+  --conference-catalysts data/input/akeso_conference_catalysts.json \
   --target-price-assumptions data/input/akeso_target_price_assumptions.json \
   --limit 20
 ```

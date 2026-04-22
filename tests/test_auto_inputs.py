@@ -5,6 +5,7 @@ from pathlib import Path
 
 from biotech_alpha.auto_inputs import (
     SourceDocument,
+    draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
 )
@@ -30,6 +31,7 @@ DB-1311/BNT324 (B7-H3 ADC) Clinical Readouts in mCRPC and Beyond.
 The first global Phase 3 trial evaluating DB-1311/BNT324 compared with
 docetaxel in patients with taxane-naive mCRPC is planned to start in 2026.
 DB-1310 (HER3 ADC) Clinical Readouts in NSCLC and breast cancer.
+The company plans to present updated data at ASCO 2026.
 """
 
 
@@ -66,6 +68,17 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(payload["short_term_debt"], 141056000)
         self.assertEqual(payload["quarterly_cash_burn"], 97192250)
         self.assertTrue(payload["needs_human_review"])
+
+    def test_drafts_conference_catalysts_from_source_text(self) -> None:
+        payload = draft_conference_catalysts(
+            identity=CompanyIdentity(company="DualityBio", ticker="09606.HK"),
+            text=SAMPLE_TEXT,
+            source=_source(),
+        )
+        self.assertTrue(payload["needs_human_review"])
+        self.assertEqual(len(payload["catalysts"]), 1)
+        self.assertEqual(payload["catalysts"][0]["category"], "conference")
+        self.assertIn("ASCO", payload["catalysts"][0]["title"])
 
 
 def _source() -> SourceDocument:

@@ -16,6 +16,11 @@ from biotech_alpha.clinicaltrials import (
     extract_trial_summaries,
     summaries_as_dicts,
 )
+from biotech_alpha.conference import (
+    conference_validation_report_as_dict,
+    load_conference_catalysts,
+    validate_conference_catalyst_file,
+)
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
     competitive_landscape_finding,
@@ -159,6 +164,7 @@ def run_single_company_research(
     competitors_path: str | Path | None = None,
     financials_path: str | Path | None = None,
     valuation_path: str | Path | None = None,
+    conference_catalysts_path: str | Path | None = None,
     target_price_assumptions_path: str | Path | None = None,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
@@ -224,6 +230,11 @@ def run_single_company_research(
         if competitors_path
         else ()
     )
+    conference_catalysts = (
+        load_conference_catalysts(conference_catalysts_path)
+        if conference_catalysts_path
+        else ()
+    )
     competitive_matches = match_competitors_to_pipeline(assets, competitors)
     cash_runway_estimate = (
         estimate_cash_runway(financial_snapshot)
@@ -240,6 +251,7 @@ def run_single_company_research(
         competitors_path=competitors_path,
         financials_path=financials_path,
         valuation_path=valuation_path,
+        conference_catalysts_path=conference_catalysts_path,
         target_price_assumptions_path=target_price_assumptions_path,
     )
     search_terms = _clinical_trial_search_terms(
@@ -268,6 +280,7 @@ def run_single_company_research(
     catalysts = (
         *_derive_clinical_catalysts(trials, today=timestamp.date()),
         *_derive_asset_milestone_catalysts(assets),
+        *conference_catalysts,
     )
     skeptic_preview = scientific_skeptic_finding(
         company=company,
@@ -509,9 +522,16 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
                 lines.append(f"  - {risk}")
     else:
         lines.append("- No catalyst-adjusted target price range was generated.")
+    clinical_catalysts = tuple(
+        catalyst for catalyst in memo.catalysts if catalyst.category != "conference"
+    )
+    conference_catalysts = tuple(
+        catalyst for catalyst in memo.catalysts if catalyst.category == "conference"
+    )
+
     lines.extend(["", "## Upcoming Clinical Catalysts", ""])
-    if memo.catalysts:
-        for catalyst in memo.catalysts:
+    if clinical_catalysts:
+        for catalyst in clinical_catalysts:
             when = (
                 catalyst.expected_date.isoformat()
                 if catalyst.expected_date
@@ -522,9 +542,22 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
             asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
             lines.append(f"- {when}: {catalyst.title}{asset}")
     else:
-        lines.append(
-            "- No future dated clinical catalysts were derived from the registry data."
-        )
+        lines.append("- No non-conference catalysts were captured.")
+
+    lines.extend(["", "## Conference Catalysts", ""])
+    if conference_catalysts:
+        for catalyst in conference_catalysts:
+            when = (
+                catalyst.expected_date.isoformat()
+                if catalyst.expected_date
+                else "TBD"
+            )
+            if catalyst.expected_window:
+                when = catalyst.expected_window
+            asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
+            lines.append(f"- {when}: {catalyst.title}{asset}")
+    else:
+        lines.append("- No conference catalysts were captured.")
 
     lines.extend(["", "## Evidence", ""])
     evidence_items = (
@@ -708,6 +741,7 @@ def _input_validation_reports(
     competitors_path: str | Path | None,
     financials_path: str | Path | None,
     valuation_path: str | Path | None,
+    conference_catalysts_path: str | Path | None,
     target_price_assumptions_path: str | Path | None,
 ) -> dict[str, Any]:
     reports: dict[str, Any] = {}
@@ -726,6 +760,10 @@ def _input_validation_reports(
     if valuation_path:
         reports["valuation"] = valuation_validation_report_as_dict(
             validate_valuation_snapshot_file(valuation_path)
+        )
+    if conference_catalysts_path:
+        reports["conference_catalysts"] = conference_validation_report_as_dict(
+            validate_conference_catalyst_file(conference_catalysts_path)
         )
     if target_price_assumptions_path:
         reports["target_price"] = target_price_validation_report_as_dict(
@@ -1257,6 +1295,14 @@ def _write_research_artifacts(
             "search_terms": search_terms,
             "api_version": api_version,
             "input_validation": input_validation,
+            "quality_gate": _quality_gate_from_run(
+                pipeline_assets=pipeline_assets,
+                competitor_assets=competitor_assets,
+                financial_snapshot=financial_snapshot,
+                valuation_snapshot=valuation_snapshot,
+                input_validation=input_validation,
+                memo=memo,
+            ),
             "counts": {
                 "trials": len(trials),
                 "pipeline_assets": len(pipeline_assets),
@@ -1274,6 +1320,48 @@ def _write_research_artifacts(
         },
     )
     return artifacts
+
+
+def _quality_gate_from_run(
+    *,
+    pipeline_assets: tuple[PipelineAsset, ...],
+    competitor_assets: tuple[CompetitorAsset, ...],
+    financial_snapshot: FinancialSnapshot | None,
+    valuation_snapshot: ValuationSnapshot | None,
+    input_validation: dict[str, Any],
+    memo: InvestmentMemo,
+) -> dict[str, Any]:
+    missing_high = 0
+    missing_medium = 0
+    if not pipeline_assets:
+        missing_high += 1
+    if financial_snapshot is None:
+        missing_high += 1
+    if not competitor_assets:
+        missing_medium += 1
+    if valuation_snapshot is None:
+        missing_medium += 1
+    warning_count = _input_warning_count(input_validation)
+    needs_human_review = any(
+        finding.needs_human_review for finding in memo.findings
+    )
+    if missing_high > 0:
+        level = "incomplete"
+        rationale = "high-severity curated inputs are missing"
+    elif needs_human_review or warning_count > 0 or missing_medium > 0:
+        level = "research_ready_with_review"
+        rationale = "report generated but requires manual review"
+    else:
+        level = "decision_ready"
+        rationale = "required inputs and checks are in acceptable shape"
+    return {
+        "level": level,
+        "rationale": rationale,
+        "missing_high_severity_inputs": missing_high,
+        "missing_medium_severity_inputs": missing_medium,
+        "input_warning_count": warning_count,
+        "needs_human_review": needs_human_review,
+    }
 
 
 def _write_json(path: Path, payload: Any) -> None:

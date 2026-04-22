@@ -30,6 +30,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
 PYTHONPATH=src python3 -m biotech_alpha.cli catalyst-alerts --help
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template --help
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate --help
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-template --help
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate --help
 ```
 
 Check ClinicalTrials.gov access:
@@ -61,7 +63,8 @@ Expected behavior:
 - `needs_human_review` may be `true` when important inputs are missing.
 
 For the HK biotech MVP, use `--auto-inputs` when you want the system to create
-draft pipeline and financial inputs before running the report:
+draft pipeline, financial, and conference-catalyst inputs before running the
+report:
 
 ```bash
 .venv/bin/python -m biotech_alpha.cli company-report \
@@ -79,6 +82,7 @@ This currently:
 - Extracts text with `pypdf`.
 - Writes draft inputs under `data/input/generated/`.
 - Runs `pipeline-validate` and `financial-validate` internally.
+- Runs `conference-validate` internally.
 - Runs the report with those generated inputs.
 
 Generated inputs are drafts and remain `needs_human_review: true`.
@@ -131,6 +135,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
   --ticker "9926.HK" \
   --output data/input/akeso_valuation.json
 
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_conference_catalysts.json
+
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
   --company "Akeso" \
   --ticker "9926.HK" \
@@ -159,6 +168,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
 
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate \
+  data/input/akeso_conference_catalysts.json
+
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
 ```
@@ -179,6 +191,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
+  --conference-catalysts data/input/akeso_conference_catalysts.json \
   --target-price-assumptions data/input/akeso_target_price_assumptions.json \
   --limit 20
 ```

@@ -4,8 +4,10 @@
 
 ## Current Local Input Contracts
 
-The current CLI supports five curated local JSON inputs while automatic document
-extraction is still pending:
+The current CLI supports six curated local JSON inputs. The HK biotech MVP also
+has first-pass automatic extraction from HKEX annual-results PDFs for draft
+pipeline, financial, and conference-catalyst inputs; broader document ingestion
+and higher-recall extraction are still pending:
 
 - Pipeline assets: generated with `pipeline-template`, checked with
   `pipeline-validate`, and passed to `research --pipeline-assets`.
@@ -15,13 +17,16 @@ extraction is still pending:
   `competitor-validate`, and passed to `research --competitors`.
 - Valuation snapshots: generated with `valuation-template`, checked with
   `valuation-validate`, and passed to `research --valuation`.
+- Conference catalysts: generated with `conference-template`, checked with
+  `conference-validate`, and passed to `research --conference-catalysts`.
 - Target-price assumptions: generated with `target-price-template` and checked
-  with `target-price-validate`. These inputs are not yet connected to the
-  research run or event-impact calculation.
+  with `target-price-validate`. These inputs can be used by
+  `event-impact --assumptions ...` and can also be passed to
+  `research --target-price-assumptions`.
 
 Research-run input types preserve source references and validation warnings in
-the run manifest. Target-price assumption validation is standalone until those
-inputs are connected to event-impact and rNPV scenario outputs.
+the run manifest. Target-price assumptions feed deterministic event-impact and
+rNPV scenario outputs, and those artifacts can be attached to research memos.
 
 Target-price assumptions need curated inputs for:
 

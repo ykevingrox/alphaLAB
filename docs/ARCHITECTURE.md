@@ -188,6 +188,8 @@ Current helper commands:
 - `competitor-validate`
 - `valuation-template`
 - `valuation-validate`
+- `conference-template`
+- `conference-validate`
 - `target-price-template`
 - `target-price-validate`
 - `event-impact`

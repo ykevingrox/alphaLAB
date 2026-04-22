@@ -38,6 +38,7 @@ class CompanyReportInputPaths:
     financials: Path | None = None
     competitors: Path | None = None
     valuation: Path | None = None
+    conference_catalysts: Path | None = None
     target_price_assumptions: Path | None = None
 
 
@@ -70,6 +71,7 @@ INPUT_SUFFIXES = {
     "financials": ("financials", "financial"),
     "competitors": ("competitors", "competitor"),
     "valuation": ("valuation",),
+    "conference_catalysts": ("conference_catalysts", "conference"),
     "target_price_assumptions": ("target_price_assumptions", "target_price"),
 }
 
@@ -122,6 +124,15 @@ MISSING_INPUT_SPECS = {
         ),
         "template_command": "target-price-template",
     },
+    "conference_catalysts": {
+        "severity": "optional",
+        "reason": "Conference catalysts improve event-calendar completeness.",
+        "next_action": (
+            "Create the conference catalyst template, then add conference events "
+            "with source links, dates, confidence, and related assets."
+        ),
+        "template_command": "conference-template",
+    },
 }
 
 
@@ -164,13 +175,22 @@ def run_company_report(
     auto_input_artifacts = None
     if auto_inputs:
         from biotech_alpha.auto_inputs import generate_auto_inputs
+        from biotech_alpha.auto_inputs import AutoInputArtifacts
 
-        auto_input_artifacts = generate_auto_inputs(
-            identity=identity,
-            input_dir=generated_input_dir,
-            output_dir=output_dir,
-            overwrite=overwrite_auto_inputs,
-        )
+        try:
+            auto_input_artifacts = generate_auto_inputs(
+                identity=identity,
+                input_dir=generated_input_dir,
+                output_dir=output_dir,
+                overwrite=overwrite_auto_inputs,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep one-command flow resilient.
+            auto_input_artifacts = AutoInputArtifacts(
+                warnings=(
+                    "auto input generation failed; falling back to discovered "
+                    f"inputs only: {exc}",
+                )
+            )
     input_paths = discover_company_inputs(identity, input_dir=input_dir)
     if auto_inputs:
         generated_paths = discover_company_inputs(
@@ -187,6 +207,7 @@ def run_company_report(
         competitors_path=input_paths.competitors,
         financials_path=input_paths.financials,
         valuation_path=input_paths.valuation,
+        conference_catalysts_path=input_paths.conference_catalysts,
         target_price_assumptions_path=input_paths.target_price_assumptions,
         include_asset_queries=include_asset_queries,
         max_asset_query_terms=max_asset_query_terms,
@@ -388,6 +409,10 @@ def missing_inputs_payload(
             identity=identity,
             missing_inputs=missing_inputs,
         ),
+        "quality_gate": report_quality_gate(
+            result=result,
+            missing_inputs=missing_inputs,
+        ),
         "rerun_command": company_report_rerun_command(identity),
         "notes": (
             "The report was generated with available inputs.",
@@ -417,12 +442,52 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             identity=result.identity,
             missing_inputs=result.missing_inputs,
         ),
+        "quality_gate": report_quality_gate(
+            result=result.research_result,
+            missing_inputs=result.missing_inputs,
+        ),
         "rerun_command": company_report_rerun_command(result.identity),
         "missing_inputs_report": (
             str(result.missing_inputs_report)
             if result.missing_inputs_report
             else None
         ),
+    }
+
+
+def report_quality_gate(
+    *,
+    result: SingleCompanyResearchResult,
+    missing_inputs: tuple[MissingInput, ...],
+) -> dict[str, Any]:
+    """Summarize whether a company report is decision-ready."""
+
+    high_missing = sum(1 for item in missing_inputs if item.severity == "high")
+    medium_missing = sum(1 for item in missing_inputs if item.severity == "medium")
+    warning_count = sum(
+        len(report.get("warnings", []))
+        for report in result.input_validation.values()
+        if isinstance(report, dict)
+    )
+    needs_human_review = any(
+        finding.needs_human_review for finding in result.memo.findings
+    )
+    if high_missing > 0:
+        level = "incomplete"
+        rationale = "high-severity curated inputs are missing"
+    elif needs_human_review or warning_count > 0 or medium_missing > 0:
+        level = "research_ready_with_review"
+        rationale = "report generated but requires manual review"
+    else:
+        level = "decision_ready"
+        rationale = "required inputs and checks are in acceptable shape"
+    return {
+        "level": level,
+        "rationale": rationale,
+        "missing_high_severity_inputs": high_missing,
+        "missing_medium_severity_inputs": medium_missing,
+        "input_warning_count": warning_count,
+        "needs_human_review": needs_human_review,
     }
 
 
@@ -436,6 +501,9 @@ def _merge_input_paths(
         financials=primary.financials or fallback.financials,
         competitors=primary.competitors or fallback.competitors,
         valuation=primary.valuation or fallback.valuation,
+        conference_catalysts=(
+            primary.conference_catalysts or fallback.conference_catalysts
+        ),
         target_price_assumptions=(
             primary.target_price_assumptions
             or fallback.target_price_assumptions

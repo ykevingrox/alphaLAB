@@ -24,6 +24,11 @@ from biotech_alpha.competition import (
     validate_competitor_file,
     write_competitor_template,
 )
+from biotech_alpha.conference import (
+    conference_validation_report_as_dict,
+    validate_conference_catalyst_file,
+    write_conference_catalyst_template,
+)
 from biotech_alpha.financials import (
     financial_validation_report_as_dict,
     validate_financial_snapshot_file,
@@ -52,6 +57,7 @@ from biotech_alpha.valuation import (
     write_valuation_snapshot_template,
 )
 from biotech_alpha.watchlist import (
+    filter_watchlist_entries_by_quality_gate,
     latest_watchlist_entries,
     load_watchlist_entries,
     rank_watchlist_entries,
@@ -123,6 +129,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     research_parser.add_argument(
         "--valuation",
         help="Optional JSON file containing a market valuation snapshot.",
+    )
+    research_parser.add_argument(
+        "--conference-catalysts",
+        help="Optional JSON file containing conference catalyst inputs.",
     )
     research_parser.add_argument(
         "--target-price-assumptions",
@@ -333,6 +343,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Competitor asset JSON file to validate.",
     )
 
+    conference_template_parser = subparsers.add_parser(
+        "conference-template",
+        help="Write a starter JSON file for conference catalyst inputs.",
+    )
+    conference_template_parser.add_argument(
+        "--company",
+        required=True,
+        help="Company name for the template metadata.",
+    )
+    conference_template_parser.add_argument(
+        "--ticker",
+        help="Optional listed ticker for the template metadata.",
+    )
+    conference_template_parser.add_argument(
+        "--output",
+        required=True,
+        help="Output JSON path, such as data/input/akeso_conference_catalysts.json.",
+    )
+    conference_template_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists.",
+    )
+
+    conference_validate_parser = subparsers.add_parser(
+        "conference-validate",
+        help="Validate a curated conference catalyst JSON file.",
+    )
+    conference_validate_parser.add_argument(
+        "path",
+        help="Conference catalyst JSON file to validate.",
+    )
+
     valuation_template_parser = subparsers.add_parser(
         "valuation-template",
         help="Write a starter JSON file for valuation snapshot inputs.",
@@ -389,6 +432,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--latest-only",
         action="store_true",
         help="Keep only the newest saved run for each company or ticker.",
+    )
+    watchlist_parser.add_argument(
+        "--min-quality-gate",
+        choices=("incomplete", "research_ready_with_review", "decision_ready"),
+        help="Keep only entries at or above this quality gate level.",
     )
 
     alerts_parser = subparsers.add_parser(
@@ -501,6 +549,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             competitors_path=args.competitors,
             financials_path=args.financials,
             valuation_path=args.valuation,
+            conference_catalysts_path=args.conference_catalysts,
             target_price_assumptions_path=args.target_price_assumptions,
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
@@ -597,6 +646,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1 if report.errors else 0
 
+    if args.command == "conference-template":
+        path = write_conference_catalyst_template(
+            path=args.output,
+            company=args.company,
+            ticker=args.ticker,
+            overwrite=args.force,
+        )
+        print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "conference-validate":
+        report = validate_conference_catalyst_file(args.path)
+        print(
+            json.dumps(
+                conference_validation_report_as_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1 if report.errors else 0
+
     if args.command == "valuation-template":
         path = write_valuation_snapshot_template(
             path=args.output,
@@ -625,6 +695,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.latest_only
             else loaded_entries
         )
+        entries = filter_watchlist_entries_by_quality_gate(
+            entries,
+            min_level=args.min_quality_gate,
+        )
         entries = rank_watchlist_entries(entries)
         if args.format == "csv":
             if args.output:
@@ -636,6 +710,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "entry_count": len(entries),
                             "loaded_entry_count": len(loaded_entries),
                             "latest_only": args.latest_only,
+                            "min_quality_gate": args.min_quality_gate,
                         },
                         ensure_ascii=False,
                         indent=2,
@@ -649,6 +724,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "entry_count": len(entries),
             "loaded_entry_count": len(loaded_entries),
             "latest_only": args.latest_only,
+            "min_quality_gate": args.min_quality_gate,
             "entries": watchlist_entries_as_dicts(entries),
         }
         if args.output:
@@ -665,6 +741,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "entry_count": len(entries),
                         "loaded_entry_count": len(loaded_entries),
                         "latest_only": args.latest_only,
+                        "min_quality_gate": args.min_quality_gate,
                     },
                     ensure_ascii=False,
                     indent=2,

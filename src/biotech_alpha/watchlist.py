@@ -21,6 +21,7 @@ class WatchlistEntry:
     retrieved_at: str | None
     watchlist_score: float
     watchlist_bucket: str
+    quality_gate_level: str | None
     needs_human_review: bool
     input_warning_count: int
     trial_count: int
@@ -61,6 +62,7 @@ WATCHLIST_CSV_FIELDS = (
     "retrieved_at",
     "watchlist_score",
     "watchlist_bucket",
+    "quality_gate_level",
     "sizing_tier",
     "research_position_limit_pct",
     "needs_human_review",
@@ -133,6 +135,23 @@ def latest_watchlist_entries(
         if current is None or _run_sort_key(entry) > _run_sort_key(current):
             latest_by_identity[identity] = entry
     return tuple(latest_by_identity.values())
+
+
+def filter_watchlist_entries_by_quality_gate(
+    entries: tuple[WatchlistEntry, ...],
+    *,
+    min_level: str | None,
+) -> tuple[WatchlistEntry, ...]:
+    """Filter entries by minimum quality-gate level."""
+
+    if not min_level:
+        return entries
+    threshold = _quality_gate_rank(min_level)
+    return tuple(
+        entry
+        for entry in entries
+        if _quality_gate_rank(entry.quality_gate_level) >= threshold
+    )
 
 
 def watchlist_entries_as_dicts(
@@ -306,6 +325,7 @@ def _entry_from_manifest(manifest_path: Path) -> WatchlistEntry | None:
         retrieved_at=_optional_str(manifest.get("retrieved_at")),
         watchlist_score=score,
         watchlist_bucket=bucket,
+        quality_gate_level=_quality_gate_level(manifest.get("quality_gate")),
         needs_human_review=bool(scorecard.get("needs_human_review")),
         input_warning_count=_input_warning_count(manifest.get("input_validation")),
         trial_count=_int_count(counts, "trials"),
@@ -544,3 +564,21 @@ def _string_tuple(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def _quality_gate_level(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    level = value.get("level")
+    return level if isinstance(level, str) and level else None
+
+
+def _quality_gate_rank(level: str | None) -> int:
+    order = {
+        "incomplete": 0,
+        "research_ready_with_review": 1,
+        "decision_ready": 2,
+    }
+    if not isinstance(level, str):
+        return -1
+    return order.get(level, -1)

@@ -1,5 +1,43 @@
 # Agent Contracts
 
+## Collaboration Handoff Protocol
+
+This repository may be edited by multiple AI coding tools, including Codex and
+Cursor. Treat the repository, tests, and handoff notes as the source of truth;
+do not rely on chat history alone.
+
+Before editing:
+
+- Run `git status --short --branch`.
+- Read `docs/HANDOFF.md`.
+- Inspect uncommitted changes before touching related files.
+- Do not revert user changes or another agent's work unless explicitly asked.
+
+During work:
+
+- Keep edits scoped to the current task.
+- Prefer existing repo patterns over new abstractions.
+- Preserve manual curated inputs as higher priority than generated drafts.
+- Keep generated data under ignored paths such as `data/raw/`,
+  `data/input/generated/`, `data/processed/`, and `data/memos/`.
+- Update tests and docs when behavior changes.
+
+Before handing off:
+
+- Run the validation commands listed in `docs/HANDOFF.md`.
+- Update `docs/HANDOFF.md` with current status and next best action.
+- Leave a concise summary of changed files, validation results, and known
+  blockers.
+- If committing, make a small commit with a message that describes the completed
+  behavior, not just the edited files.
+
+Recommended fixed prompt when switching tools:
+
+```text
+先读 docs/HANDOFF.md，然后检查 git status 和最近 diff。
+不要重做已经完成的事，评估当前状态后继续 Next Best Action。
+```
+
 Agents should behave like research specialists. Each agent must produce
 structured output with citations and confidence, then the Investment Committee
 Agent can combine their views.

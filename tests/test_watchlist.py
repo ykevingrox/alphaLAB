@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from biotech_alpha.watchlist import (
+    filter_watchlist_entries_by_quality_gate,
     latest_watchlist_entries,
     load_watchlist_entries,
     rank_watchlist_entries,
@@ -49,6 +50,11 @@ class WatchlistTest(unittest.TestCase):
             self.assertEqual(rows[0]["rank"], 1)
             self.assertEqual(rows[0]["market"], "HK")
             self.assertEqual(rows[0]["watchlist_score"], 72.5)
+            self.assertEqual(rows[0]["quality_gate_level"], "decision_ready")
+            self.assertEqual(
+                rows[1]["quality_gate_level"],
+                "research_ready_with_review",
+            )
             self.assertEqual(rows[1]["input_warning_count"], 1)
             self.assertEqual(rows[0]["cash_runway_months"], 24.0)
             self.assertEqual(rows[0]["enterprise_value"], 1500.0)
@@ -140,6 +146,38 @@ class WatchlistTest(unittest.TestCase):
             self.assertEqual(rows[0]["watchlist_score"], 68.0)
             self.assertEqual(rows[0]["company_concentration_count"], 1)
 
+    def test_filter_watchlist_entries_by_quality_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company"
+            self._write_run(
+                root=root,
+                slug="alpha",
+                run_id="20260420T010000Z",
+                company="Alpha Bio",
+                ticker="1111.HK",
+                score=50.0,
+                bucket="watchlist",
+                warnings=["placeholder"],
+            )
+            self._write_run(
+                root=root,
+                slug="beta",
+                run_id="20260420T020000Z",
+                company="Beta Bio",
+                ticker="2222.HK",
+                score=80.0,
+                bucket="deep_dive_candidate",
+                warnings=[],
+            )
+
+            entries = load_watchlist_entries(root)
+            filtered = filter_watchlist_entries_by_quality_gate(
+                entries,
+                min_level="decision_ready",
+            )
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(filtered[0].company, "Beta Bio")
+
     def _write_run(
         self,
         *,
@@ -219,6 +257,13 @@ class WatchlistTest(unittest.TestCase):
                     "retrieved_at": "2026-04-20T01:00:00+00:00",
                     "input_validation": {
                         "pipeline_assets": {"warnings": warnings},
+                    },
+                    "quality_gate": {
+                        "level": (
+                            "research_ready_with_review"
+                            if warnings
+                            else "decision_ready"
+                        )
                     },
                     "counts": {
                         "trials": 3,

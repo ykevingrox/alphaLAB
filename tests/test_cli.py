@@ -140,6 +140,35 @@ class CliTest(unittest.TestCase):
             self.assertEqual(validate_exit, 1)
             self.assertTrue(report["errors"])
 
+    def test_conference_template_and_validate_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "input" / "conference.json"
+
+            template_stdout = io.StringIO()
+            with redirect_stdout(template_stdout):
+                template_exit = main(
+                    [
+                        "conference-template",
+                        "--company",
+                        "Example Biotech",
+                        "--ticker",
+                        "9999.HK",
+                        "--output",
+                        str(path),
+                    ]
+                )
+
+            self.assertEqual(template_exit, 0)
+            self.assertEqual(json.loads(template_stdout.getvalue())["path"], str(path))
+
+            validate_stdout = io.StringIO()
+            with redirect_stdout(validate_stdout):
+                validate_exit = main(["conference-validate", str(path)])
+
+            report = json.loads(validate_stdout.getvalue())
+            self.assertEqual(validate_exit, 0)
+            self.assertEqual(report["catalyst_count"], 1)
+
     def test_valuation_template_and_validate_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "input" / "valuation.json"
@@ -287,6 +316,62 @@ class CliTest(unittest.TestCase):
             self.assertEqual(payload["loaded_entry_count"], 2)
             self.assertEqual(payload["entry_count"], 1)
             self.assertTrue(payload["latest_only"])
+            self.assertEqual(payload["entries"][0]["run_id"], "20260421T010000Z")
+
+    def test_watchlist_rank_min_quality_gate_filters_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company" / "alpha"
+            root.mkdir(parents=True)
+            for run_id, score, level in (
+                ("20260420T010000Z", 51.0, "research_ready_with_review"),
+                ("20260421T010000Z", 71.0, "decision_ready"),
+            ):
+                scorecard_path = root / f"{run_id}_scorecard.json"
+                manifest_path = root / f"{run_id}_manifest.json"
+                scorecard_path.write_text(
+                    json.dumps(
+                        {
+                            "total_score": score,
+                            "bucket": "watchlist",
+                            "needs_human_review": False,
+                            "monitoring_rules": ["Track readout"],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "company": "Alpha Bio",
+                            "ticker": "1111.HK",
+                            "market": "HK",
+                            "retrieved_at": run_id,
+                            "quality_gate": {"level": level},
+                            "input_validation": {},
+                            "counts": {"trials": 2, "pipeline_assets": 1},
+                            "artifacts": {"scorecard": str(scorecard_path)},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "watchlist-rank",
+                        "--processed-dir",
+                        str(Path(tmpdir) / "single_company"),
+                        "--min-quality-gate",
+                        "decision_ready",
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["entry_count"], 1)
+            self.assertEqual(payload["min_quality_gate"], "decision_ready")
             self.assertEqual(payload["entries"][0]["run_id"], "20260421T010000Z")
 
     def test_catalyst_alerts_outputs_json_for_changed_calendar(self) -> None:
@@ -444,7 +529,7 @@ class CliTest(unittest.TestCase):
         fake_summary = {
             "identity": {"company": "Example Bio"},
             "research": {"decision": "insufficient_data"},
-            "missing_input_count": 5,
+            "missing_input_count": 6,
         }
         with patch("biotech_alpha.cli.run_company_report") as run_mock:
             with patch("biotech_alpha.cli.company_report_summary") as summary_mock:
@@ -468,7 +553,7 @@ class CliTest(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["identity"]["company"], "Example Bio")
-        self.assertEqual(payload["missing_input_count"], 5)
+        self.assertEqual(payload["missing_input_count"], 6)
         run_mock.assert_called_once()
         self.assertTrue(run_mock.call_args.kwargs["auto_inputs"])
         self.assertTrue(run_mock.call_args.kwargs["overwrite_auto_inputs"])

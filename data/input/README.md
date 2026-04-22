@@ -1,7 +1,12 @@
 # Input Files
 
-This directory is for curated single-company inputs that are not downloaded
-automatically yet.
+This directory is for curated single-company inputs and local draft inputs that
+the one-command report can discover.
+
+For HK biotech reports, `company-report --auto-inputs` can create draft
+pipeline, financial, and conference-catalyst JSON files under
+`data/input/generated/` from HKEX annual-results PDFs. Those generated files are
+ignored by git and should still be treated as human-review drafts.
 
 The high-level `company-report` command scans this directory for matching files
 by company name, ticker, aliases, and expected suffixes:
@@ -38,6 +43,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli valuation-template \
   --ticker "9926.HK" \
   --output data/input/akeso_valuation.json
 
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_conference_catalysts.json
+
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
   --company "Akeso" \
   --ticker "9926.HK" \
@@ -59,6 +69,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli competitor-validate \
 PYTHONPATH=src python3 -m biotech_alpha.cli valuation-validate \
   data/input/akeso_valuation.json
 
+PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate \
+  data/input/akeso_conference_catalysts.json
+
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
 ```
@@ -73,6 +86,7 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --financials data/input/akeso_financials.json \
   --competitors data/input/akeso_competitors.json \
   --valuation data/input/akeso_valuation.json \
+  --conference-catalysts data/input/akeso_conference_catalysts.json \
   --target-price-assumptions data/input/akeso_target_price_assumptions.json
 ```
 

@@ -15,6 +15,10 @@ import requests
 from pypdf import PdfReader
 
 from biotech_alpha.company_report import CompanyIdentity
+from biotech_alpha.conference import (
+    conference_validation_report_as_dict,
+    validate_conference_catalyst_file,
+)
 from biotech_alpha.financials import (
     financial_validation_report_as_dict,
     validate_financial_snapshot_file,
@@ -53,6 +57,7 @@ class AutoInputArtifacts:
     source_manifest: Path | None = None
     pipeline_assets: Path | None = None
     financials: Path | None = None
+    conference_catalysts: Path | None = None
     validation: dict[str, Any] | None = None
     source_documents: tuple[SourceDocument, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -113,6 +118,7 @@ def generate_auto_inputs(
     text = document.text_path.read_text(encoding="utf-8")
     pipeline_path = generated_input_dir / f"{slug}_pipeline_assets.json"
     financials_path = generated_input_dir / f"{slug}_financials.json"
+    conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
 
     if overwrite or not pipeline_path.exists():
         _write_json(
@@ -132,6 +138,15 @@ def generate_auto_inputs(
                 source=document,
             ),
         )
+    if overwrite or not conference_path.exists():
+        _write_json(
+            conference_path,
+            draft_conference_catalysts(
+                identity=identity,
+                text=text,
+                source=document,
+            ),
+        )
 
     validation = {
         "pipeline_assets": validation_report_as_dict(
@@ -139,6 +154,9 @@ def generate_auto_inputs(
         ),
         "financials": financial_validation_report_as_dict(
             validate_financial_snapshot_file(financials_path)
+        ),
+        "conference_catalysts": conference_validation_report_as_dict(
+            validate_conference_catalyst_file(conference_path)
         ),
     }
     manifest_path = processed_dir / f"{date.today().isoformat()}_source_manifest.json"
@@ -150,6 +168,7 @@ def generate_auto_inputs(
             "generated_inputs": {
                 "pipeline_assets": pipeline_path,
                 "financials": financials_path,
+                "conference_catalysts": conference_path,
             },
             "validation": validation,
             "warnings": [],
@@ -159,6 +178,7 @@ def generate_auto_inputs(
         source_manifest=manifest_path,
         pipeline_assets=pipeline_path,
         financials=financials_path,
+        conference_catalysts=conference_path,
         validation=validation,
         source_documents=(document,),
     )
@@ -287,6 +307,51 @@ def draft_financial_snapshot(
         "source_date": source.publication_date,
         "generated_by": "auto_inputs.hkex_annual_results",
         "needs_human_review": True,
+    }
+
+
+def draft_conference_catalysts(
+    *,
+    identity: CompanyIdentity,
+    text: str,
+    source: SourceDocument,
+) -> dict[str, Any]:
+    """Extract a conservative draft conference catalyst input file."""
+
+    conferences = ("ASCO", "ESMO", "AACR", "WCLC", "ASH", "SABCS")
+    catalysts: list[dict[str, Any]] = []
+    for conference in conferences:
+        if not re.search(rf"\b{re.escape(conference)}\b", text, flags=re.IGNORECASE):
+            continue
+        catalysts.append(
+            {
+                "title": f"{conference} data update expected",
+                "category": "conference",
+                "expected_window": conference,
+                "related_asset": None,
+                "confidence": 0.35,
+                "source_type": "company_disclosure",
+                "evidence": [
+                    {
+                        "claim": (
+                            f"{conference} appears in source text; confirm event scope "
+                            "and timing manually."
+                        ),
+                        "source": source.url,
+                        "source_date": source.publication_date,
+                        "confidence": 0.45,
+                        "is_inferred": True,
+                    }
+                ],
+            }
+        )
+
+    return {
+        "company": identity.company,
+        "ticker": identity.ticker,
+        "generated_by": "auto_inputs.hkex_annual_results",
+        "needs_human_review": True,
+        "catalysts": catalysts,
     }
 
 
