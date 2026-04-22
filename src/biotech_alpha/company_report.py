@@ -508,14 +508,26 @@ def _build_source_text_excerpt(
     *,
     auto_input_artifacts: Any | None,
     pipeline_snapshot: dict[str, Any],
-    max_chars: int = 4000,
+    max_chars: int = 8000,
+    per_anchor_window: int = 1600,
 ) -> dict[str, Any] | None:
-    """Return a short excerpt of the source document near the pipeline area.
+    """Return a concatenated multi-anchor excerpt of the source document.
 
-    The excerpt is anchored to the first asset name found in the text so the
-    LLM sees the actual table-style prose (phase, target, milestone) rather
-    than the cover page. Falls back to the first ``max_chars`` of the text
-    when no asset name anchor is found.
+    Earlier versions of this helper anchored only on the first asset that
+    appeared in the source text, which left later-listed assets without
+    evidence and caused the pipeline-triage agent to mark them
+    ``medium [not in excerpt]``. This version now:
+
+    1. walks every asset name from ``pipeline_snapshot`` and records the
+       first index at which each name appears in the source text;
+    2. expands each hit into a small window of ``per_anchor_window`` chars
+       centred on the hit;
+    3. merges overlapping windows so adjacent hits share context;
+    4. caps the total concatenated excerpt at ``max_chars`` chars so the
+       prompt stays predictable.
+
+    When no asset name is found, it falls back to the first ``max_chars``
+    of the source text and sets ``anchor_assets`` to an empty list.
     """
 
     if auto_input_artifacts is None:
@@ -538,37 +550,75 @@ def _build_source_text_excerpt(
         return None
 
     assets = pipeline_snapshot.get("assets") or []
-    anchor_name: str | None = None
-    anchor_index: int = -1
+    half_window = max(200, per_anchor_window // 2)
+    hits: list[tuple[int, int, str]] = []
+    anchor_assets: list[str] = []
+    missing_assets: list[str] = []
     for asset in assets:
         name = (asset.get("name") or "").strip()
         if not name or len(name) < 3:
             continue
         index = full_text.find(name)
-        if index != -1:
-            anchor_name = name
-            anchor_index = index
-            break
+        if index == -1:
+            missing_assets.append(name)
+            continue
+        start = max(0, index - half_window)
+        end = min(len(full_text), index + half_window)
+        hits.append((start, end, name))
+        anchor_assets.append(name)
 
-    half = max_chars // 2
-    if anchor_index >= 0:
-        start = max(0, anchor_index - half)
-        end = min(len(full_text), anchor_index + half)
-        excerpt = full_text[start:end]
-        anchor = anchor_name
-    else:
+    if not hits:
         excerpt = full_text[:max_chars]
-        anchor = None
+        return {
+            "source_type": getattr(document, "source_type", None),
+            "title": getattr(document, "title", None),
+            "url": getattr(document, "url", None),
+            "publication_date": getattr(document, "publication_date", None),
+            "anchor_assets": [],
+            "missing_assets": missing_assets,
+            "total_chars": len(full_text),
+            "excerpt_chars": len(excerpt),
+            "excerpt": excerpt,
+        }
+
+    hits.sort(key=lambda item: item[0])
+    merged_windows: list[tuple[int, int]] = []
+    for start, end, _ in hits:
+        if merged_windows and start <= merged_windows[-1][1]:
+            previous_start, previous_end = merged_windows[-1]
+            merged_windows[-1] = (previous_start, max(previous_end, end))
+        else:
+            merged_windows.append((start, end))
+
+    chunks: list[str] = []
+    total = 0
+    truncated = False
+    for start, end in merged_windows:
+        if total >= max_chars:
+            truncated = True
+            break
+        available = max_chars - total
+        chunk = full_text[start:end]
+        if len(chunk) > available:
+            chunk = chunk[:available]
+            truncated = True
+        header = f"[... source ~offset {start} ...]\n"
+        chunks.append(header + chunk)
+        total += len(chunk) + len(header)
+
+    excerpt = "\n---\n".join(chunks)
 
     return {
         "source_type": getattr(document, "source_type", None),
         "title": getattr(document, "title", None),
         "url": getattr(document, "url", None),
         "publication_date": getattr(document, "publication_date", None),
-        "anchor_asset": anchor,
+        "anchor_assets": anchor_assets,
+        "missing_assets": missing_assets,
         "total_chars": len(full_text),
         "excerpt_chars": len(excerpt),
         "excerpt": excerpt,
+        "truncated": truncated,
     }
 
 

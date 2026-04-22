@@ -43,11 +43,16 @@ def _initial_facts() -> dict:
             "title": "Annual Results",
             "url": "https://example.com/results.pdf",
             "publication_date": "2026-03-23",
-            "anchor_asset": "DB-1303",
+            "anchor_assets": ["DB-1303", "DB-1312"],
+            "missing_assets": [],
             "total_chars": 120000,
             "excerpt_chars": 240,
+            "truncated": False,
             "excerpt": (
-                "DB-1303 HER2 ADC Phase 3 topline readout expected in 2026.\n"
+                "[... source ~offset 1200 ...]\n"
+                "DB-1303 HER2 ADC Phase 3 topline readout in 2026.\n"
+                "---\n"
+                "[... source ~offset 8800 ...]\n"
                 "DB-1312 B7-H4 Phase 1 dose-escalation; next milestone "
                 "listed as 'in 2017' (likely a typo).\n"
             ),

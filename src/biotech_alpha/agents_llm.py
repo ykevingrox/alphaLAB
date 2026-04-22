@@ -270,12 +270,25 @@ PIPELINE_TRIAGE_PROMPT = StructuredPrompt(
         "${pipeline_snapshot}\n\n"
         "Input warnings from validators:\n${input_warnings}\n\n"
         "Trial coverage summary:\n${trial_summary}\n\n"
-        "Source text excerpt (from the annual-results / main source):\n"
-        "${source_text_excerpt}\n\n"
-        "Review each asset in the pipeline snapshot. Only flag issues that "
-        "the source text or a clear logical inconsistency actually "
-        "supports; if an asset looks clean, use severity \"none\" with an "
-        "empty `issues` list. Do not invent issues to seem thorough.\n\n"
+        "Source text excerpt (from the annual-results / main source). The "
+        "header of this block includes `anchor_assets` (names we confirmed "
+        "are present in the source) and `missing_assets` (names the "
+        "extractor could not locate in the source text at all). Windows "
+        "are stitched from multiple offsets; each window starts with a "
+        "`[... source ~offset N ...]` marker.\n${source_text_excerpt}\n\n"
+        "Review each asset in the pipeline snapshot. Rules:\n"
+        "- If an asset appears in `anchor_assets` above, validate its "
+        "target/phase/indication/milestone against the excerpt.\n"
+        "- If an asset appears in `missing_assets`, do NOT flag it as "
+        "\"not in excerpt\"; that is an extractor coverage limit, not a "
+        "data-quality issue on the asset itself. Use severity \"none\" "
+        "for such assets unless the pipeline snapshot has an internal "
+        "inconsistency (e.g. malformed milestone, past-due date, or "
+        "contradictory fields) you can flag from the snapshot alone.\n"
+        "- Only flag issues that the source text or a clear logical "
+        "inconsistency actually supports; if an asset looks clean, use "
+        "severity \"none\" with an empty `issues` list. Do not invent "
+        "issues to seem thorough.\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
         "{\n"
         "  \"coverage_confidence\": 0.0,\n"
@@ -511,15 +524,31 @@ def _source_text_block(value: Any) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        anchor = value.get("anchor_asset")
+        anchors = value.get("anchor_assets")
+        missing = value.get("missing_assets") or []
+        if anchors is None and "anchor_asset" in value:
+            anchors = [value["anchor_asset"]] if value["anchor_asset"] else []
+        anchors = anchors or []
+        anchor_line = (
+            ", ".join(anchors)
+            if anchors
+            else "(no asset anchor found)"
+        )
+        missing_line = (
+            ", ".join(str(m) for m in missing)
+            if missing
+            else "(all asset names found in text)"
+        )
         header = [
             f"title: {value.get('title') or 'unknown'}",
             f"url: {value.get('url') or 'unknown'}",
             f"publication_date: {value.get('publication_date') or 'unknown'}",
-            f"anchor_asset: {anchor or '(no asset anchor found)'}",
+            f"anchor_assets: {anchor_line}",
+            f"missing_assets: {missing_line}",
             (
                 f"excerpt_chars: {value.get('excerpt_chars')} "
-                f"(of total {value.get('total_chars')})"
+                f"(of total {value.get('total_chars')}, "
+                f"truncated={bool(value.get('truncated'))})"
             ),
         ]
         excerpt = value.get("excerpt") or ""

@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 from biotech_alpha.auto_inputs import AutoInputArtifacts, SourceDocument
 from biotech_alpha.company_report import (
+    _build_source_text_excerpt,
+    build_llm_agent_facts,
     company_report_summary,
     discover_company_inputs,
     resolve_company_identity,
@@ -393,6 +395,140 @@ class CompanyReportTest(unittest.TestCase):
                 result.auto_input_artifacts.warnings,
                 ("unable to resolve HKEX stock id",),
             )
+
+
+class SourceTextExcerptTest(unittest.TestCase):
+    """Regression tests for `_build_source_text_excerpt` multi-anchor logic."""
+
+    def _artifacts_with_text(self, root: Path, text: str) -> AutoInputArtifacts:
+        text_path = root / "results.txt"
+        text_path.write_text(text, encoding="utf-8")
+        return AutoInputArtifacts(
+            source_documents=(
+                SourceDocument(
+                    source_type="hkex_annual_results",
+                    title="Annual Results",
+                    url="https://example.com/results.pdf",
+                    publication_date="2026-03-23",
+                    file_path=root / "results.pdf",
+                    text_path=text_path,
+                    stock_code="09606",
+                    stock_name="DUALITYBIO-B",
+                ),
+            ),
+        )
+
+    def test_covers_multiple_distant_anchors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            early_filler = "filler-early. " * 400
+            mid_filler = "filler-mid. " * 600
+            tail_filler = "filler-late. " * 400
+            text = (
+                early_filler
+                + "DB-1303 HER2 ADC Phase 3 topline in 2026.\n"
+                + mid_filler
+                + "DB-1312 B7-H4 Phase 1 dose-escalation.\n"
+                + tail_filler
+            )
+            artifacts = self._artifacts_with_text(root, text)
+            pipeline = {
+                "assets": [
+                    {"name": "DB-1303"},
+                    {"name": "DB-1312"},
+                    {"name": "DB-9999"},
+                ]
+            }
+
+            excerpt = _build_source_text_excerpt(
+                auto_input_artifacts=artifacts,
+                pipeline_snapshot=pipeline,
+            )
+
+            self.assertIsNotNone(excerpt)
+            assert excerpt is not None
+            self.assertEqual(
+                excerpt["anchor_assets"], ["DB-1303", "DB-1312"]
+            )
+            self.assertEqual(excerpt["missing_assets"], ["DB-9999"])
+            self.assertIn("DB-1303", excerpt["excerpt"])
+            self.assertIn("DB-1312", excerpt["excerpt"])
+            self.assertIn("[... source ~offset", excerpt["excerpt"])
+
+    def test_falls_back_to_prefix_when_no_anchor_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifacts = self._artifacts_with_text(
+                root, "some annual results text without any asset names" * 20
+            )
+            pipeline = {"assets": [{"name": "DB-1303"}]}
+
+            excerpt = _build_source_text_excerpt(
+                auto_input_artifacts=artifacts,
+                pipeline_snapshot=pipeline,
+            )
+
+            assert excerpt is not None
+            self.assertEqual(excerpt["anchor_assets"], [])
+            self.assertEqual(excerpt["missing_assets"], ["DB-1303"])
+            self.assertTrue(excerpt["excerpt"].startswith("some annual "))
+
+    def test_excerpt_is_capped_at_max_chars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            blocks = []
+            for idx in range(6):
+                blocks.append("filler. " * 1000)
+                blocks.append(f"DB-{idx:04d} asset details here.\n")
+            text = "".join(blocks)
+            artifacts = self._artifacts_with_text(root, text)
+            pipeline = {
+                "assets": [{"name": f"DB-{idx:04d}"} for idx in range(6)]
+            }
+
+            excerpt = _build_source_text_excerpt(
+                auto_input_artifacts=artifacts,
+                pipeline_snapshot=pipeline,
+                max_chars=2000,
+                per_anchor_window=800,
+            )
+
+            assert excerpt is not None
+            self.assertLessEqual(excerpt["excerpt_chars"], 2400)
+            self.assertTrue(excerpt["truncated"])
+
+    def test_build_llm_agent_facts_threads_excerpt_through(self) -> None:
+        class _StubResearch:
+            def __init__(self) -> None:
+                class _Memo:
+                    findings: tuple = ()
+
+                self.memo = _Memo()
+                self.pipeline_assets = ()
+                self.trials = ()
+                self.asset_trial_matches = ()
+                self.valuation_snapshot = None
+                self.valuation_metrics = None
+                self.cash_runway_estimate = None
+                self.input_validation: dict = {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifacts = self._artifacts_with_text(
+                root, "preamble. DB-1303 Phase 3 topline. tail text."
+            )
+            research = _StubResearch()
+
+            facts = build_llm_agent_facts(
+                research_result=research,
+                auto_input_artifacts=artifacts,
+            )
+
+            excerpt = facts["source_text_excerpt"]
+            self.assertIsNotNone(excerpt)
+            assert excerpt is not None
+            self.assertEqual(excerpt["anchor_assets"], [])
+            self.assertIn("preamble", excerpt["excerpt"])
 
 
 if __name__ == "__main__":
