@@ -139,6 +139,64 @@ class PipelineAssetTest(unittest.TestCase):
         self.assertIn("Sparse Asset: missing evidence", report.warnings)
         self.assertIn("Sparse Asset: missing indication", report.warnings)
 
+    def test_validate_pipeline_asset_file_flags_malformed_milestone(self) -> None:
+        payload = {
+            "assets": [
+                {
+                    "name": "DB-1312",
+                    "indication": "solid tumors",
+                    "phase": "Phase 1",
+                    "next_milestone": "in \n2017",
+                    "evidence": [
+                        {
+                            "claim": "Annual report row",
+                            "source": "annual-report.pdf",
+                            "source_date": "2026-03-23",
+                            "confidence": 0.5,
+                            "is_inferred": True,
+                        }
+                    ],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "assets.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            report = validate_pipeline_asset_file(path)
+
+        joined = "\n".join(report.warnings)
+        self.assertIn("next_milestone contains newline", joined)
+        self.assertIn("next_milestone year looks stale", joined)
+
+    def test_validate_pipeline_asset_file_flags_weak_evidence_metadata(
+        self,
+    ) -> None:
+        payload = {
+            "assets": [
+                {
+                    "name": "DB-0001",
+                    "indication": "NSCLC",
+                    "phase": "Phase 1",
+                    "evidence": [
+                        {
+                            "claim": "Weak evidence row",
+                            "source": "company.pdf",
+                            "confidence": 0.0,
+                            "is_inferred": True,
+                        }
+                    ],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "assets.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            report = validate_pipeline_asset_file(path)
+
+        joined = "\n".join(report.warnings)
+        self.assertIn("evidence confidence is non-positive", joined)
+        self.assertIn("inferred evidence missing source_date", joined)
+
     def test_validate_pipeline_asset_file_reports_invalid_json_contract(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "assets.json"

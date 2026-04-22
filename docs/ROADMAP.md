@@ -355,6 +355,9 @@ resilience and validator tightening remain).
 
 - **Not started** — Add stricter validators for placeholder values, stale dates,
   and missing evidence metadata (beyond current warning-only checks).
+  Current baseline now flags malformed milestone strings, stale
+  milestone years vs evidence dates, non-positive evidence confidence,
+  and inferred evidence missing source dates.
 
 ### Sprint 3: Research Depth Upgrade
 

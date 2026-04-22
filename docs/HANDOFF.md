@@ -417,6 +417,13 @@ Use this shape:
     (e.g. prevents spurious `in 2017` leakage into 2026 reports).
   - Regression test now asserts `DB-1312.next_milestone is None`
     while preserving valid `DB-1311 = planned to start in 2026`.
+- Pipeline validator hardening landed for weak metadata detection:
+  - `validate_pipeline_asset_file` now warns when
+    `next_milestone` contains newline/control characters.
+  - Validator flags likely stale milestone years relative to evidence
+    source date (e.g. `in 2017` under 2026 evidence context).
+  - Validator warns on non-positive evidence confidence and inferred
+    evidence entries missing `source_date`.
 
 ## Current Repo State
 
@@ -448,15 +455,15 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 Latest result:
 
 - 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
- - 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
+- 233 unit tests ran, 226 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
   checkpoint cover macro-signals parser + cache + multi-source
   fallback work and Anthropic provider routing/config/client tests.
- - Extraction hardening patch (milestone leakage guard) is now covered
-   by `tests/test_auto_inputs.py` and included in the same 231-test
-   baseline.
+- Extraction hardening and validator checks are covered by
+  `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
+  included in the same 233-test baseline.
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`

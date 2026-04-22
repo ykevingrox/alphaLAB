@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -87,11 +88,35 @@ def validate_pipeline_asset_file(path: str | Path) -> PipelineValidationReport:
             warnings.append(f"{asset.name}: missing indication")
         if not asset.phase:
             warnings.append(f"{asset.name}: missing phase")
+        if asset.next_milestone:
+            if "\n" in asset.next_milestone or "\r" in asset.next_milestone:
+                warnings.append(
+                    f"{asset.name}: next_milestone contains newline/control "
+                    "characters; normalize to one-line text"
+                )
+            if _looks_like_stale_year(
+                asset.next_milestone,
+                source_year=_max_evidence_year(asset.evidence),
+            ):
+                warnings.append(
+                    f"{asset.name}: next_milestone year looks stale vs "
+                    "evidence dates; verify historical leakage"
+                )
         for evidence in asset.evidence:
             if _looks_like_placeholder(evidence.source):
                 warnings.append(f"{asset.name}: replace placeholder evidence source")
             if evidence.source_date == "YYYY-MM-DD":
                 warnings.append(f"{asset.name}: replace placeholder evidence date")
+            if evidence.confidence <= 0:
+                warnings.append(
+                    f"{asset.name}: evidence confidence is non-positive; "
+                    "set a realistic confidence score"
+                )
+            if evidence.is_inferred and not evidence.source_date:
+                warnings.append(
+                    f"{asset.name}: inferred evidence missing source_date; "
+                    "add publication date for auditability"
+                )
 
     return PipelineValidationReport(
         asset_count=len(assets),
@@ -271,6 +296,34 @@ def _looks_like_placeholder(value: str | None) -> bool:
         or normalized == "yyyy-mm-dd"
         or normalized in {"report-or-presentation-file.pdf", "annual-report.pdf"}
     )
+
+
+def _max_evidence_year(evidence_items: tuple[Evidence, ...]) -> int | None:
+    years = [
+        year
+        for year in (_year_from_text(item.source_date) for item in evidence_items)
+        if year is not None
+    ]
+    return max(years) if years else None
+
+
+def _year_from_text(value: str | None) -> int | None:
+    if not value:
+        return None
+    match = re.match(r"^(\d{4})", value.strip())
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _looks_like_stale_year(text: str, *, source_year: int | None) -> bool:
+    if source_year is None:
+        return False
+    match = re.search(r"(?:in|during)\s+(20\d{2})", text)
+    if not match:
+        return False
+    year = int(match.group(1))
+    return year < source_year - 1
 
 
 def _required_str(row: dict[str, Any], key: str) -> str:
