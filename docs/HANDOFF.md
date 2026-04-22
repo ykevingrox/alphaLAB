@@ -50,6 +50,8 @@ from getting the MVP stable.
   `C9074` from `BG-C9074`, and combination partner assets such as `BNT116`.
 - Repeated asset mentions now enrich missing fields, so later detailed sections
   can fill phase or indication fields from earlier summary mentions.
+- HKEX source discovery and PDF download use lightweight retries for transient
+  request failures.
 
 ## Current Repo State
 
@@ -108,9 +110,9 @@ Latest smoke result:
 1. Commit the current validated local changes as a small checkpoint.
 2. Continue tightening generated pipeline extraction for remaining source-backed
    missing indication cases such as `DB-1312`.
-3. Improve HKEX source discovery robustness and retry behavior.
-4. Add auto valuation drafts once source-backed market data is available.
-5. Add auto competitor drafts only after pipeline extraction is more reliable.
+3. Add auto valuation drafts once source-backed market data is available.
+4. Add auto competitor drafts only after pipeline extraction is more reliable.
+5. Keep broadening network-free fixtures across representative HK biotech names.
 
 ## Do Not Break
 

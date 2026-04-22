@@ -6,8 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
+
 from biotech_alpha.auto_inputs import (
     SourceDocument,
+    _resolve_hkex_stock_id,
     draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
@@ -189,6 +192,25 @@ class AutoInputsTest(unittest.TestCase):
         session.assert_not_called()
         self.assertTrue(artifacts.warnings)
 
+    def test_hkex_stock_resolution_retries_transient_request_errors(self) -> None:
+        session = _RetrySession(
+            responses=[
+                requests.Timeout("temporary timeout"),
+                _JsonResponse([{"c": "9606", "i": "12345"}]),
+            ]
+        )
+
+        with patch("biotech_alpha.auto_inputs.time.sleep") as sleep:
+            stock_id = _resolve_hkex_stock_id(
+                session,
+                "09606",
+                timeout=5,
+            )
+
+        self.assertEqual(stock_id, "12345")
+        self.assertEqual(session.call_count, 2)
+        sleep.assert_called_once()
+
 
 def _source(
     *,
@@ -218,6 +240,30 @@ def _asset_by_name(payload: dict, name: str) -> dict:
         if asset["name"] == name:
             return asset
     raise AssertionError(f"missing asset {name}")
+
+
+class _JsonResponse:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self.payload
+
+
+class _RetrySession:
+    def __init__(self, responses: list[object]) -> None:
+        self.responses = responses
+        self.call_count = 0
+
+    def get(self, *_args: object, **_kwargs: object) -> object:
+        self.call_count += 1
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 if __name__ == "__main__":

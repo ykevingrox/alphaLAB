@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -408,8 +409,11 @@ def _resolve_hkex_stock_id(
     *,
     timeout: int,
 ) -> str | None:
-    response = session.get(HKEX_ACTIVE_STOCKS_URL, timeout=timeout)
-    response.raise_for_status()
+    response = _get_with_retries(
+        session,
+        HKEX_ACTIVE_STOCKS_URL,
+        timeout=timeout,
+    )
     for row in response.json():
         if str(row.get("c", "")).zfill(5) == ticker_code:
             return str(row.get("i"))
@@ -443,8 +447,12 @@ def _latest_hkex_annual_result(
             "rowRange": "20",
             "lang": "en",
         }
-        response = session.get(HKEX_TITLE_SEARCH_URL, params=params, timeout=timeout)
-        response.raise_for_status()
+        response = _get_with_retries(
+            session,
+            HKEX_TITLE_SEARCH_URL,
+            params=params,
+            timeout=timeout,
+        )
         rows = json.loads(response.json().get("result", "[]"))
         pdf_rows = [row for row in rows if row.get("FILE_LINK")]
         if pdf_rows:
@@ -464,8 +472,7 @@ def _download_and_extract_document(
     pdf_path = raw_dir / f"{news_id}.pdf"
     text_path = raw_dir / f"{news_id}.txt"
     if not pdf_path.exists():
-        response = session.get(file_url, timeout=timeout)
-        response.raise_for_status()
+        response = _get_with_retries(session, file_url, timeout=timeout)
         pdf_path.write_bytes(response.content)
     if not text_path.exists():
         reader = PdfReader(io.BytesIO(pdf_path.read_bytes()))
@@ -482,6 +489,30 @@ def _download_and_extract_document(
         stock_code=announcement.get("STOCK_CODE"),
         stock_name=announcement.get("STOCK_NAME"),
     )
+
+
+def _get_with_retries(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: int,
+    attempts: int = 3,
+    **kwargs: Any,
+) -> requests.Response:
+    last_error: requests.RequestException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = session.get(url, timeout=timeout, **kwargs)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt >= attempts:
+                raise
+            time.sleep(min(0.5 * attempt, 2.0))
+    if last_error:
+        raise last_error
+    raise RuntimeError("request retry loop exhausted without an exception")
 
 
 def _asset_mentions(text: str) -> list[dict[str, str]]:
