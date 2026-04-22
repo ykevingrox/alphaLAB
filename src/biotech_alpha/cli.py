@@ -233,6 +233,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--market-data-freshness-days",
+        type=float,
+        default=None,
+        help=(
+            "Maximum age in days a market-data quote can have before the "
+            "provider emits a staleness warning. Fractional values are "
+            "allowed (e.g. 0.5 for 12 hours). Defaults to the provider's "
+            "built-in freshness window (3 days for hk-public). Only "
+            "meaningful together with --market-data."
+        ),
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -599,7 +611,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "company-report":
-        market_data_provider = _resolve_market_data_provider(args.market_data)
+        market_data_provider = _resolve_market_data_provider(
+            args.market_data,
+            freshness_days=args.market_data_freshness_days,
+        )
         llm_agents = tuple(getattr(args, "llm_agents", ()) or ())
         llm_client = _build_llm_client(llm_agents)
         result = run_company_report(
@@ -892,13 +907,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
 
-def _resolve_market_data_provider(choice: str):
-    """Return a market-data provider callable for a CLI choice, or None."""
+def _resolve_market_data_provider(
+    choice: str, *, freshness_days: float | None = None,
+):
+    """Return a market-data provider callable for a CLI choice, or None.
+
+    When ``freshness_days`` is provided and the chosen provider supports the
+    keyword, the callable is wrapped so the staleness window is applied
+    without the caller needing to care about the underlying provider
+    identity.
+    """
 
     if choice == "hk-public":
-        from biotech_alpha.market_data_providers import hk_public_quote_provider
+        from functools import partial
 
-        return hk_public_quote_provider
+        from biotech_alpha.market_data_providers import (
+            hk_public_quote_provider,
+        )
+
+        if freshness_days is None:
+            return hk_public_quote_provider
+        if freshness_days <= 0:
+            raise ValueError(
+                "--market-data-freshness-days must be a positive number"
+            )
+        return partial(
+            hk_public_quote_provider, freshness_days=freshness_days
+        )
+    if freshness_days is not None and choice == "none":
+        raise ValueError(
+            "--market-data-freshness-days requires --market-data to be set "
+            "to a real provider (e.g. hk-public)"
+        )
     return None
 
 

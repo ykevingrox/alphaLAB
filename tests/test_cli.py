@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from biotech_alpha.cli import main
+from biotech_alpha.cli import _resolve_market_data_provider, main
 
 
 class CliTest(unittest.TestCase):
@@ -594,6 +594,109 @@ def _target_price_payload() -> dict[str, object]:
             }
         ],
     }
+
+
+class ResolveMarketDataProviderTest(unittest.TestCase):
+    """Regression tests for the CLI --market-data-freshness-days knob."""
+
+    def test_none_choice_returns_no_provider(self) -> None:
+        self.assertIsNone(_resolve_market_data_provider("none"))
+
+    def test_hk_public_without_freshness_returns_bare_callable(self) -> None:
+        from biotech_alpha.market_data_providers import hk_public_quote_provider
+
+        provider = _resolve_market_data_provider("hk-public")
+        self.assertIs(provider, hk_public_quote_provider)
+
+    def test_hk_public_with_freshness_wraps_callable(self) -> None:
+        from functools import partial
+
+        from biotech_alpha.market_data_providers import hk_public_quote_provider
+
+        provider = _resolve_market_data_provider(
+            "hk-public", freshness_days=0.5
+        )
+        self.assertIsInstance(provider, partial)
+        self.assertIs(provider.func, hk_public_quote_provider)
+        self.assertEqual(provider.keywords, {"freshness_days": 0.5})
+
+    def test_non_positive_freshness_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _resolve_market_data_provider("hk-public", freshness_days=0.0)
+        with self.assertRaises(ValueError):
+            _resolve_market_data_provider("hk-public", freshness_days=-1.0)
+
+    def test_freshness_without_provider_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _resolve_market_data_provider("none", freshness_days=1.0)
+
+
+class CompanyReportFreshnessCliTest(unittest.TestCase):
+    """Verify --market-data-freshness-days threads into the provider."""
+
+    def test_flag_passes_through_to_run_company_report(self) -> None:
+        from functools import partial
+
+        from biotech_alpha.market_data_providers import (
+            hk_public_quote_provider,
+        )
+
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            exit_code = main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--market-data",
+                    "hk-public",
+                    "--market-data-freshness-days",
+                    "1.5",
+                    "--no-save",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(run.call_count, 1)
+            provider = run.call_args.kwargs["market_data_provider"]
+            self.assertIsInstance(provider, partial)
+            self.assertIs(provider.func, hk_public_quote_provider)
+            self.assertEqual(
+                provider.keywords, {"freshness_days": 1.5}
+            )
+
+    def test_default_leaves_provider_unwrapped(self) -> None:
+        from biotech_alpha.market_data_providers import (
+            hk_public_quote_provider,
+        )
+
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--market-data",
+                    "hk-public",
+                    "--no-save",
+                ]
+            )
+            provider = run.call_args.kwargs["market_data_provider"]
+            self.assertIs(provider, hk_public_quote_provider)
 
 
 if __name__ == "__main__":
