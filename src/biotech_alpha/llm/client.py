@@ -30,6 +30,16 @@ class LLMError(RuntimeError):
     """Wraps any error the client could not recover from."""
 
 
+class LLMBudgetError(LLMError):
+    """Raised when a configured call budget (total or per-agent) is exhausted.
+
+    Refusal happens BEFORE the provider is called, so no token is spent
+    and no trace entry is written for the refused call. Catch this
+    specifically if you want agents to degrade gracefully (e.g. skip or
+    fall back to a cheaper agent) instead of aborting the whole run.
+    """
+
+
 @dataclass(frozen=True)
 class LLMCall:
     """Outcome of a single LLM completion call."""
@@ -91,6 +101,7 @@ class OpenAICompatibleLLMClient:
         self._retry_initial_delay = retry_initial_delay_seconds
         self._clock = _clock or time
         self._calls_used = 0
+        self._calls_per_agent: dict[str, int] = {}
         openai_module = _openai_module or _load_openai_module()
         self._client = openai_module.OpenAI(
             api_key=config.api_key,
@@ -117,7 +128,7 @@ class OpenAICompatibleLLMClient:
         response_format_json: bool = True,
         extra_metadata: dict[str, Any] | None = None,
     ) -> LLMCall:
-        self._enforce_call_budget()
+        self._enforce_call_budget(agent_name)
 
         messages = [
             {"role": "system", "content": system},
@@ -162,6 +173,9 @@ class OpenAICompatibleLLMClient:
 
         latency_ms = (self._clock.monotonic() - start) * 1000.0
         self._calls_used += 1
+        self._calls_per_agent[agent_name] = (
+            self._calls_per_agent.get(agent_name, 0) + 1
+        )
 
         if response is None:
             self._record_failure(
@@ -269,13 +283,21 @@ class OpenAICompatibleLLMClient:
             )
         )
 
-    def _enforce_call_budget(self) -> None:
-        budget = self._config.call_budget
-        if budget is None:
+    def _enforce_call_budget(self, agent_name: str) -> None:
+        total_budget = self._config.call_budget
+        if total_budget is not None and self._calls_used >= total_budget:
+            raise LLMBudgetError(
+                "LLM call budget exhausted: "
+                f"{total_budget} total calls already used in this run"
+            )
+        per_agent_budget = self._config.per_agent_call_budget
+        if per_agent_budget is None:
             return
-        if self._calls_used >= budget:
-            raise LLMError(
-                f"LLM call budget exhausted: {budget} calls already used in this run"
+        agent_used = self._calls_per_agent.get(agent_name, 0)
+        if agent_used >= per_agent_budget:
+            raise LLMBudgetError(
+                "LLM per-agent call budget exhausted for "
+                f"{agent_name!r}: {per_agent_budget} calls already used"
             )
 
 
@@ -455,3 +477,105 @@ class FakeLLMClient:
             )
         )
         return call
+
+
+class BudgetEnforcingLLMClient:
+    """Thin wrapper around any :class:`LLMClient` that enforces call budgets.
+
+    The wrapper is intentionally provider-agnostic: it never touches the
+    network itself, it just counts calls and refuses pre-dispatch with
+    :class:`LLMBudgetError` when a budget is exhausted. Useful when
+    composing a :class:`FakeLLMClient` for tests, or when layering budget
+    logic on top of an adapter that does not natively support it.
+
+    If the inner client is an :class:`OpenAICompatibleLLMClient`, the
+    adapter already enforces its own budget, so wrapping is redundant and
+    only adds per-wrapper counters. The primary intended use is test
+    scaffolding and adapters lacking native budget support.
+    """
+
+    def __init__(
+        self,
+        inner: LLMClient,
+        *,
+        total_budget: int | None = None,
+        per_agent_budget: int | None = None,
+    ) -> None:
+        if total_budget is not None and total_budget <= 0:
+            raise ValueError("total_budget must be a positive integer or None")
+        if per_agent_budget is not None and per_agent_budget <= 0:
+            raise ValueError(
+                "per_agent_budget must be a positive integer or None"
+            )
+        self._inner = inner
+        self._total_budget = total_budget
+        self._per_agent_budget = per_agent_budget
+        self._calls_used = 0
+        self._calls_per_agent: dict[str, int] = {}
+
+    @property
+    def model(self) -> str:
+        return self._inner.model
+
+    @property
+    def trace(self) -> LLMTraceRecorder:
+        inner_trace = getattr(self._inner, "trace", None)
+        if inner_trace is None:
+            raise AttributeError(
+                "inner LLM client does not expose a `trace` attribute"
+            )
+        return inner_trace
+
+    @property
+    def calls_used(self) -> int:
+        return self._calls_used
+
+    def calls_used_for(self, agent_name: str) -> int:
+        return self._calls_per_agent.get(agent_name, 0)
+
+    def complete(
+        self,
+        *,
+        system: str,
+        user: str,
+        agent_name: str,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+        response_format_json: bool = True,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> LLMCall:
+        self._enforce_call_budget(agent_name)
+        call = self._inner.complete(
+            system=system,
+            user=user,
+            agent_name=agent_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format_json=response_format_json,
+            extra_metadata=extra_metadata,
+        )
+        self._calls_used += 1
+        self._calls_per_agent[agent_name] = (
+            self._calls_per_agent.get(agent_name, 0) + 1
+        )
+        return call
+
+    def _enforce_call_budget(self, agent_name: str) -> None:
+        if (
+            self._total_budget is not None
+            and self._calls_used >= self._total_budget
+        ):
+            raise LLMBudgetError(
+                "LLM call budget exhausted: "
+                f"{self._total_budget} total calls already used in this run"
+            )
+        if self._per_agent_budget is None:
+            return
+        if (
+            self._calls_per_agent.get(agent_name, 0)
+            >= self._per_agent_budget
+        ):
+            raise LLMBudgetError(
+                "LLM per-agent call budget exhausted for "
+                f"{agent_name!r}: {self._per_agent_budget} calls already used"
+            )

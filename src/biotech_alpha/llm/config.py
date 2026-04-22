@@ -30,6 +30,7 @@ class LLMConfig:
     model: str = DEFAULT_MODEL
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS
     call_budget: int | None = None
+    per_agent_call_budget: int | None = None
     trace_dir: Path = field(default_factory=lambda: DEFAULT_TRACE_DIR)
     enable_thinking: bool = False
 
@@ -53,6 +54,11 @@ class LLMConfig:
           ``qwen3.6-plus`` (Bailian's current primary Qwen3 model).
         * ``BIOTECH_ALPHA_LLM_REQUEST_TIMEOUT`` -- optional float seconds.
         * ``BIOTECH_ALPHA_LLM_CALL_BUDGET`` -- optional positive integer.
+          Hard ceiling on total LLM calls for one client lifetime.
+        * ``BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET`` -- optional positive
+          integer. Hard ceiling on calls any single agent is allowed to
+          make. Useful to keep a misbehaving agent from draining budget
+          reserved for other agents in the same run.
         * ``BIOTECH_ALPHA_LLM_TRACE_DIR`` -- optional path; defaults to
           ``data/traces``.
         * ``BIOTECH_ALPHA_LLM_ENABLE_THINKING`` -- optional boolean
@@ -85,6 +91,10 @@ class LLMConfig:
             env.get("BIOTECH_ALPHA_LLM_CALL_BUDGET"),
             name="BIOTECH_ALPHA_LLM_CALL_BUDGET",
         )
+        per_agent_call_budget = _parse_optional_positive_int(
+            env.get("BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET"),
+            name="BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET",
+        )
         trace_dir_text = _clean(env.get("BIOTECH_ALPHA_LLM_TRACE_DIR"))
         trace_dir = Path(trace_dir_text) if trace_dir_text else DEFAULT_TRACE_DIR
         enable_thinking = _parse_bool(
@@ -98,6 +108,7 @@ class LLMConfig:
             model=model,
             request_timeout_seconds=timeout,
             call_budget=call_budget,
+            per_agent_call_budget=per_agent_call_budget,
             trace_dir=trace_dir,
             enable_thinking=enable_thinking,
         )

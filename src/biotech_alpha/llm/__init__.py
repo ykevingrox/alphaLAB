@@ -21,7 +21,9 @@ handles transport, accounting, and JSON structure, not domain semantics.
 from __future__ import annotations
 
 from biotech_alpha.llm.client import (
+    BudgetEnforcingLLMClient,
     FakeLLMClient,
+    LLMBudgetError,
     LLMCall,
     LLMClient,
     LLMError,
@@ -33,7 +35,9 @@ from biotech_alpha.llm.schema import SchemaError, validate_json_schema
 from biotech_alpha.llm.trace import LLMTraceRecorder
 
 __all__ = [
+    "BudgetEnforcingLLMClient",
     "FakeLLMClient",
+    "LLMBudgetError",
     "LLMCall",
     "LLMClient",
     "LLMConfig",

@@ -9,7 +9,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from biotech_alpha.llm import (
+    BudgetEnforcingLLMClient,
     FakeLLMClient,
+    LLMBudgetError,
     LLMConfig,
     LLMConfigError,
     LLMTraceRecorder,
@@ -38,7 +40,30 @@ class LLMConfigFromEnvTest(unittest.TestCase):
         self.assertEqual(config.model, "my-model")
         self.assertEqual(config.request_timeout_seconds, 15.0)
         self.assertEqual(config.call_budget, 3)
+        self.assertIsNone(config.per_agent_call_budget)
         self.assertEqual(config.trace_dir, Path("tmp/traces"))
+
+    def test_parses_per_agent_call_budget(self) -> None:
+        env = {
+            "BIOTECH_ALPHA_LLM_API_KEY": "k",
+            "BIOTECH_ALPHA_LLM_CALL_BUDGET": "10",
+            "BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET": "2",
+        }
+
+        config = LLMConfig.from_env(env)
+
+        self.assertEqual(config.call_budget, 10)
+        self.assertEqual(config.per_agent_call_budget, 2)
+
+    def test_rejects_non_positive_per_agent_budget(self) -> None:
+        for bad in ("0", "-3", "abc"):
+            with self.assertRaises(LLMConfigError):
+                LLMConfig.from_env(
+                    {
+                        "BIOTECH_ALPHA_LLM_API_KEY": "k",
+                        "BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET": bad,
+                    }
+                )
 
     def test_missing_api_key_is_fatal_by_default(self) -> None:
         with self.assertRaises(LLMConfigError):
@@ -265,6 +290,82 @@ class FakeLLMClientTest(unittest.TestCase):
 
         self.assertEqual(len(client.trace.entries), 1)
         self.assertFalse(client.trace.entries[0].ok)
+
+
+class BudgetEnforcingLLMClientTest(unittest.TestCase):
+    """Unit tests for the provider-agnostic budget enforcement wrapper."""
+
+    def _wrap(
+        self,
+        inner: FakeLLMClient,
+        *,
+        total_budget: int | None = None,
+        per_agent_budget: int | None = None,
+    ) -> BudgetEnforcingLLMClient:
+        return BudgetEnforcingLLMClient(
+            inner,
+            total_budget=total_budget,
+            per_agent_budget=per_agent_budget,
+        )
+
+    def test_passthrough_without_budget(self) -> None:
+        inner = FakeLLMClient(default_response='{"ok": true}')
+        client = self._wrap(inner)
+
+        for _ in range(5):
+            client.complete(system="s", user="u", agent_name="a")
+
+        self.assertEqual(client.calls_used, 5)
+        self.assertEqual(client.calls_used_for("a"), 5)
+        self.assertEqual(len(inner.calls), 5)
+
+    def test_total_budget_blocks_extra_calls(self) -> None:
+        inner = FakeLLMClient(default_response='{"ok": true}')
+        client = self._wrap(inner, total_budget=2)
+
+        client.complete(system="s", user="u", agent_name="a")
+        client.complete(system="s", user="u", agent_name="b")
+
+        with self.assertRaises(LLMBudgetError):
+            client.complete(system="s", user="u", agent_name="c")
+        self.assertEqual(client.calls_used, 2)
+        self.assertEqual(len(inner.calls), 2)
+
+    def test_per_agent_budget_isolates_agents(self) -> None:
+        inner = FakeLLMClient(default_response='{"ok": true}')
+        client = self._wrap(inner, per_agent_budget=1)
+
+        client.complete(system="s", user="u", agent_name="triage")
+        client.complete(system="s", user="u", agent_name="skeptic")
+
+        with self.assertRaises(LLMBudgetError) as ctx:
+            client.complete(system="s", user="u", agent_name="triage")
+        self.assertIn("triage", str(ctx.exception))
+        self.assertEqual(client.calls_used_for("triage"), 1)
+        self.assertEqual(client.calls_used_for("skeptic"), 1)
+
+    def test_refusal_does_not_consume_inner_call(self) -> None:
+        inner = FakeLLMClient()
+        inner.queue('{"ok": true}')
+        client = self._wrap(inner, per_agent_budget=1)
+
+        client.complete(system="s", user="u", agent_name="skeptic")
+        with self.assertRaises(LLMBudgetError):
+            client.complete(system="s", user="u", agent_name="skeptic")
+
+        self.assertEqual(len(inner.calls), 1)
+
+    def test_rejects_non_positive_budgets(self) -> None:
+        inner = FakeLLMClient(default_response='{"ok": true}')
+        with self.assertRaises(ValueError):
+            BudgetEnforcingLLMClient(inner, total_budget=0)
+        with self.assertRaises(ValueError):
+            BudgetEnforcingLLMClient(inner, per_agent_budget=-1)
+
+    def test_llm_budget_error_is_a_llm_error(self) -> None:
+        from biotech_alpha.llm import LLMError
+
+        self.assertTrue(issubclass(LLMBudgetError, LLMError))
 
 
 if __name__ == "__main__":
