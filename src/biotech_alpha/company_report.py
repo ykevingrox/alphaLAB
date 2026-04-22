@@ -280,7 +280,11 @@ def run_company_report(
     )
 
 
-SUPPORTED_LLM_AGENTS = ("scientific-skeptic", "pipeline-triage")
+SUPPORTED_LLM_AGENTS = (
+    "scientific-skeptic",
+    "pipeline-triage",
+    "financial-triage",
+)
 
 
 def _run_llm_agent_pipeline(
@@ -302,6 +306,7 @@ def _run_llm_agent_pipeline(
     )
     from biotech_alpha.agents import AgentContext
     from biotech_alpha.agents_llm import (
+        FinancialTriageLLMAgent,
         PipelineTriageLLMAgent,
         ScientificSkepticLLMAgent,
     )
@@ -353,15 +358,25 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "financial-triage" in llm_agents:
+        graph.add(
+            FinancialTriageLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
-        # When both agents are requested, chain the skeptic after triage so
-        # the skeptic's FactStore view already contains the triage payload.
-        # This is a hard dependency in the current runtime: if triage fails
-        # the skeptic is skipped. Callers who want the skeptic to survive a
-        # triage failure should run only `--llm-agents scientific-skeptic`.
+        # When upstream triage agents are requested, chain the skeptic so
+        # the skeptic's FactStore view already contains their payloads.
+        # This is a hard dependency in the current runtime: if any declared
+        # upstream fails the skeptic is skipped. Callers who want the
+        # skeptic to survive a triage failure should run only
+        # `--llm-agents scientific-skeptic`.
         skeptic_deps: tuple[str, ...] = ("publish_research_facts",)
         if "pipeline-triage" in llm_agents:
             skeptic_deps = skeptic_deps + ("pipeline_triage_llm_agent",)
+        if "financial-triage" in llm_agents:
+            skeptic_deps = skeptic_deps + ("financial_triage_llm_agent",)
         graph.add(
             ScientificSkepticLLMAgent(
                 llm_client=llm_client,
@@ -488,10 +503,23 @@ def build_llm_agent_facts(
         if isinstance(report, dict):
             for warning in report.get("warnings", []) or []:
                 input_warnings.append(str(warning))
+    financial_warnings: list[str] = []
+    financial_report = (
+        research_result.input_validation.get("financials")
+        if isinstance(research_result.input_validation, dict)
+        else None
+    )
+    if isinstance(financial_report, dict):
+        for warning in financial_report.get("warnings", []) or []:
+            financial_warnings.append(str(warning))
 
     source_text_excerpt = _build_source_text_excerpt(
         auto_input_artifacts=auto_input_artifacts,
         pipeline_snapshot=pipeline_snapshot,
+    )
+    financials_snapshot = _build_financials_snapshot(
+        research_result=research_result,
+        financial_warnings=financial_warnings,
     )
 
     return {
@@ -501,7 +529,85 @@ def build_llm_agent_facts(
         "valuation_snapshot": valuation_snapshot or None,
         "input_warnings": input_warnings,
         "source_text_excerpt": source_text_excerpt,
+        "financials_snapshot": financials_snapshot,
     }
+
+
+def _build_financials_snapshot(
+    *,
+    research_result: SingleCompanyResearchResult,
+    financial_warnings: list[str],
+) -> dict[str, Any] | None:
+    """Serialize the financial + runway dataclasses into a plain-dict fact.
+
+    The FinancialTriage LLM agent needs to reason about cash, debt, burn
+    rate, and the deterministic runway estimate together, so we pre-compute
+    one consolidated dict rather than letting the agent stitch fields from
+    two separate facts (``valuation_snapshot`` already exists but skips
+    cash-burn / runway method / warning metadata).
+    """
+
+    financial = research_result.financial_snapshot
+    runway = research_result.cash_runway_estimate
+    valuation = research_result.valuation_snapshot
+    valuation_metrics = research_result.valuation_metrics
+
+    if financial is None and runway is None and valuation is None:
+        return None
+
+    snapshot: dict[str, Any] = {}
+    if financial is not None:
+        snapshot["financial_snapshot"] = {
+            "as_of_date": getattr(financial, "as_of_date", None),
+            "currency": getattr(financial, "currency", None),
+            "cash_and_equivalents": getattr(
+                financial, "cash_and_equivalents", None
+            ),
+            "short_term_debt": getattr(financial, "short_term_debt", None),
+            "quarterly_cash_burn": getattr(
+                financial, "quarterly_cash_burn", None
+            ),
+            "operating_cash_flow_ttm": getattr(
+                financial, "operating_cash_flow_ttm", None
+            ),
+            "source": getattr(financial, "source", None),
+            "source_date": getattr(financial, "source_date", None),
+        }
+    if runway is not None:
+        snapshot["runway_estimate"] = {
+            "currency": getattr(runway, "currency", None),
+            "net_cash": getattr(runway, "net_cash", None),
+            "monthly_cash_burn": getattr(runway, "monthly_cash_burn", None),
+            "runway_months": getattr(runway, "runway_months", None),
+            "method": getattr(runway, "method", None),
+            "needs_human_review": getattr(
+                runway, "needs_human_review", None
+            ),
+            "warnings": list(getattr(runway, "warnings", ()) or ()),
+        }
+    if valuation is not None:
+        snapshot["market_snapshot"] = {
+            "currency": getattr(valuation, "currency", None),
+            "market_cap": getattr(valuation, "market_cap", None),
+            "share_price": getattr(valuation, "share_price", None),
+            "shares_outstanding": getattr(
+                valuation, "shares_outstanding", None
+            ),
+            "cash": getattr(valuation, "cash", None),
+            "debt": getattr(valuation, "debt", None),
+            "revenue_ttm": getattr(valuation, "revenue_ttm", None),
+        }
+    if valuation_metrics is not None:
+        snapshot["valuation_metrics"] = {
+            "enterprise_value": getattr(
+                valuation_metrics, "enterprise_value", None
+            ),
+            "ev_to_revenue": getattr(
+                valuation_metrics, "ev_to_revenue", None
+            ),
+        }
+    snapshot["financial_warnings"] = financial_warnings
+    return snapshot
 
 
 def _build_source_text_excerpt(

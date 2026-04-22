@@ -229,11 +229,19 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   with the skeptic under `--llm-agents pipeline-triage
   scientific-skeptic`; the skeptic's prompt renders the triage payload
   in a dedicated block so counter-thesis reasoning can cite it.
-- **In progress** — Multi-anchor `source_text_excerpt` so triage coverage
-  is not first-asset-only.
-- **Not started** — Financial triage agent (burn-rate + runway cross-check).
+- **Done** — Multi-anchor `source_text_excerpt` so triage coverage is
+  not first-asset-only. `_build_source_text_excerpt` now stitches one
+  window per asset and exposes `anchor_assets` / `missing_assets`; the
+  triage prompt tells the LLM to ignore assets absent from the text
+  instead of flagging them.
+- **Done** — Third LLM agent (`FinancialTriageLLMAgent`): cross-checks
+  cash / debt / burn rate / deterministic runway / market snapshot /
+  currency alignment. Emits `runway_sanity` enum plus per-metric
+  `findings[]` severity. Composable with both other agents; the
+  skeptic's prompt renders the financial-triage payload in its own
+  block alongside the pipeline-triage payload.
 - **Not started** — Macro context agent (sector / policy / rate-sensitivity
-  narrative; feeds the skeptic via `FactStore`).
+  narrative; feeds the skeptic via `FactStore`). Fourth LLM agent.
 - **Not started** — Technical / K-line agent (long-horizon trend read on top
   of a future market-data pipeline).
 - **Not started** — Orchestration fall-back: when an LLM agent fails schema
@@ -329,11 +337,13 @@ and web ingestion out).
 
 ### Sprint 4: Multi-LLM Agent Collaboration
 
-**Sprint status:** dual-agent collaboration landed on 2026-04-22. The
-runtime + two distinct LLM agents (pipeline-triage -> scientific-skeptic)
-now run in a single AgentGraph with shared facts, and the skeptic actually
-consumes triage findings. Sprint continues with a third agent and coverage
-improvements.
+**Sprint status:** triple-agent collaboration landed on 2026-04-22. The
+runtime now runs three distinct LLM agents (pipeline-triage +
+financial-triage -> scientific-skeptic) in a single AgentGraph with
+shared facts. Pipeline and financial triage run in parallel in the same
+DAG layer; the skeptic waits and then consumes both payloads through the
+FactStore. Sprint continues with a fourth (macro) agent and runtime
+robustness.
 
 - **Done** — LLM + Agent runtime skeleton (config, client, trace, prompt,
   schema, FactStore, AgentGraph, opt-in CLI flag).
@@ -347,12 +357,20 @@ improvements.
   `source_text_excerpt` fact and in-graph chaining into the skeptic.
   Validated end-to-end via live Bailian Qwen3.6 dual-agent smoke
   (7298 total tokens, 2/2 calls OK, findings for both agents).
-- **In progress** — Multi-anchor `source_text_excerpt`: today the window
-  is anchored on the first matching asset name, which leaves later-listed
-  assets marked `medium [not in excerpt]`. Next iteration produces one
-  window per asset or a capped concatenated multi-anchor excerpt.
-- **Not started** — `FinancialTriageLLMAgent`: burn-rate, runway, cash vs
-  debt sanity. First non-pipeline-domain LLM agent and the real test
-  that the agent graph is domain-agnostic.
+- **Done** — Multi-anchor `source_text_excerpt`: stitches one window per
+  asset name, exposes `anchor_assets` / `missing_assets`, and the
+  triage prompt respects them so extractor coverage limits are no
+  longer flagged as data-quality issues. Raised triage confidence from
+  0.6 to 0.95 on the DualityBio smoke.
+- **Done** — `FinancialTriageLLMAgent`: burn-rate / runway / cash-debt
+  sanity across `financial_snapshot`, `runway_estimate`,
+  `market_snapshot`, `valuation_metrics`. Emits `runway_sanity` enum
+  (consistent / stretch / inconsistent / insufficient_data) plus
+  per-metric severity findings. First non-pipeline LLM agent; validated
+  on live DualityBio run at 3/3 OK and 10515 tokens combined.
+- **In progress** — `MacroContextLLMAgent`: rate / HK-biotech-sentiment /
+  policy read. Feeds the skeptic as a fourth upstream dependency.
 - **Not started** — Add a Claude adapter so the runtime is not single-vendor.
 - **Not started** — Per-agent LLM call budget cap.
+- **Not started** — `--market-data-freshness-days` CLI flag so Tencent
+  staleness is operator-tunable without patching code.

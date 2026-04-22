@@ -218,6 +218,57 @@ Use this shape:
     for 8 assets", "data quality failures indicate poor corporate
     governance or outdated reporting"), demonstrating real multi-agent
     collaboration.
+- Multi-anchor `source_text_excerpt` (M2.5) closed the "not in excerpt"
+  false-positive gap:
+  - `_build_source_text_excerpt` now walks every asset name, centres a
+    small window on each hit, merges overlaps, caps total at 8k chars,
+    and exposes `anchor_assets` / `missing_assets` / `truncated` flags.
+  - Triage prompt tells the LLM not to penalise assets listed in
+    `missing_assets` (extractor coverage limit, not a data bug).
+  - Re-run on 09606.HK: triage confidence 0.6 -> 0.95, false-positive
+    "not in excerpt" mediums 8 -> 0, skeptic confidence 0.3 -> 0.85.
+    Triage additionally surfaced real cross-cutting issues: `BNT` vs
+    `BioNTech` partner-naming inconsistency across multiple assets and
+    a DB-1303 "Phase 3 but no next_milestone" flag that was invisible
+    under the single-anchor window.
+- Third LLM agent `FinancialTriageLLMAgent` is live (M3):
+  - New fact `financials_snapshot`: one consolidated dict carrying
+    `financial_snapshot`, `runway_estimate`, `market_snapshot`,
+    `valuation_metrics`, and `financial_warnings`. Built in
+    `_build_financials_snapshot` and threaded through
+    `build_llm_agent_facts`.
+  - `FINANCIAL_TRIAGE_PROMPT` / `FinancialTriageLLMAgent` output strict
+    JSON: `runway_sanity` (enum:
+    consistent/stretch/inconsistent/insufficient_data), `summary`,
+    `findings[]` (each with `severity` low/medium/high, `description`,
+    optional `metric` / `suggested_action`), plus optional
+    `implied_runway_months` and `confidence`.
+  - `--llm-agents financial-triage` registers the agent; it is
+    composable with both `pipeline-triage` and `scientific-skeptic`.
+    The skeptic `depends_on` every requested triage agent and the
+    skeptic prompt renders both triage payloads in dedicated blocks.
+  - New tests `tests/test_financial_triage_agent.py`: happy-path with
+    per-metric risk tagging, missing-snapshot skip, schema violation,
+    bad-enum rejection, and a triple-agent in-graph chain.
+- Live Bailian Qwen triple-agent smoke validated on 2026-04-22:
+  - `company-report --ticker 09606.HK --auto-inputs --market-data
+    hk-public --llm-agents pipeline-triage financial-triage
+    scientific-skeptic`: 3 LLM calls, 3 OK, 8502 prompt + 2013
+    completion tokens = 10515 total, 42.3 s combined latency (8 s
+    financial triage and 20 s pipeline triage in parallel, then 14 s
+    skeptic).
+  - Financial triage confirmed the deterministic ~98-month runway is
+    internally consistent (confidence 0.95) and surfaced only genuinely
+    second-order issues: RMB financial_snapshot vs HKD market_snapshot
+    currency mismatch, and market-data provider not aggregating
+    balance-sheet cash.
+  - Skeptic (confidence 0.75) consumed all three upstream findings and
+    added analyst-grade observations: "Heavy reliance on a single
+    partner (BioNTech) for key late-stage assets creates concentration
+    risk", "DB-1303 is in Phase 3 but lacks a defined next milestone
+    despite reported primary endpoint achievement". No hallucinated
+    financial risks, because `financial-triage` had already vetted the
+    runway.
 
 ## Current Repo State
 
@@ -231,8 +282,9 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-22 after M2 dual-agent rollout (pipeline triage
-+ scientific skeptic running together in the AgentGraph):
+Last validated on 2026-04-22 after M3 triple-agent rollout (pipeline
+triage + financial triage + scientific skeptic running together in the
+AgentGraph, with multi-anchor source excerpts):
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -244,13 +296,15 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 157 unit tests ran, 153 passed, 4 skipped (online Yahoo / online Tencent /
-  online Bailian Qwen integration tests self-skip without the matching
-  `BIOTECH_ALPHA_ONLINE_*_TESTS=1` env flag).
+- 167 unit tests ran, 162 passed, 5 skipped (online Yahoo / online Tencent /
+  two online Bailian Qwen integration tests + financial triage online
+  self-skip without the matching `BIOTECH_ALPHA_ONLINE_*_TESTS=1` env
+  flag).
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
-  plus `tests/test_pipeline_triage_agent.py` (new).
+  plus `tests/test_pipeline_triage_agent.py` and
+  `tests/test_financial_triage_agent.py` (new).
 - Deterministic `company-report --auto-inputs --market-data hk-public`
   smoke still produces `research_ready_with_review` reports for
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) with Tencent
@@ -275,12 +329,12 @@ Latest smoke commands:
   --ticker 09606.HK --auto-inputs --overwrite-auto-inputs \
   --market-data hk-public
 
-# LLM + agent runtime opt-in (dual agent)
+# LLM + agent runtime opt-in (triple agent)
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
-  --llm-agents pipeline-triage scientific-skeptic
+  --llm-agents pipeline-triage financial-triage scientific-skeptic
 
 # One-shot LLM ping for provider/model smoke
 PYTHONPATH=src .venv/bin/python scripts/llm_smoke.py
@@ -294,17 +348,26 @@ Latest smoke result:
 - LLM agent pipeline writes `data/memos/<run_id>_llm_findings.json` and
   `data/traces/<run_id>.jsonl`. The trace JSONL captures timestamp, agent,
   model, prompt_hash, token counts, latency, retries, and `ok`/`error`.
-- Dual-agent DualityBio smoke (`pipeline-triage` + `scientific-skeptic`):
-  - 2 LLM calls, 2 OK, 5549 prompt + 1749 completion tokens (7298 total),
-    35.3 s combined latency.
-  - Triage finding (confidence 0.6): 3 data-quality issues high-severity,
-    8 medium-severity missing-source-coverage flags, including the
-    correct `DB-1312 next_milestone "in 2017"` callout.
-  - Skeptic finding (confidence 0.3) consumed those triage findings and
-    produced a sharper bear case: "validation confidence critically low
-    for 8 assets", "absence of TTM revenue prevents valuation
-    benchmarking", "heavy concentration in solid tumor ADCs/bispecifics
-    exposes the company to crowded competitive landscapes".
+- Triple-agent DualityBio smoke (`pipeline-triage` + `financial-triage`
+  + `scientific-skeptic`):
+  - 3 LLM calls, 3 OK, 8502 prompt + 2013 completion tokens (10515
+    total), 42.3 s combined latency (triage agents ran in parallel in
+    the same DAG layer: financial 8 s, pipeline 20 s; skeptic 14 s).
+  - Financial triage (confidence 0.95): confirmed deterministic
+    ~98-month runway is internally consistent, flagged RMB/HKD
+    currency mismatch between `financial_snapshot` and
+    `market_snapshot` as a low-severity caveat.
+  - Pipeline triage (confidence 0.95): DB-1312 "in 2017" milestone
+    high-severity, two medium-severity `\n2026` malformed milestones,
+    and the first-ever "DB-1303 is Phase 3 but has no next_milestone"
+    flag surfaced by multi-anchor excerpt.
+  - Skeptic (confidence 0.75) consumed all three upstream findings and
+    added analyst-grade observations: "Heavy reliance on a single
+    partner (BioNTech) for key late-stage assets creates concentration
+    risk" and "DB-1303 is in Phase 3 but lacks a defined next milestone
+    despite reported primary endpoint achievement". Because financial
+    triage had already vetted the runway, the skeptic no longer
+    hallucinated fake burn-rate concerns.
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
@@ -313,58 +376,63 @@ Latest smoke result:
 
 ### Current Task
 
-Broaden the multi-agent graph in two directions and tighten what we have:
+Three LLM agents (pipeline-triage + financial-triage + scientific-skeptic)
+now compose reliably in a single AgentGraph under Qwen3.6. Next, bring
+**macro context** into the graph so the research covers all four classic
+biotech analyst domains (pipeline, financial, macro, skeptic/synthesis)
+and start reducing the agent-runtime rough edges that make live usage
+fragile.
 
-- Lift the `source_text_excerpt` window strategy so triage can cover all
-  pipeline assets (today the 4k-char anchor is pinned to the first asset,
-  which leaves later-listed assets with only `medium` "not in excerpt"
-  warnings).
-- Introduce a `FinancialTriageLLMAgent` that cross-checks burn rate,
-  runway months, and cash-vs-debt sanity. This is the third agent and the
-  first non-pipeline domain, so it's the real test that `AgentGraph` is
-  domain-agnostic.
+The immediate two parallel tracks:
 
-Both tasks build on the stable M1/M2 foundation (runtime + pipeline
-triage + skeptic) and must not regress the current dual-agent smoke.
+- New `MacroContextLLMAgent` so the graph is no longer only bottoms-up
+  from company filings. It should pull in a short macro/sector context
+  block (rate environment, HK biotech index trend, recent sector
+  regulatory news) and produce a structured call on whether the macro
+  backdrop supports or pressures HK biotech long-term.
+- Operational robustness: per-agent LLM call budget caps, and
+  `--market-data-freshness-days` on `company-report` so operators can
+  tune Tencent staleness without patching code.
 
 ### Next Action
 
-1. Rework `_build_source_text_excerpt` in `company_report.py` to support
-   multiple anchors: when there are N assets, try to produce one excerpt
-   window per asset name (or one combined deduped concatenation capped at
-   ~8k chars total), so the triage agent doesn't need to flag "not in
-   excerpt" for assets that do appear in the source. Add a unit test that
-   exercises a fixture with two assets far apart in the text.
+1. Expose `--market-data-freshness-days` on `company-report` and thread
+   it into the `hk_public_quote_provider`. Default stays 3 days. Add a
+   CLI test covering a custom value.
 
-2. Add `FinancialTriageLLMAgent` in `src/biotech_alpha/agents_llm.py`:
-   - Inputs: `valuation_snapshot`, `trial_summary`, `input_warnings`,
-     plus a new `financials_snapshot` fact (burn-rate estimate, last
-     cash, last debt, revenue TTM, the deterministic cash-runway
-     estimate, and any auto-input warnings relevant to financials).
-   - Output: strict JSON with `summary`,
-     `runway_sanity ∈ {"consistent","stretch","inconsistent"}`, per-line
-     anomalies, and `confidence`.
-   - Register under `--llm-agents financial-triage`, composable with the
-     other two agents. Skeptic should optionally `depends_on` it too so
-     it sees financial anomalies.
+2. Add per-agent LLM call budget caps:
+   - Introduce `LLMConfig.per_agent_max_calls` (default None = no cap)
+     and track call counts in `LLMTraceRecorder` keyed by agent name.
+   - `OpenAICompatibleLLMClient.complete` refuses to call when the agent
+     has exceeded its cap and raises a typed `LLMBudgetError`.
+   - Agents surface it via `AgentStepResult.error` just like any other
+     `LLMError`.
 
-3. After financial triage is live, expose
-   `--market-data-freshness-days` on `company-report` so operators can
-   tune Tencent staleness without patching code.
+3. Add `MacroContextLLMAgent` in `src/biotech_alpha/agents_llm.py`:
+   - New fact `macro_context`: minimal dict with as-of date, market,
+     headline news titles (from a new lightweight auto-input or a stub),
+     HK biotech index level / trend, and a short note on rate/FX
+     environment.
+   - Output: strict JSON with `macro_regime` ∈
+     {"supportive","neutral","pressuring"}, `summary`,
+     `sector_drivers[]`, `sector_headwinds[]`, `confidence`.
+   - Register under `--llm-agents macro-context`, composable with the
+     other three agents. Skeptic `depends_on` macro-context when
+     requested so it can cite the regime in its counter-thesis.
 
 ### Acceptance Criteria
 
-- `source_text_excerpt` contains all pipeline assets that actually appear
-  in the source text (verified by a unit test with two distant anchors).
-  The live DualityBio smoke should drop at least two of the existing
-  "not in excerpt" mediums.
-- `--llm-agents financial-triage` produces an `AgentFinding` with at
-  least one concrete numeric anomaly on the DualityBio smoke.
-- Running `--llm-agents pipeline-triage financial-triage
-  scientific-skeptic` together keeps strict JSON schema passing on the
-  first try, shows 3 calls in the cost summary, and preserves DAG order
-  (triage agents first, skeptic last).
-- Deterministic report path is unchanged without `--llm-agents`.
+- `company-report --market-data-freshness-days N` passes N through to
+  the Tencent provider. Without the flag behaviour is unchanged.
+- A single LLM agent cannot make more than its budgeted calls in a run;
+  the refusal path is tested via `FakeLLMClient` plus a wrapper that
+  enforces the cap.
+- `--llm-agents pipeline-triage financial-triage macro-context
+  scientific-skeptic` runs end-to-end on Qwen3.6, shows 4 calls in the
+  cost summary, and the skeptic's prompt is shown to render a
+  non-empty `macro_context` block.
+- No regression on the existing 3-agent smoke: same token order of
+  magnitude, same quality of findings.
 
 ### Validation
 
@@ -379,29 +447,28 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs --market-data hk-public \
-  --llm-agents pipeline-triage financial-triage scientific-skeptic
+  --llm-agents pipeline-triage financial-triage macro-context \
+    scientific-skeptic
 ```
 
 ### Queue
 
-1. Multi-anchor `source_text_excerpt` so triage coverage is not
-   first-asset-only.
-2. Add `FinancialTriageLLMAgent` (burn rate / runway / cash-debt sanity).
-3. Expose `--market-data-freshness-days` on `company-report` so operators
-   can tune Tencent staleness without patching code.
-4. Per-agent LLM call budget cap in `LLMConfig` so no single agent can
-   blow the daily token budget on its own.
-5. Claude adapter alongside the OpenAI-compatible adapter so the runtime
-   is not single-vendor.
-6. Add auto competitor drafts once pipeline extraction is reliable.
-7. Keep broadening fixtures across representative HK biotech disclosure
+1. Expose `--market-data-freshness-days` on `company-report`.
+2. Per-agent LLM call budget cap inside `LLMConfig` /
+   `LLMTraceRecorder` / `OpenAICompatibleLLMClient`.
+3. `MacroContextLLMAgent`: rate / HK-biotech-sentiment / policy read.
+4. Claude adapter alongside the OpenAI-compatible adapter so the runtime
+   is not single-vendor (still routed through `LLMConfig`).
+5. Add auto competitor drafts once pipeline extraction is reliable.
+6. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-8. Tighten validator checks for stale placeholders and weak evidence
+7. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-9. Add a US-market sibling market-data provider once HK freshness lands,
+8. Add a US-market sibling market-data provider once HK freshness lands,
    so the auto-draft path is not HK-only.
-10. `MacroContextAgent` once financial triage stabilises, so macro drivers
-    (rate environment, HK biotech sentiment, policy) enter the graph.
+9. Consider a deterministic post-processor that turns LLM findings into
+   an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
+   need to parse `data/memos/*_llm_findings.json` separately.
 
 ## Do Not Break
 

@@ -56,6 +56,8 @@ SCIENTIFIC_SKEPTIC_PROMPT = StructuredPrompt(
         "Pipeline snapshot:\n${pipeline_snapshot}\n\n"
         "Pipeline triage findings (from the pipeline-triage LLM agent, if "
         "present):\n${pipeline_triage}\n\n"
+        "Financial triage findings (from the financial-triage LLM agent, "
+        "if present):\n${financial_triage}\n\n"
         "Trial coverage summary:\n${trial_summary}\n\n"
         "Valuation + cash snapshot:\n${valuation_snapshot}\n\n"
         "Input warnings:\n${input_warnings}\n\n"
@@ -223,6 +225,9 @@ class ScientificSkepticLLMAgent(Agent):
             ),
             "pipeline_triage": _json_block(
                 store.get("pipeline_triage_payload")
+            ),
+            "financial_triage": _json_block(
+                store.get("financial_triage_payload")
             ),
             "trial_summary": _json_block(store.get("trial_summary")),
             "valuation_snapshot": _json_block(
@@ -514,6 +519,280 @@ def _triage_finding_from_payload(
         risks=tuple(risks),
         evidence=evidence,
         confidence=coverage_confidence,
+        needs_human_review=True if needs_review else True,
+    )
+
+
+FINANCIAL_TRIAGE_PROMPT = StructuredPrompt(
+    name="financial_triage",
+    tags=("financial", "triage", "llm"),
+    system=(
+        "You are a biotech CFO reviewer. Your job is to cross-check a "
+        "company's reported cash position, debt, burn rate, runway "
+        "estimate, and market snapshot for consistency. Typical anomalies "
+        "to flag include: runway implied by cash / burn disagreeing with "
+        "the deterministic `runway_months` estimate by more than ~10%; "
+        "market_snapshot.cash contradicting financial_snapshot."
+        "cash_and_equivalents; short_term_debt exceeding net cash by a "
+        "wide margin with no mention in financial_warnings; a missing or "
+        "zero burn rate on a clearly pre-revenue company (revenue_ttm "
+        "null or 0 on an EV scale above ~USD 200M); currency mismatches "
+        "between financial_snapshot and market_snapshot; stale "
+        "source_date relative to the report year.\n\n"
+        "Work only from the provided facts. Do not fabricate cash or "
+        "debt figures. If a field you need is null, say so in the issue "
+        "text instead of guessing.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required top-level keys: runway_sanity, summary, findings.\n"
+        "- Optional top-level keys: confidence, implied_runway_months.\n"
+        "- `runway_sanity` is exactly one of \"consistent\", \"stretch\", "
+        "\"inconsistent\", \"insufficient_data\".\n"
+        "- `findings` is a list of objects. Each object MUST have "
+        "`severity` (exactly one of \"low\", \"medium\", \"high\") and "
+        "`description`. Optional per-finding keys: `metric` (the field "
+        "you are commenting on, e.g. `runway_months`) and "
+        "`suggested_action`.\n"
+        "- Never put the output inside `financial_triage`, `analysis`, "
+        "`result`, or any other wrapper key."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Financials + runway snapshot (deterministic):\n"
+        "${financials_snapshot}\n\n"
+        "Trial coverage summary (context for burn-rate expectations):\n"
+        "${trial_summary}\n\n"
+        "Existing input validator warnings (deterministic):\n"
+        "${input_warnings}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"runway_sanity\": "
+        "\"consistent|stretch|inconsistent|insufficient_data\",\n"
+        "  \"summary\": \"<1-3 sentence read on financial posture>\",\n"
+        "  \"implied_runway_months\": 0.0,\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"findings\": [\n"
+        "    {\"severity\": \"low|medium|high\", "
+        "\"metric\": \"<field name or null>\", "
+        "\"description\": \"<concrete anomaly>\", "
+        "\"suggested_action\": \"<string or null>\"}\n"
+        "  ]\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": ["runway_sanity", "summary", "findings"],
+        "properties": {
+            "runway_sanity": {
+                "type": "string",
+                "enum": [
+                    "consistent",
+                    "stretch",
+                    "inconsistent",
+                    "insufficient_data",
+                ],
+            },
+            "summary": {"type": "string", "min_length": 1},
+            "implied_runway_months": {"type": ["number", "null"]},
+            "confidence": {"type": ["number", "null"]},
+            "findings": {
+                "type": "array",
+                "max_items": 20,
+                "items": {
+                    "type": "object",
+                    "required": ["severity", "description"],
+                    "properties": {
+                        "severity": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                        },
+                        "description": {
+                            "type": "string",
+                            "min_length": 3,
+                        },
+                        "metric": {"type": ["string", "null"]},
+                        "suggested_action": {"type": ["string", "null"]},
+                    },
+                },
+            },
+        },
+    },
+)
+
+
+@dataclass
+class FinancialTriageLLMAgent(Agent):
+    """LLM agent that sanity-checks cash / burn / runway / valuation."""
+
+    llm_client: LLMClient
+    name: str = "financial_triage_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "financial_triage_llm_finding",
+        "financial_triage_payload",
+    )
+    max_tokens: int | None = 1200
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("FinancialTriageLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        snapshot = store.get("financials_snapshot")
+        if not isinstance(snapshot, dict) or not snapshot:
+            return AgentStepResult(
+                agent_name=self.name,
+                skipped=True,
+                error=(
+                    "no financials_snapshot available for triage; either "
+                    "financial inputs or a valuation snapshot must be "
+                    "present for this agent to run"
+                ),
+            )
+
+        variables = self._collect_variables(context, store)
+        system, user = FINANCIAL_TRIAGE_PROMPT.render(variables)
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = FINANCIAL_TRIAGE_PROMPT.parse_response(
+                call.response_text
+            )
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _financial_triage_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "financial_triage_llm_finding": finding,
+                "financial_triage_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "financials_snapshot": _json_block(
+                store.get("financials_snapshot")
+            ),
+            "trial_summary": _json_block(store.get("trial_summary")),
+            "input_warnings": _format_lines(
+                store.get("input_warnings") or []
+            ),
+        }
+
+
+def _financial_triage_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "Financial triage completed."
+
+    risks: list[str] = []
+    has_high_severity = False
+    for entry in payload.get("findings") or []:
+        severity = str(entry.get("severity", "")).strip().lower()
+        description = str(entry.get("description", "")).strip()
+        metric = entry.get("metric")
+        if not description or severity not in {"low", "medium", "high"}:
+            continue
+        prefix = f"[{severity}]"
+        if metric:
+            prefix = f"{prefix}[{metric}]"
+        risks.append(f"{prefix} {description}")
+        if severity == "high":
+            has_high_severity = True
+
+    runway_sanity = str(payload.get("runway_sanity") or "").strip().lower()
+    if runway_sanity in {"inconsistent", "stretch"}:
+        risks.insert(0, f"[runway_sanity] {runway_sanity}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Financial triage produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+
+    needs_review = (
+        has_high_severity
+        or runway_sanity in {"inconsistent", "insufficient_data"}
+    )
+
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
         needs_human_review=True if needs_review else True,
     )
 

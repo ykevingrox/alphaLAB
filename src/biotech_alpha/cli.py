@@ -258,12 +258,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--llm-agents",
         nargs="*",
         default=(),
-        choices=("scientific-skeptic", "pipeline-triage"),
+        choices=(
+            "scientific-skeptic",
+            "pipeline-triage",
+            "financial-triage",
+        ),
         help=(
-            "Opt-in LLM agents to run after deterministic research. Requires "
-            "BIOTECH_ALPHA_LLM_API_KEY in env (see .env.example). When both "
-            "agents are supplied, pipeline-triage runs first and the skeptic "
-            "consumes its findings. Outputs are written to "
+            "Opt-in LLM agents to run after deterministic research. "
+            "Requires BIOTECH_ALPHA_LLM_API_KEY in env (see "
+            ".env.example). When triage agents are combined with the "
+            "skeptic, triage runs first and the skeptic consumes their "
+            "findings through the FactStore. Outputs are written to "
             "data/memos/<run_id>_llm_findings.json and a trace JSONL to "
             "data/traces/<run_id>.jsonl."
         ),

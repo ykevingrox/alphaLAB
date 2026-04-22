@@ -507,6 +507,7 @@ class SourceTextExcerptTest(unittest.TestCase):
                 self.pipeline_assets = ()
                 self.trials = ()
                 self.asset_trial_matches = ()
+                self.financial_snapshot = None
                 self.valuation_snapshot = None
                 self.valuation_metrics = None
                 self.cash_runway_estimate = None
