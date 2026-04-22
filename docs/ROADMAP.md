@@ -138,7 +138,8 @@ Data maturity comparison, efficacy/safety comparisons, and commercialization
 analysis are pending. Seed drafting is now versioned and covers a
 broader conservative HK-biotech target set, including BCMA/CD3,
 CTLA-4, FcRn, TSLP, and normalized B7H4/B7-H4 composite matching,
-while still marking generated competitors for human review.
+while still marking generated competitors for human review and keeping
+competitor indication as `to_verify`.
 
 - Group assets by target, mechanism, indication, and geography.
 - Compare stage, data maturity, safety, efficacy, and commercialization status.
@@ -360,7 +361,11 @@ resilience and validator tightening remain).
   undisclosed-target packed rows such as J9003/R7027 without inventing
   source-unsupported targets. B7H4/CD3 local context now stops at the
   next numbered section so HBM7004 does not inherit Metabolic Disease /
-  obesity text from a later source section.
+  obesity text from a later source section. Harbour BioMed source-backed
+  phase/partner cleanup now also rejects `Phase 3.0 strategic era` as a
+  clinical phase, prefers BLA / IND statuses when stated, and prevents
+  inline numbered collaboration sections from leaking partners across
+  assets.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from
@@ -392,7 +397,8 @@ and web ingestion out).
   checks. Auto competitor seed drafting from extracted pipeline targets is
   now in place as a conservative bootstrap; generated seed drafts refresh
   by extractor version and cover the current Harbour BioMed target families
-  without treating them as curated truth.
+  without treating them as curated truth. Target-overlap seeds do not copy
+  the pipeline asset indication into the competitor record.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`

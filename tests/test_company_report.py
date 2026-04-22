@@ -11,6 +11,7 @@ from unittest.mock import patch
 from biotech_alpha.auto_inputs import AutoInputArtifacts, SourceDocument
 from biotech_alpha.company_report import (
     _build_source_text_excerpt,
+    _run_date_from_run_id,
     build_llm_agent_facts,
     company_report_summary,
     discover_company_inputs,
@@ -537,6 +538,15 @@ class SourceTextExcerptTest(unittest.TestCase):
             assert excerpt is not None
             self.assertEqual(excerpt["anchor_assets"], [])
             self.assertIn("preamble", excerpt["excerpt"])
+
+
+class LLMContextDateTest(unittest.TestCase):
+    def test_run_date_from_run_id(self) -> None:
+        self.assertEqual(
+            _run_date_from_run_id("20260422T120057Z"),
+            "2026-04-22",
+        )
+        self.assertIsNone(_run_date_from_run_id("not-a-run-id"))
 
 
 if __name__ == "__main__":

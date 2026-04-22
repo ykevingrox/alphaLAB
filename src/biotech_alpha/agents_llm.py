@@ -303,7 +303,10 @@ PIPELINE_TRIAGE_PROMPT = StructuredPrompt(
         "- Only flag issues that the source text or a clear logical "
         "inconsistency actually supports; if an asset looks clean, use "
         "severity \"none\" with an empty `issues` list. Do not invent "
-        "issues to seem thorough.\n\n"
+        "issues to seem thorough.\n"
+        "- Keep the response compact so it cannot be truncated: summary "
+        "under 60 words, at most 2 short issues per asset, and at most "
+        "1 short suggested_fix per asset.\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
         "{\n"
         "  \"coverage_confidence\": 0.0,\n"
@@ -375,7 +378,7 @@ class PipelineTriageLLMAgent(Agent):
         "pipeline_triage_llm_finding",
         "pipeline_triage_payload",
     )
-    max_tokens: int | None = 1500
+    max_tokens: int | None = 2200
     temperature: float = 0.1
 
     def __post_init__(self) -> None:
@@ -815,7 +818,11 @@ COMPETITION_TRIAGE_PROMPT = StructuredPrompt(
         "stress-test deterministic competitor matching output and highlight "
         "where the current competitor set may be crowded, sparse, stale, or "
         "internally inconsistent. Work only from provided facts. Do not "
-        "invent competitors, readouts, or market-share claims.\n\n"
+        "invent competitors, readouts, ownership corrections, approved "
+        "indications, or market-share claims. If a concern relies on facts "
+        "not present in the input, phrase it as `requires verification` "
+        "instead of asserting it as true. Do not claim a competitor belongs "
+        "to a different company unless the provided facts say so.\n\n"
         "OUTPUT RULES (must follow exactly):\n"
         "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
         "- Required top-level keys: crowding_signal, summary, findings.\n"
@@ -837,6 +844,13 @@ COMPETITION_TRIAGE_PROMPT = StructuredPrompt(
         "Competition snapshot (deterministic):\n${competition_snapshot}\n\n"
         "Pipeline snapshot context:\n${pipeline_snapshot}\n\n"
         "Input warnings:\n${input_warnings}\n\n"
+        "Review rules:\n"
+        "- Keep the response compact so it cannot be truncated: summary "
+        "under 50 words, at most 8 findings, and each description under "
+        "35 words.\n"
+        "- Treat `to_verify` competitor fields as explicit uncertainty, "
+        "not as proof that the competitor has the pipeline asset's "
+        "indication or phase.\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
         "{\n"
         "  \"crowding_signal\": \"crowded|balanced|unclear|insufficient_data\",\n"
@@ -903,7 +917,7 @@ class CompetitionTriageLLMAgent(Agent):
         "competition_triage_llm_finding",
         "competition_triage_payload",
     )
-    max_tokens: int | None = 1100
+    max_tokens: int | None = 1800
     temperature: float = 0.1
 
     def __post_init__(self) -> None:

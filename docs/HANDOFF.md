@@ -121,7 +121,9 @@ Use this shape:
   conservative target-overlap coverage for Harbour BioMed-style targets:
   BCMA/CD3, CTLA-4, FcRn, TSLP, and normalized B7H4/B7-H4 composite
   matching. Existing generated competitor drafts refresh when their
-  extractor version is stale.
+  extractor version is stale. Target-overlap seeds keep competitor
+  indication as `to_verify` so the pipeline asset's indication is not
+  misrepresented as a competitor label.
 - Live `company-report --auto-inputs --market-data hk-public` runs for both
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) write
   `data/input/generated/<slug>_valuation.json` drafts sourced from the
@@ -448,8 +450,8 @@ Use this shape:
 ## Latest Validation
 
 Last validated on 2026-04-22 after Harbour BioMed extraction and
-competitor-seed hardening (`PIPELINE_EXTRACTOR_VERSION = 4`,
-`COMPETITOR_EXTRACTOR_VERSION = 3`). Macro-signals, disk cache,
+competitor-seed hardening (`PIPELINE_EXTRACTOR_VERSION = 6`,
+`COMPETITOR_EXTRACTOR_VERSION = 4`). Macro-signals, disk cache,
 four-agent LLM runtime, per-agent LLM budget caps, and
 `--market-data-freshness-days` remain unchanged:
 
@@ -463,13 +465,14 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 249 unit tests ran, 242 passed, 7 skipped (online Yahoo / online
+- 254 unit tests ran, 247 passed, 7 skipped (online Yahoo / online
   Tencent / Bailian Qwen integration tests plus Anthropic online
   self-skips; all guarded behind `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
   The latest coverage adds versioned competitor draft refresh,
-  Harbour BioMed target-overlap competitor seeds, and B7H4/CD3 local
-  context truncation so the next numbered section cannot contaminate
-  HBM7004's indication.
+  Harbour BioMed target-overlap competitor seeds, B7H4/CD3 local
+  context truncation, inline numbered-section partner truncation,
+  Phase 3.0 strategy-text rejection, BLA status precedence, and IND
+  approved/accepted phase-status extraction.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same full-test validation baseline.
@@ -489,9 +492,20 @@ Latest result:
   `report "09606.HK" --json --no-llm --no-save` leaves pipeline
   warnings empty and auto-drafts 8 competitor seeds.
   `report "02142.HK" --json --no-llm --no-save` auto-drafts 7
-  competitor seeds and leaves only source-unsupported pipeline
-  warnings: `HAT001` missing indication and phase; `HBM2001`,
-  `J9003`, `R2006`, `R7027`, and `HBM1020` missing phase.
+  competitor seeds, refreshes pipeline drafts to v6, and leaves only
+  source-unsupported pipeline warnings: `HAT001` missing indication
+  and phase; `HBM2001`, `J9003`, `R2006`, `R7027`, and `HBM1020`
+  missing phase.
+- Full 02142 quick-report smoke:
+  `report "02142.HK" --json --no-save` completed 6/6 graph steps OK
+  on run `20260422T121003Z` with 19,757 total LLM tokens, quality gate
+  `research_ready_with_review`, 12 assets, 19 trials, 7 competitors,
+  and 2 catalysts. The run confirmed the quick-report default LLM stack
+  is stable after prompt compaction and competitor seed cleanup. The
+  remaining LLM concerns are substantive review items: unverified
+  target-only competitor matches, missing burn/runway input, and
+  pipeline assets whose phase remains absent from source-backed table
+  text.
 - LLM ping `scripts/llm_smoke.py` (Bailian `/compatible-mode/v1`,
   `qwen3.6-plus`, `enable_thinking=False`): 1 call, 28 completion tokens,
   3.0 s latency, schema satisfied, trace recorded.
@@ -613,23 +627,34 @@ Latest smoke result:
     source text does not yet resolve reliably.
 - Harbour BioMed packed-table target/mechanism cleanup landed:
   - Generated pipeline drafts now carry
-    `generated_extractor_version = 4`; older generated drafts refresh
+    `generated_extractor_version = 6`; older generated drafts refresh
     automatically so stale local generated files pick up extractor fixes.
   - Generated competitor drafts now carry
-    `generated_extractor_version = 3`; stale target-overlap seed drafts
+    `generated_extractor_version = 4`; stale target-overlap seed drafts
     refresh automatically.
   - HAT001/HBM9013 now prefers the nearby `anti-CRH` target instead of
     leaking BCMA/CD3 from the following HBM7020 paragraph.
   - HBM7004/B7H4-CD3 context now stops at the next numbered section,
     so Metabolic Disease / obesity text no longer contaminates the
     oncology indication.
+  - Phase extraction no longer treats `Phase 3.0 strategic era` as a
+    clinical Phase 3. BLA statuses and IND approvals are now preferred
+    when the source text states them directly.
+  - Partner extraction now uses an asset-local window with a small left
+    context and truncates inline numbered sections, so HBM9378 keeps
+    `Kelun; Windward` without swallowing HAT001's Spruce deal.
+  - HBM7020 now resolves to `Phase I` / `Otsuka`; HBM9161 to
+    `BLA under review`; HBM4003 to partner `Solstice`; HBM7575 to
+    `IND approved`.
   - `J9003` and `R7027` preserve `target = null` because the source says
     `Undisclosed`, but now set `mechanism = "undisclosed target"` so the
     validator no longer reports missing target/mechanism.
   - `HBM2001` and `R2006` keep their source-backed targets without an
     `undisclosed target` mechanism.
   - Competitor seeds now include BCMA/CD3, CTLA-4, FcRn, TSLP, and
-    normalized B7H4/B7-H4 matching.
+    normalized B7H4/B7-H4 matching. Seed indications are `to_verify`;
+    the pipeline asset indication appears only in the evidence claim as
+    context, not as a competitor fact.
   - No-LLM quick smoke after the fix:
     `report "02142.HK" --json --no-llm --no-save` now leaves only
     source-unsupported warnings: `HAT001` missing indication and phase;
@@ -639,13 +664,18 @@ Latest smoke result:
 
 ### Current Task
 
-Harbour BioMed extraction hardening and competitor seed expansion are
-closed for the current source-backed scope. Remaining 02142 warnings
-are intentionally unresolved unless a source-backed parser improvement
-appears; do not infer phase from lost PDF table coordinates. The next
-checkpoint should verify that the richer competitor draft improves the
-full LLM quick-report path, especially `competition-triage` and the
-final skeptic.
+Harbour BioMed extraction hardening, competitor seed expansion, and
+full 02142 LLM quick-report smoke are closed for the current
+source-backed scope. Remaining deterministic 02142 warnings are
+intentionally unresolved unless a source-backed parser improvement
+appears; do not infer phase from lost PDF table coordinates.
+
+The next quality gap is LLM excerpt selection, not deterministic
+extraction: HBM7020's source-backed Phase I evidence appears in a later
+annual-results section, while `source_text_excerpt` still tends to
+show earlier collaboration mentions first. Pipeline triage can therefore
+flag Phase I as needing confirmation even though the deterministic
+extractor now has the correct field.
 
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
@@ -654,10 +684,10 @@ access recovers.
 
 ### Next Action
 
-1. Run a full quick-report smoke for Harbour BioMed:
-   `report "02142.HK" --no-save` with the default LLM stack, then
-   inspect `competition-triage` and skeptic findings for whether the
-   seven auto-drafted competitor seeds are useful or too noisy.
+1. Improve `source_text_excerpt` anchor selection for repeated asset
+   mentions. Prefer phase/IND/BLA-rich windows when an asset appears
+   multiple times, so pipeline-triage sees the same source-backed detail
+   the deterministic extractor used.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -673,9 +703,10 @@ access recovers.
   `insufficient_data` when live sector news is available, and
   subsequent same-market runs show `cache: hit` in
   `macro_context.live_signals.notes`.
-- Full 02142 quick-report smoke completes without generated-input
-  regressions, writes all LLM findings, and keeps the final report
-  auditable even with the known source-unsupported pipeline warnings.
+- Full 02142 quick-report smoke remains 6/6 LLM steps OK after any
+  excerpt-selection change, and pipeline-triage stops questioning
+  HBM7020's Phase I solely because the excerpt picked an earlier
+  collaboration-only mention.
 - Multi-source fallback path keeps one-command runs resilient under
   single-provider outages and still writes stable
   `macro_context.live_signals` keys.
@@ -703,8 +734,8 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Full LLM quick-report smoke for `02142.HK`; inspect whether the new
-   7-row competitor draft improves or distracts `competition-triage`.
+1. Improve repeated-asset `source_text_excerpt` anchor ranking so
+   source-backed phase/IND/BLA details are visible to pipeline-triage.
 2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 3. Keep broadening fixtures across representative HK biotech disclosure

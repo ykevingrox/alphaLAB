@@ -50,8 +50,8 @@ HKEX_ACTIVE_STOCKS_URL = (
     f"{HKEX_BASE_URL}/ncms/script/eds/activestock_sehk_e.json"
 )
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
-PIPELINE_EXTRACTOR_VERSION = 4
-COMPETITOR_EXTRACTOR_VERSION = 3
+PIPELINE_EXTRACTOR_VERSION = 6
+COMPETITOR_EXTRACTOR_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -378,12 +378,22 @@ def draft_competitor_assets(
         target = str(row.get("target") or "").strip()
         if not target:
             continue
-        indication = str(row.get("indication") or "").strip() or None
+        pipeline_indication = str(row.get("indication") or "").strip()
         for seed in _competitor_seeds_for_target(target):
             key = (seed["company"], seed["asset_name"])
             if key in seen:
                 continue
             seen.add(key)
+            claim = (
+                "Auto-generated competitor seed from target-overlap "
+                f"heuristic for {target}; competitor indication and "
+                "phase require manual verification."
+            )
+            if pipeline_indication:
+                claim = (
+                    f"{claim} Pipeline asset indication context: "
+                    f"{pipeline_indication}."
+                )
             competitors.append(
                 {
                     "company": seed["company"],
@@ -391,17 +401,16 @@ def draft_competitor_assets(
                     "aliases": [],
                     "target": target,
                     "mechanism": None,
-                    "indication": indication,
+                    "indication": "to_verify",
                     "phase": "to_verify",
                     "geography": "global",
-                    "differentiation": None,
+                    "differentiation": (
+                        "Generated target-overlap seed; verify indication, "
+                        "phase, and modality before using as a comparator."
+                    ),
                     "evidence": [
                         {
-                            "claim": (
-                                "Auto-generated competitor seed from "
-                                f"target-overlap heuristic for {target}; "
-                                "requires manual verification."
-                            ),
+                            "claim": claim,
                             "source": source.url,
                             "source_date": source.publication_date,
                             "confidence": 0.3,
@@ -469,6 +478,10 @@ def _draft_asset_from_context(
     source: SourceDocument,
 ) -> dict[str, Any]:
     local_context = _local_asset_context(context=context, asset_name=primary)
+    partner_context = _asset_context_with_left(
+        context=context,
+        asset_name=primary,
+    )
     packed_context = _packed_left_context(context=context, asset_name=primary)
     target = _target_from_context(local_context)
     modality = _modality_from_context(local_context)
@@ -498,7 +511,7 @@ def _draft_asset_from_context(
         ),
         "geography": _geography_from_context(context),
         "rights": None,
-        "partner": _partner_from_context(context),
+        "partner": _partner_from_context(partner_context),
         "next_milestone": _milestone_from_context(
             local_context,
             as_of_year=source_year,
@@ -529,8 +542,26 @@ def _local_asset_context(
     )
 
 
+def _asset_context_with_left(
+    *,
+    context: str,
+    asset_name: str,
+    size: int = 700,
+    left_size: int = 180,
+) -> str:
+    match = _asset_code_match(context=context, asset_name=asset_name)
+    if not match:
+        return context
+    left = context[max(0, match.start() - left_size): match.start()]
+    left = re.split(r"(?:\n|\s{2,}|\.\s+)\d+\.\s+[A-Z]", left)[-1]
+    right = _truncate_at_next_numbered_section(
+        context[match.start(): match.start() + size]
+    )
+    return left + right
+
+
 def _truncate_at_next_numbered_section(context: str) -> str:
-    match = re.search(r"\n\s*\d+\.\s+[A-Z]", context)
+    match = re.search(r"(?:\n|\s{2,}|\.\s+)\d+\.\s+[A-Z]", context)
     if not match:
         return context
     return context[:match.start()]
@@ -1069,9 +1100,32 @@ def _modality_from_context(context: str) -> str | None:
 
 
 def _phase_from_context(context: str) -> str | None:
-    match = re.search(r"Phase\s+([123I/abAB]+)", context, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", context)
+    if re.search(r"\b(BLA|Biologics License Application)\b", normalized):
+        lowered = normalized.lower()
+        if "under review" in lowered:
+            return "BLA under review"
+        if "accepted" in lowered:
+            return "BLA accepted"
+    match = re.search(
+        r"Phase\s+([123I/abAB]+)(?!\.\d)",
+        context,
+        flags=re.IGNORECASE,
+    )
     if match:
         return f"Phase {match.group(1)}"
+    if re.search(
+        r"\bIND\b.{0,120}\bapproved\b|\bapproved\b.{0,120}\bIND\b",
+        context,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        return "IND approved"
+    if re.search(
+        r"\bIND\b.{0,120}\baccepted\b|\baccepted\b.{0,120}\bIND\b",
+        context,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        return "IND accepted"
     if "clinical-stage" in context.lower():
         return "clinical-stage"
     lowered = context.lower()
@@ -1148,7 +1202,16 @@ def _geography_from_context(context: str) -> str | None:
 
 
 def _partner_from_context(context: str) -> str | None:
-    partners = ("BioNTech", "BNT", "3SBIO", "Kelun", "Windward")
+    partners = (
+        "BioNTech",
+        "BNT",
+        "3SBIO",
+        "Kelun",
+        "Windward",
+        "Solstice",
+        "Otsuka",
+        "Spruce",
+    )
     found = [partner for partner in partners if partner.lower() in context.lower()]
     return "; ".join(dict.fromkeys(found)) if found else None
 

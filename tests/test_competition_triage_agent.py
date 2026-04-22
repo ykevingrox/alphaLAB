@@ -126,6 +126,18 @@ class CompetitionTriageHappyPathTest(unittest.TestCase):
 
 
 class CompetitionTriagePromptShapeTest(unittest.TestCase):
+    def test_prompt_blocks_unsupported_ownership_claims(self) -> None:
+        agent = CompetitionTriageLLMAgent(llm_client=FakeLLMClient())
+        system, user = COMPETITION_TRIAGE_PROMPT.render(
+            agent._collect_variables(_ctx(), FactStore(_facts()))
+        )
+
+        self.assertEqual(agent.max_tokens, 1800)
+        self.assertIn("ownership corrections", system)
+        self.assertIn("requires verification", system)
+        self.assertIn("unless the provided facts say so", system)
+        self.assertIn("Treat `to_verify` competitor fields", user)
+
     def test_prompt_rejects_bad_crowding_enum(self) -> None:
         from biotech_alpha.llm.schema import validate_json_schema
 

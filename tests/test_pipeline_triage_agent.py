@@ -151,6 +151,18 @@ class PipelineTriageHappyPathTest(unittest.TestCase):
         )
 
 
+class PipelineTriagePromptShapeTest(unittest.TestCase):
+    def test_prompt_caps_live_response_size(self) -> None:
+        agent = PipelineTriageLLMAgent(llm_client=FakeLLMClient())
+        _, user = PIPELINE_TRIAGE_PROMPT.render(
+            agent._collect_variables(_ctx(), FactStore(_initial_facts()))
+        )
+
+        self.assertEqual(agent.max_tokens, 2200)
+        self.assertIn("Keep the response compact", user)
+        self.assertIn("at most 2 short issues per asset", user)
+
+
 class PipelineTriageInGraphTest(unittest.TestCase):
     def test_runs_in_graph_and_feeds_skeptic(self) -> None:
         triage_client = FakeLLMClient()

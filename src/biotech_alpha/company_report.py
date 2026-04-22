@@ -342,6 +342,7 @@ def _run_llm_agent_pipeline(
         company=identity.company,
         ticker=identity.ticker,
         market=identity.market,
+        as_of_date=_run_date_from_run_id(research_result.run_id),
     )
 
     trace_recorder = getattr(llm_client, "trace", None)
@@ -576,6 +577,13 @@ def build_llm_agent_facts(
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
     }
+
+
+def _run_date_from_run_id(run_id: str) -> str | None:
+    try:
+        return datetime.strptime(run_id[:8], "%Y%m%d").date().isoformat()
+    except (TypeError, ValueError):
+        return None
 
 
 def _build_competition_snapshot(

@@ -160,6 +160,42 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(hat001["target"], "CRH")
         self.assertNotIn("BCMA", hat001["target"])
 
+    def test_drafts_pipeline_asset_ignores_strategy_era_phase(self) -> None:
+        text = """
+        3. HBM7020 China rights was out-licensed to Hualan biologics in 2020
+        and Ex-China rights was out-licensed to Otsuka in 2025.
+        In 2025, we fully transitioned into Phase 3.0 strategic era.
+        HBM7020 is a BCMAxCD3 bispecific antibody generated with our
+        proprietary fully human HBICE platform.
+        In August 2023, HBM7020 obtained the IND clearance to commence
+        Phase I trial for cancer in China from NMPA.
+        """
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Harbour BioMed", ticker="02142.HK"),
+            text=text,
+            source=_hbm_source(),
+        )
+
+        hbm7020 = _asset_by_name(payload, "HBM7020")
+        self.assertEqual(hbm7020["phase"], "Phase I")
+        self.assertEqual(hbm7020["partner"], "Otsuka")
+
+    def test_drafts_pipeline_asset_truncates_inline_numbered_sections(self) -> None:
+        text = """
+        1. We entered an exclusive agreement with Windward Bio for HBM9378,
+        an anti-TSLP fully human monoclonal antibody. 2. In February 2025,
+        Spruce obtained rights to HAT001/HBM9013, an anti-CRH antibody.
+        """
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Harbour BioMed", ticker="02142.HK"),
+            text=text,
+            source=_hbm_source(),
+        )
+
+        hbm9378 = _asset_by_name(payload, "HBM9378")
+        self.assertEqual(hbm9378["partner"], "Windward")
+        self.assertNotIn("Spruce", hbm9378["partner"] or "")
+
     def test_drafts_competitor_assets_from_pipeline_targets(self) -> None:
         identity = CompanyIdentity(company="DualityBio", ticker="09606.HK")
         source = _source()
@@ -186,6 +222,11 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("company", first)
         self.assertIn("asset_name", first)
         self.assertIn("target", first)
+        self.assertEqual(first["indication"], "to_verify")
+        self.assertIn(
+            "Pipeline asset indication context",
+            first["evidence"][0]["claim"],
+        )
         self.assertTrue(first["evidence"][0]["is_inferred"])
 
     def test_drafts_competitor_assets_for_hbm_targets(self) -> None:
@@ -210,6 +251,8 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn(("UCB", "RYSTIGGO", "FcRn"), pairs)
         self.assertIn(("AstraZeneca/Amgen", "TEZSPIRE", "TSLP"), pairs)
         self.assertIn(("Nuvation Bio", "B7-H4 ADC program", "B7H4/CD3"), pairs)
+        for row in payload["competitors"]:
+            self.assertEqual(row["indication"], "to_verify")
 
     def test_drafts_competitor_assets_for_exact_composite_targets(self) -> None:
         identity = CompanyIdentity(company="Example Bio", ticker="9999.HK")
@@ -234,6 +277,8 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn(("Johnson & Johnson", "TECVAYLI", "BCMA/CD3"), pairs)
         self.assertIn(("Pfizer", "ELREXFIO", "BCMA/CD3"), pairs)
         self.assertIn(("Bristol Myers Squibb", "YERVOY", "CTLA-4"), pairs)
+        for row in payload["competitors"]:
+            self.assertEqual(row["indication"], "to_verify")
 
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
@@ -740,11 +785,14 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("WIN378", hbm9378["aliases"])
         self.assertIn("asthma", hbm9378["indication"])
         self.assertIn("COPD", hbm9378["indication"])
-        self.assertEqual(_asset_by_name(payload, "HBM9161")["target"], "FcRn")
-        self.assertIn("gMG", _asset_by_name(payload, "HBM9161")["indication"])
+        hbm9161 = _asset_by_name(payload, "HBM9161")
+        self.assertEqual(hbm9161["target"], "FcRn")
+        self.assertIn("gMG", hbm9161["indication"])
+        self.assertEqual(hbm9161["phase"], "BLA accepted")
         self.assertEqual(_asset_by_name(payload, "HBM7004")["phase"], "preclinical")
         hbm7575 = _asset_by_name(payload, "HBM7575")
         self.assertIn("atopic dermatitis", hbm7575["indication"])
+        self.assertEqual(hbm7575["phase"], "IND approved")
         hbm7022 = _asset_by_name(payload, "HBM7022")
         self.assertIn("AZD5863", hbm7022["aliases"])
         hbm7004 = _asset_by_name(payload, "HBM7004")
