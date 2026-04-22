@@ -1328,6 +1328,10 @@ def _write_json(path: Path, payload: Any) -> None:
     )
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)

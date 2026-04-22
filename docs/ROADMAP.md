@@ -457,9 +457,17 @@ adapter, and starting a technical / K-line agent.
   operator UX. It auto-enables auto-inputs, market-data, macro-signals,
   and the full LLM stack by default; missing LLM env now fails fast unless
   `--allow-no-llm` is passed explicitly.
+- **Done** — Productized quick-report terminal output. `report` now prints
+  progress stages, a compact operator summary, LLM status, and artifact
+  paths by default; `report --json` preserves the machine-readable compact
+  summary for scripts.
 - **Done** — Multi-source macro-signals fallback implementation:
   `Yahoo -> Stooq -> stale cache`, preserving current
   `macro_context.live_signals` output contract and audit keys.
+- **Done** — Cached generated-input reuse bug fixed. When an existing
+  `<slug>_pipeline_assets.json` draft is reused with `overwrite=False`,
+  `generate_auto_inputs` now reads it correctly and still returns source
+  documents, allowing pipeline triage to use source-text excerpts.
 - **Deferred** — Short exponential backoff on Yahoo 429/503 inside
   `hk_macro_signals_yahoo` (operator preference is to rely on Stooq +
   stale-cache fallback for now, then revisit retries later).

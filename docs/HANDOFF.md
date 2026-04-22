@@ -454,13 +454,15 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 243 unit tests ran, 236 passed, 7 skipped (online Yahoo / online
+- 245 unit tests ran, 238 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
   checkpoint cover macro-signals parser + cache + multi-source
   fallback work, Anthropic provider routing/config/client tests, and
-  the new `competition-triage` LLM agent coverage.
+  the new `competition-triage` LLM agent coverage. The latest +1
+  covers reusing an existing generated pipeline draft during
+  `generate_auto_inputs` while still returning source documents.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same 233-test baseline.
@@ -557,6 +559,30 @@ Latest smoke result:
   session hits Yahoo exactly once per TTL (default 6h). Stale-if-
   error semantics turn a transient Yahoo 429 into a slightly-stale
   regime read plus a cache note, instead of losing the live feed.
+- Quick `report "<company|ticker>"` terminal output is now
+  operator-facing by default: four progress stages, a compact result
+  summary, LLM step/cost status, and key artifact paths. `report --json`
+  preserves the machine-readable compact summary.
+- Live quick-report smoke on 2026-04-22 found and fixed a cached
+  generated-input bug: when `<slug>_pipeline_assets.json` already
+  existed and `overwrite=False`, `generate_auto_inputs` called a
+  missing `_read_json` helper, fell back to discovered inputs, and
+  starved pipeline triage of source text. Fixed in
+  `src/biotech_alpha/auto_inputs.py`; regression test added in
+  `tests/test_auto_inputs.py`.
+- Post-fix live smoke:
+  `report "09606.HK"` wrote run `20260422T110958Z`, produced
+  `research_ready_with_review`, ran 6/6 graph steps OK, 0 skipped,
+  used 19096 total LLM tokens, and restored source-grounded pipeline
+  triage confidence to 0.95. The same run auto-drafted 8 competitor
+  seeds, so `competition-triage` and the final skeptic both ran.
+- Macro live-smoke status: `macro-context` returned a concrete
+  qualitative regime view from live sector news rather than
+  `insufficient_data`; Yahoo/Stooq chart and HKMA HIBOR subfeeds were
+  unavailable from this network, so HSI/HSBIO/USD-HKD/HIBOR remained
+  `null`. Cache reuse is confirmed: the cache file is
+  `data/cache/macro_signals/HK_yahoo-hk_stooq-hk.json` and subsequent
+  provider calls return `cache: hit (...)` in `live_signals.notes`.
 
 ## Execution Plan
 
@@ -574,38 +600,33 @@ validation and extraction-quality hardening.
 
 Two immediate tracks:
 
-- Macro-signals live smoke + resiliency check. With fallback +
-  breadth + sector news implemented, capture one successful four-agent
-  run showing non-`insufficient_data` macro regime and cache reuse.
 - Extraction-quality hardening. Continue reducing malformed
   milestone/placeholder artifacts that inflate triage false positives.
+- Macro-signals resiliency check. News-backed non-`insufficient_data`
+  macro context and cache reuse are confirmed; quantitative chart/HIBOR
+  subfeeds still need a follow-up when provider access recovers.
 
 ### Next Action
 
-1. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
-   once Yahoo rate-limits recover (or from a fresh IP) and confirm
-   the macro agent returns a non-`insufficient_data` regime with
-   cited live values. Document the resulting
-   `data/cache/macro_signals/HK_yahoo-hk+stooq-hk.json` and confirm
-   that a subsequent run on a second HK ticker reuses it without
-   hitting upstream.
+1. Tighten deterministic extraction for the remaining malformed
+   milestone strings: `DB-1311` / `DB-1310` currently retain
+   `in \n2026`, and DB-1312 still carries a stale `in 2017`
+   milestone in the generated 09606 draft.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
-   operator preference). Validate that Stooq + stale-cache still
-   produce non-empty `live_signals` in degraded runs.
-3. Continue tightening deterministic extraction around malformed
-   placeholder strings so upstream context quality stays high for
-   triage/skeptic agents.
-4. Expand competitor seed dictionaries + fixture coverage so
+   operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
+   subfeeds later; for now sector news plus cache-hit fallback are
+   working.
+3. Expand competitor seed dictionaries + fixture coverage so
    auto-drafted competitors cover more HK biotech target families.
-5. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
+4. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
    one-command with default LLM-on behavior and explicit opt-out only.
 
 ### Acceptance Criteria
 
-- `--macro-signals yahoo-hk` live smoke produces a non-
-  `insufficient_data` macro regime at least once (recorded in
-  `data/memos/<run_id>_llm_findings.json`) and the second back-to-back
-  run shows `cache: hit` in its `macro_context.live_signals.notes`.
+- `--macro-signals yahoo-hk` live smoke keeps producing non-
+  `insufficient_data` when live sector news is available, and
+  subsequent same-market runs show `cache: hit` in
+  `macro_context.live_signals.notes`.
 - Multi-source fallback path keeps one-command runs resilient under
   single-provider outages and still writes stable
   `macro_context.live_signals` keys.
@@ -633,18 +654,20 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Four-agent live smoke with `--macro-signals yahoo-hk` capturing a
-   non-`insufficient_data` macro regime plus cache reuse on second run.
-2. Keep broadening fixtures across representative HK biotech disclosure
+1. Fix remaining malformed/stale milestone extraction in generated
+   pipeline drafts.
+2. Re-check quantitative macro feeds from a fresh network or after
+   provider rate limits recover; no retry/backoff work for now.
+3. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-3. Tighten validator checks for stale placeholders and weak evidence
+4. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-4. Add a US-market sibling market-data provider, so the auto-draft path
+5. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-5. Consider a deterministic post-processor that turns LLM findings into
+6. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-6. Consider a `K-line technical agent` (name TBD) that reads a
+7. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.
