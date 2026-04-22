@@ -209,6 +209,9 @@ def draft_pipeline_assets(
         )
         if existing_key:
             _merge_asset_fields(seen_assets[existing_key], candidate)
+            _merge_asset_aliases(seen_assets[existing_key], aliases)
+            for alias in aliases:
+                seen_codes[alias.casefold()] = existing_key
             continue
         if len(assets) >= 12:
             continue
@@ -242,7 +245,10 @@ def _draft_asset_from_context(
         "modality": _modality_from_context(local_context),
         "mechanism": None,
         "indication": _indication_from_context(local_context),
-        "phase": _phase_from_context(context),
+        "phase": _phase_from_asset_context(
+            context=context,
+            asset_name=primary,
+        ),
         "geography": _geography_from_context(context),
         "rights": None,
         "partner": _partner_from_context(context),
@@ -288,6 +294,16 @@ def _merge_asset_fields(
             existing[key] = candidate[key]
 
 
+def _merge_asset_aliases(existing: dict[str, Any], aliases: list[str]) -> None:
+    existing_aliases = existing.get("aliases")
+    if not isinstance(existing_aliases, list):
+        existing["aliases"] = []
+        existing_aliases = existing["aliases"]
+    for alias in aliases:
+        if alias != existing.get("name") and alias not in existing_aliases:
+            existing_aliases.append(alias)
+
+
 def draft_financial_snapshot(
     *,
     identity: CompanyIdentity,
@@ -309,6 +325,7 @@ def draft_financial_snapshot(
     debt = _first_amount(
         text,
         (
+            r"Bank borrowings[^\n\d]{0,80}([\d,]+)",
             r"Bank borrowings\s+([\d,]+)",
             r"Borrowings\s+([\d,]+)",
             r"Interest-bearing bank borrowings\s+([\d,]+)",
@@ -517,8 +534,8 @@ def _get_with_retries(
 
 def _asset_mentions(text: str) -> list[dict[str, str]]:
     pattern = re.compile(
-        r"(?<!-)\b(?!(?:NCT|RMB|HKD)\b)"
-        r"([A-Z]{1,6}-?\d{3,5}(?:/[A-Z]{1,6}-?\d{3,5})?)\b"
+        r"(?<![A-Za-z-])(?!(?:NCT|RMB|HKD)\b)"
+        r"([A-Z]{1,6}-?\d{3,5}(?:/\s*[A-Z]{1,6}-?\d{3,5})?)\b"
     )
     mentions = []
     matches = list(pattern.finditer(text))
@@ -527,6 +544,8 @@ def _asset_mentions(text: str) -> list[dict[str, str]]:
         if _looks_like_non_asset_code(name):
             continue
         if _looks_like_merged_target_code(name):
+            continue
+        if _looks_like_merged_modality_code(name):
             continue
         previous_match = _adjacent_different_asset_match(
             matches=matches,
@@ -604,17 +623,27 @@ def _target_from_context(context: str) -> str | None:
         "HER2",
         "B7-H3",
         "B7-H4",
+        "B7H4",
+        "B7H7",
         "HER3",
         "EGFR",
+        "HHLA2",
+        "CLDN18.2",
         "TROP2",
         "BCMA",
         "CD3",
+        "CD19",
         "PD-1",
         "PD-L1",
+        "CD40",
         "VEGF",
         "CTLA-4",
         "FcRn",
         "TSLP",
+        "TL1A",
+        "IL23p19",
+        "APRIL",
+        "MSLN",
         "BDCA2",
         "ADAM9",
         "CDH17",
@@ -651,9 +680,23 @@ def _phase_from_context(context: str) -> str | None:
         return f"Phase {match.group(1)}"
     if "clinical-stage" in context.lower():
         return "clinical-stage"
-    if "preclinical" in context.lower():
+    lowered = context.lower()
+    if "preclinical" in lowered or "pre-clinical" in lowered:
         return "preclinical"
     return None
+
+
+def _phase_from_asset_context(*, context: str, asset_name: str) -> str | None:
+    local_context = _local_asset_context(context=context, asset_name=asset_name)
+    phase = _phase_from_context(local_context)
+    if phase:
+        return phase
+    match = re.search(rf"\b{re.escape(asset_name)}\b", context)
+    if not match:
+        return None
+    left = context[max(0, match.start() - 160): match.start()]
+    same_sentence_left = re.split(r"[\n.;]", left)[-1]
+    return _phase_from_context(same_sentence_left + context[match.start(): match.end()])
 
 
 def _indication_from_context(context: str) -> str | None:
@@ -669,9 +712,15 @@ def _indication_from_context(context: str) -> str | None:
         "pancreatic cancer",
         "systemic lupus erythematosus",
         "solid tumors",
+        "autoimmune diseases",
+        "atopic dermatitis",
+        "myasthenia gravis",
         "asthma",
         "COPD",
         "gMG",
+        "mCRC",
+        "HCC",
+        "melanoma",
     )
     lowered = context.lower()
     found = [term for term in terms if term.lower() in lowered]
@@ -747,7 +796,10 @@ def _biotech_context(context: str) -> bool:
         "patients",
         "pipeline",
         "fda",
+        "ind",
         "bla",
+        "bsab",
+        "mab",
     )
     lowered = context.lower()
     return any(keyword in lowered for keyword in keywords)
@@ -794,22 +846,50 @@ def _looks_like_merged_target_code(value: str) -> bool:
     return target_fragment in {"GFR", "EGFR", "HER", "VEGF"}
 
 
+def _looks_like_merged_modality_code(value: str) -> bool:
+    for prefix in ("ADC", "BSAB", "MAB"):
+        if value.startswith(prefix):
+            suffix = value[len(prefix):]
+            if re.match(r"^[A-Z]{2,6}-?\d{3,5}$", suffix):
+                return True
+    return False
+
+
 def _financial_multiplier(text: str) -> int:
-    return 1000 if "RMB’000" in text or "RMB'000" in text else 1
+    thousand_markers = (
+        "RMB’000",
+        "RMB'000",
+        "USD’000",
+        "USD'000",
+        "US$’000",
+        "US$'000",
+        "HK$’000",
+        "HK$'000",
+        "HKD’000",
+        "HKD'000",
+    )
+    return 1000 if any(marker in text for marker in thousand_markers) else 1
 
 
 def _financial_currency(text: str) -> str:
-    if "RMB" in text[:5000]:
+    head = text[:5000]
+    if "USD" in head or "US$" in head:
+        return "USD"
+    if "RMB" in head:
         return "RMB"
-    if "HK$" in text[:5000] or "HKD" in text[:5000]:
+    if "HK$" in head or "HKD" in head:
         return "HKD"
     return "HKD"
 
 
 def _financial_as_of_date(text: str) -> str | None:
-    match = re.search(r"As at\s+([A-Z][a-z]+\s+\d{1,2},\s+20\d{2})", text)
+    date_pattern = (
+        r"(?:[A-Z][a-z]+\s+\d{1,2},\s+20\d{2}"
+        r"|\d{1,2}\s+[A-Z][a-z]+\s+20\d{2})"
+    )
+    match = re.search(rf"As at\s+({date_pattern})", text)
     if not match:
-        match = re.search(r"year ended\s+([A-Z][a-z]+\s+\d{1,2},\s+20\d{2})", text)
+        match = re.search(rf"year ended\s+({date_pattern})", text)
     if not match:
         return None
     return _parse_english_date(match.group(1))
@@ -875,9 +955,13 @@ def _parse_english_date(value: str) -> str | None:
         "december": "12",
     }
     match = re.search(r"([A-Za-z]+)\s+(\d{1,2}),\s+(20\d{2})", value)
-    if not match:
-        return None
-    month, day, year = match.groups()
+    if match:
+        month, day, year = match.groups()
+    else:
+        match = re.search(r"(\d{1,2})\s+([A-Za-z]+)\s+(20\d{2})", value)
+        if not match:
+            return None
+        day, month, year = match.groups()
     month_number = months.get(month.lower())
     if not month_number:
         return None

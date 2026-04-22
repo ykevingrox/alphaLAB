@@ -198,7 +198,7 @@ section stays aligned with the repo. Update statuses when scope changes.
 
 ### Sprint 1: Reliability And Coverage Baseline
 
-**Sprint status:** in progress (core paths covered; ticker fixtures still open).
+**Sprint status:** in progress (core paths covered; HK fixture set started).
 
 - **Done** — Expand and harden one-command tests for `company-report`, including
   missing-input fallback, `auto_inputs` success paths, `auto_inputs` exception
@@ -208,8 +208,10 @@ section stays aligned with the repo. Update statuses when scope changes.
   filter), `tests/test_research.py` (manifest quality gate).
 
 - **Partially done** — Add fixture-based regression tests for representative HK
-  biotech tickers to catch schema or parsing drift early. One auto-input
-  orchestration fixture exists; representative ticker fixtures remain open.
+  biotech tickers to catch schema or parsing drift early. DualityBio covers the
+  orchestration path; Harbour BioMed now covers a second HKEX disclosure style
+  with USD financials and packed-table pipeline aliases. Broader representative
+  ticker coverage remains open.
 
 - **Done** — Standardize run-level quality gates in summaries and manifests so
   users can quickly see whether output is decision-ready; optional watchlist
@@ -226,6 +228,12 @@ resilience and validator tightening remain).
 - **Partially done** — Improve HKEX source discovery robustness and retry
   behavior for annual-results fetch and extraction. Lightweight request retries
   exist; broader fallback source selection remains open.
+
+- **Partially done** — Harden HKEX PDF text parsing for packed tables. Current
+  extraction handles slash aliases with whitespace/newlines, local phase
+  context, day-month financial dates, and USD/HKD/RMB thousand-unit statements.
+  Remaining packed-table warnings need targeted triage rather than broad
+  suppression.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

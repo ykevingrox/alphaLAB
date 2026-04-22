@@ -68,6 +68,13 @@ Use this shape:
 - Architecture and data-source docs now record that online ingestion is the
   product path, while offline fixtures are regression guards rather than stale
   fallback research inputs.
+- Auto-input tests now include a second representative HK biotech fixture from
+  Harbour BioMed (`02142.HK`) official HKEX annual-results text, covering USD
+  thousand-unit financials, day-month dates, alias merging, local phase
+  extraction, and packed-table noise such as `ADCHBM9033`.
+- Live Harbour BioMed smoke reporting remains one-command and source-backed;
+  `AZD5863` no longer appears as a standalone generated-asset warning when it
+  is only a slash alias of `HBM7022`.
 
 ## Current Repo State
 
@@ -93,7 +100,7 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 82 unit tests passed.
+- 84 unit tests passed.
 - Compile check passed.
 - `git diff --check` passed.
 - 88-character scan passed.
@@ -102,22 +109,23 @@ Latest smoke command:
 
 ```bash
 .venv/bin/python -m biotech_alpha.cli company-report \
-  --company "映恩生物" \
-  --ticker "09606.HK" \
+  --company "和铂医药" \
+  --ticker "02142.HK" \
   --auto-inputs \
   --overwrite-auto-inputs \
-  --limit 2
+  --limit 1
 ```
 
 Latest smoke result:
 
 - HKEX annual-results source was found.
-- `identity.search_term` was enriched to `DUALITYBIO`.
+- `identity.search_term` was enriched to `HBM HOLDINGS`.
 - Draft `pipeline_assets`, `financials`, and `conference_catalysts` were
   generated.
 - Report ran successfully.
 - Suggested rerun command preserved `--auto-inputs`.
-- Generated pipeline validation warnings fell to 1 in the latest smoke run.
+- Generated financials correctly use USD and thousand-unit scaling.
+- Generated pipeline warning count was 10; total input warning count was 11.
 - Quality gate was `research_ready_with_review`.
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
@@ -126,22 +134,23 @@ Latest smoke result:
 
 ### Current Task
 
-Broaden regression coverage for HK biotech auto-input extraction while keeping
-online ingestion as the live research path.
+Reduce remaining generated-input warnings caused by packed HKEX portfolio tables
+while keeping extraction conservative and source-backed.
 
 ### Next Action
 
-Add a second representative HK biotech network-free fixture test. Use a minimal
-HKEX disclosure excerpt for 和铂医药 / Harbour BioMed (`02142.HK`) if an
-accessible source-backed excerpt is available; otherwise choose another HK
-biotech disclosure with a clear pipeline and financial section.
+Triage the remaining Harbour BioMed generated pipeline warnings for `HBM2001`,
+`J9003`, `R2006`, `R7027`, and `HBM1020`. Add a focused fixture assertion only
+when the source text clearly supports a parser improvement; otherwise leave the
+warning as a human-review item.
 
 ### Acceptance Criteria
 
-- Fixture content is small and committed only as intentional test data.
-- Tests assert expected positive extraction and at least one negative case.
-- The fixture does not replace online source collection in live reports.
-- `docs/HANDOFF.md` is updated with the completed checkpoint and next action.
+- Any parser change is backed by a small source-shaped fixture assertion.
+- No real asset is suppressed just to reduce the warning count.
+- Live `company-report --auto-inputs` still returns a usable report when these
+  packed-table entries remain incomplete.
+- `docs/HANDOFF.md` records the triage result and the next concrete action.
 
 ### Validation
 
@@ -155,7 +164,7 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 ### Queue
 
-1. Add the second HK biotech fixture test.
+1. Triage remaining Harbour BioMed packed-table warnings.
 2. Decide whether `DB-1312` indication can be filled from source-backed text; if
    not, keep the warning.
 3. Design a source-backed market-data connector before auto valuation drafts.

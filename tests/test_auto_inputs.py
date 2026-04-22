@@ -49,6 +49,30 @@ B7-H4 DB-1312/BG-C9074 Global mono solid tumors.
 HER3 xE GFRDB-1418 table artifact.
 """
 
+HBM_SAMPLE_TEXT = """
+FINANCIAL HIGHLIGHTS
+For the year ended 31 December 2025
+USD'000
+Profit for the year 92,221 2,742
+Cash and cash equivalents 403,056 166,821
+Bank borrowings - unsecured 56,005 17,480 73,485
+
+ROBUST PORTFOLIO AND DIFFERENTIATED PIPELINE
+BATOCLIMAB (HBM9161) (FcRn mAb)
+The BLA for generalized myasthenia gravis (gMG) was accepted.
+The gMG Phase III pivotal clinical trial results were presented.
+HBM9378 (TSLP mAb)
+Windward Bio launched Phase II POLARIS assessing HBM9378/WIN378 for asthma.
+The IND for COPD was approved by NMPA.
+HBM7004 (B7H4/CD3 BsAb)
+In 2025, we continued pre-clinical development and advanced to IND-enabling.
+HBM7575 (TSLP undisclosed target BsAb)
+The China IND application for atopic dermatitis was accepted and approved.
+Global (Out-licensed) Solid Tumors MSLN ADC HBM9033 / SGN-MesoC2.
+Global (Out-licensed) Solid Tumors MSLN ADCHBM9033 table artifact.
+Global solid tumors CLDN18.2xCD3HBM7022/ AZD5863.
+"""
+
 
 class AutoInputsTest(unittest.TestCase):
     def test_drafts_pipeline_assets_from_source_text(self) -> None:
@@ -114,6 +138,20 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(payload["cash_and_equivalents"], 3324529000)
         self.assertEqual(payload["short_term_debt"], 141056000)
         self.assertEqual(payload["quarterly_cash_burn"], 97192250)
+        self.assertTrue(payload["needs_human_review"])
+
+    def test_hbm_fixture_drafts_usd_financial_snapshot(self) -> None:
+        payload = draft_financial_snapshot(
+            identity=CompanyIdentity(company="Harbour BioMed", ticker="02142.HK"),
+            text=HBM_SAMPLE_TEXT,
+            source=_hbm_source(),
+        )
+
+        self.assertEqual(payload["as_of_date"], "2025-12-31")
+        self.assertEqual(payload["currency"], "USD")
+        self.assertEqual(payload["cash_and_equivalents"], 403056000)
+        self.assertEqual(payload["short_term_debt"], 56005000)
+        self.assertIsNone(payload["quarterly_cash_burn"])
         self.assertTrue(payload["needs_human_review"])
 
     def test_drafts_conference_catalysts_from_source_text(self) -> None:
@@ -211,6 +249,36 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(session.call_count, 2)
         sleep.assert_called_once()
 
+    def test_hbm_fixture_drafts_pipeline_assets_without_table_noise(self) -> None:
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Harbour BioMed", ticker="02142.HK"),
+            text=HBM_SAMPLE_TEXT,
+            source=_hbm_source(),
+        )
+
+        names = [asset["name"] for asset in payload["assets"]]
+        self.assertIn("HBM9161", names)
+        self.assertIn("HBM9378", names)
+        self.assertIn("HBM7004", names)
+        self.assertIn("HBM7575", names)
+        self.assertIn("HBM7022", names)
+        self.assertNotIn("ADCHBM9033", names)
+        self.assertNotIn("AZD5863", names)
+
+        hbm9378 = _asset_by_name(payload, "HBM9378")
+        self.assertEqual(hbm9378["target"], "TSLP")
+        self.assertEqual(hbm9378["phase"], "Phase II")
+        self.assertIn("WIN378", hbm9378["aliases"])
+        self.assertIn("asthma", hbm9378["indication"])
+        self.assertIn("COPD", hbm9378["indication"])
+        self.assertEqual(_asset_by_name(payload, "HBM9161")["target"], "FcRn")
+        self.assertIn("gMG", _asset_by_name(payload, "HBM9161")["indication"])
+        self.assertEqual(_asset_by_name(payload, "HBM7004")["phase"], "preclinical")
+        hbm7575 = _asset_by_name(payload, "HBM7575")
+        self.assertIn("atopic dermatitis", hbm7575["indication"])
+        hbm7022 = _asset_by_name(payload, "HBM7022")
+        self.assertIn("AZD5863", hbm7022["aliases"])
+
 
 def _source(
     *,
@@ -226,6 +294,26 @@ def _source(
         text_path=text_path,
         stock_code="09606",
         stock_name="DUALITYBIO-B",
+    )
+
+
+def _hbm_source(
+    *,
+    file_path: Path = Path("hbm_results.pdf"),
+    text_path: Path = Path("hbm_results.txt"),
+) -> SourceDocument:
+    return SourceDocument(
+        source_type="hkex_annual_results",
+        title="Annual Results",
+        url=(
+            "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/"
+            "0330/2026033002702.pdf"
+        ),
+        publication_date="2026-03-30",
+        file_path=file_path,
+        text_path=text_path,
+        stock_code="02142",
+        stock_name="HBM HOLDINGS-B",
     )
 
 
