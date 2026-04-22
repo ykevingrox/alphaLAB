@@ -454,15 +454,17 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 245 unit tests ran, 238 passed, 7 skipped (online Yahoo / online
+- 246 unit tests ran, 239 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
   checkpoint cover macro-signals parser + cache + multi-source
   fallback work, Anthropic provider routing/config/client tests, and
-  the new `competition-triage` LLM agent coverage. The latest +1
-  covers reusing an existing generated pipeline draft during
-  `generate_auto_inputs` while still returning source documents.
+  the new `competition-triage` LLM agent coverage. The latest +2 cover
+  reusing an existing generated pipeline draft during
+  `generate_auto_inputs` while still returning source documents, and
+  automatically refreshing old generated drafts when pipeline
+  validation flags malformed/stale milestone values.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same 233-test baseline.
@@ -583,6 +585,20 @@ Latest smoke result:
   `null`. Cache reuse is confirmed: the cache file is
   `data/cache/macro_signals/HK_yahoo-hk_stooq-hk.json` and subsequent
   provider calls return `cache: hit (...)` in `live_signals.notes`.
+- Deterministic milestone cleanup is closed for the known quick-report
+  false positives:
+  - `_milestone_from_context` now normalizes whitespace in year phrases,
+    so `planned to start in \n2026` becomes `planned to start in 2026`.
+  - Existing generated pipeline drafts are refreshed from the latest
+    source when validation sees `next_milestone contains newline/control`
+    or `next_milestone year looks stale`.
+  - No-LLM quick smoke after the fix:
+    `report "09606.HK" --json --no-llm --no-save` refreshed
+    `data/input/generated/09606_hk_pipeline_assets.json` and left
+    pipeline warnings empty. `report "02142.HK" --json --no-llm
+    --no-save` removed stale milestone warnings; remaining warnings are
+    unresolved packed-table fields (missing phase / target) that the
+    source text does not yet resolve reliably.
 
 ## Execution Plan
 
@@ -600,18 +616,18 @@ validation and extraction-quality hardening.
 
 Two immediate tracks:
 
-- Extraction-quality hardening. Continue reducing malformed
-  milestone/placeholder artifacts that inflate triage false positives.
+- Extraction-quality hardening. Continue reducing packed-table
+  phase/target gaps that inflate triage false positives.
 - Macro-signals resiliency check. News-backed non-`insufficient_data`
   macro context and cache reuse are confirmed; quantitative chart/HIBOR
   subfeeds still need a follow-up when provider access recovers.
 
 ### Next Action
 
-1. Tighten deterministic extraction for the remaining malformed
-   milestone strings: `DB-1311` / `DB-1310` currently retain
-   `in \n2026`, and DB-1312 still carries a stale `in 2017`
-   milestone in the generated 09606 draft.
+1. Improve packed-table extraction for the remaining Harbour BioMed
+   generated warnings: `HAT001`, `HBM2001`, `J9003`, `R2006`,
+   `R7027`, and `HBM1020` still lack reliable phase and/or
+   target/mechanism fields.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -654,8 +670,8 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Fix remaining malformed/stale milestone extraction in generated
-   pipeline drafts.
+1. Improve packed-table extraction for remaining Harbour BioMed
+   phase/target gaps without inventing source-unsupported fields.
 2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 3. Keep broadening fixtures across representative HK biotech disclosure

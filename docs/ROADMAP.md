@@ -348,7 +348,11 @@ resilience and validator tightening remain).
   clearly resolves them.
   Milestone extraction now also guards against stale legacy-year leakage
   (e.g. spurious `in 2017` values from broad context windows) by using
-  asset-local context plus source-year sanity checks.
+  asset-local context plus source-year sanity checks. Cached generated
+  drafts with malformed or stale milestone warnings are now refreshed
+  automatically from the latest source-backed extractor, and milestone
+  whitespace is normalized so `planned to start in \n2026` becomes
+  `planned to start in 2026`.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

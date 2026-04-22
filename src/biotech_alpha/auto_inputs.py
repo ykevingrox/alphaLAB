@@ -147,7 +147,11 @@ def generate_auto_inputs(
     conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
     valuation_path = generated_input_dir / f"{slug}_valuation.json"
 
-    if overwrite or not pipeline_path.exists():
+    if (
+        overwrite
+        or not pipeline_path.exists()
+        or _pipeline_draft_needs_refresh(pipeline_path)
+    ):
         pipeline_payload = draft_pipeline_assets(
             identity=identity,
             text=text,
@@ -1060,9 +1064,13 @@ def _partner_from_context(context: str) -> str | None:
 def _milestone_from_context(
     context: str, *, as_of_year: int | None = None
 ) -> str | None:
-    if "planned to start in 2026" in context:
-        return "planned to start in 2026"
     normalized = re.sub(r"\s+", " ", context).lower()
+    planned_start = re.search(r"\bplanned to start in (20\d{2})\b", normalized)
+    if planned_start:
+        year = int(planned_start.group(1))
+        if as_of_year is not None and year < as_of_year - 1:
+            return None
+        return f"planned to start in {year}"
     if not any(
         token in normalized
         for token in (
@@ -1079,14 +1087,15 @@ def _milestone_from_context(
         )
     ):
         return None
-    match = re.search(r"(?:in|during)\s+(20\d{2})", context)
+    match = re.search(r"\b(in|during)\s+(20\d{2})\b", normalized)
     if match:
-        year = int(match.group(1))
+        preposition = match.group(1)
+        year = int(match.group(2))
         # Reject obviously stale legacy years that leak from historical
         # narrative sections (e.g. "in 2017") into current asset rows.
         if as_of_year is not None and year < as_of_year - 1:
             return None
-        return match.group(0)
+        return f"{preposition} {year}"
     return None
 
 
@@ -1330,6 +1339,23 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _pipeline_draft_needs_refresh(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        report = validate_pipeline_asset_file(path)
+    except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
+        return True
+    refresh_markers = (
+        "next_milestone contains newline/control characters",
+        "next_milestone year looks stale",
+    )
+    return any(
+        any(marker in warning for marker in refresh_markers)
+        for warning in report.warnings
+    )
 
 
 def _jsonable(value: Any) -> Any:

@@ -38,7 +38,8 @@ This trial evaluates DB-1303/BNT323 versus T-DM1 in China in patients with
 HER2+ unresectable and/or metastatic breast cancer.
 DB-1311/BNT324 (B7-H3 ADC) Clinical Readouts in mCRPC and Beyond.
 The first global Phase 3 trial evaluating DB-1311/BNT324 compared with
-docetaxel in patients with taxane-naive mCRPC is planned to start in 2026.
+docetaxel in patients with taxane-naive mCRPC is planned to start in
+2026.
 DB-1310 (HER3 ADC) Clinical Readouts in NSCLC and breast cancer.
 The company plans to present updated data at ASCO 2026.
 DB-2304 (BDCA2 ADC): A global Phase 1/2a clinical trial in SLE patients.
@@ -327,6 +328,80 @@ class AutoInputsTest(unittest.TestCase):
             self.assertEqual(artifacts.pipeline_assets, pipeline_path)
             competitors = _read_json(artifacts.competitors)
             self.assertGreaterEqual(len(competitors["competitors"]), 1)
+
+    def test_generate_auto_inputs_refreshes_stale_generated_pipeline(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            generated_dir = root / "generated"
+            generated_dir.mkdir()
+            pipeline_path = generated_dir / "09606_hk_pipeline_assets.json"
+            pipeline_path.write_text(
+                json.dumps(
+                    {
+                        "company": "DualityBio",
+                        "ticker": "09606.HK",
+                        "generated_by": "auto_inputs.hkex_annual_results",
+                        "assets": [
+                            {
+                                "name": "DB-1312",
+                                "aliases": [],
+                                "target": "B7-H4",
+                                "modality": "ADC",
+                                "indication": "solid tumors",
+                                "phase": "Phase 1",
+                                "next_milestone": "in \n2017",
+                                "evidence": [
+                                    {
+                                        "claim": "Stale generated draft",
+                                        "source": "fixture.pdf",
+                                        "source_date": "2026-03-23",
+                                        "confidence": 0.8,
+                                        "is_inferred": True,
+                                    }
+                                ],
+                            }
+                        ],
+                        "needs_human_review": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            source = _source(
+                file_path=root / "results.pdf",
+                text_path=root / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
+
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ), patch(
+                "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                return_value={"NEWS_ID": "fixture"},
+            ), patch(
+                "biotech_alpha.auto_inputs._download_and_extract_document",
+                return_value=source,
+            ):
+                artifacts = generate_auto_inputs(
+                    identity=CompanyIdentity(
+                        company="DualityBio",
+                        ticker="09606.HK",
+                    ),
+                    input_dir=generated_dir,
+                    output_dir=root / "out",
+                )
+
+            refreshed = _read_json(artifacts.pipeline_assets)
+            self.assertEqual(
+                _asset_by_name(refreshed, "DB-1311")["next_milestone"],
+                "planned to start in 2026",
+            )
+            self.assertIsNone(
+                _asset_by_name(refreshed, "DB-1312")["next_milestone"]
+            )
 
     def test_draft_valuation_snapshot_from_market_data_payload(self) -> None:
         market_data = {
