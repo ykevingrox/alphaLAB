@@ -238,13 +238,21 @@ def _draft_asset_from_context(
     source: SourceDocument,
 ) -> dict[str, Any]:
     local_context = _local_asset_context(context=context, asset_name=primary)
+    packed_context = _packed_left_context(context=context, asset_name=primary)
+    target = _target_from_context(local_context)
+    modality = _modality_from_context(local_context)
+    indication = _indication_from_context(local_context)
+    if packed_context:
+        target = _target_from_context(packed_context)
+        modality = _modality_from_context(packed_context)
+        indication = _indication_from_context(packed_context) or indication
     return {
         "name": primary,
         "aliases": aliases,
-        "target": _target_from_context(local_context),
-        "modality": _modality_from_context(local_context),
+        "target": target,
+        "modality": modality,
         "mechanism": None,
-        "indication": _indication_from_context(local_context),
+        "indication": indication,
         "phase": _phase_from_asset_context(
             context=context,
             asset_name=primary,
@@ -271,10 +279,44 @@ def _local_asset_context(
     asset_name: str,
     size: int = 700,
 ) -> str:
-    match = re.search(rf"\b{re.escape(asset_name)}\b", context)
+    match = _asset_code_match(context=context, asset_name=asset_name)
     if not match:
         return context
     return context[match.start(): match.start() + size]
+
+
+def _packed_left_context(
+    *,
+    context: str,
+    asset_name: str,
+    size: int = 180,
+) -> str | None:
+    match = _asset_code_match(context=context, asset_name=asset_name)
+    if not match:
+        return None
+    if match.start() == 0 or context[match.start() - 1].isspace():
+        return None
+    if context[match.start() - 1] in "(/":
+        return None
+    left = context[max(0, match.start() - size): match.start()]
+    stripped = re.sub(
+        r".*[A-Z]{1,6}-?\d{3,5}\d?(?:/\s*[A-Z]{1,6}-?\d{3,5}\d?)?",
+        "",
+        left,
+        flags=re.DOTALL,
+    )
+    if not re.search(
+        r"Global|Greater|Diseases?|Tumou?rs?|IBD|IgAN|\(mAb\)|\(BsAb\)",
+        stripped,
+        flags=re.IGNORECASE,
+    ):
+        return None
+    return stripped
+
+
+def _asset_code_match(*, context: str, asset_name: str) -> re.Match[str] | None:
+    pattern = rf"(?<![A-Za-z-]){re.escape(asset_name)}\b"
+    return re.search(pattern, context)
 
 
 def _merge_asset_fields(
@@ -619,6 +661,7 @@ def _split_asset_codes(value: str) -> tuple[str, list[str]]:
 
 
 def _target_from_context(context: str) -> str | None:
+    context = re.sub(r"I\s+L23p19", "IL23p19", context)
     targets = (
         "HER2",
         "B7-H3",
@@ -654,7 +697,7 @@ def _target_from_context(context: str) -> str | None:
         found_local = [target for target in targets if target.lower() in local]
         if found_local:
             return "/".join(dict.fromkeys(found_local))
-    lowered = context.lower()
+    lowered = re.sub(r"\s+", " ", context).lower()
     found = [target for target in targets if target.lower() in lowered]
     return "/".join(dict.fromkeys(found)) if found else None
 
@@ -667,8 +710,12 @@ def _modality_from_context(context: str) -> str | None:
         return "ADC"
     if "vaccine" in lowered:
         return "vaccine"
+    if "bsab" in lowered:
+        return "bispecific antibody"
     if "bispecific" in lowered:
         return "bispecific antibody"
+    if "mab" in lowered:
+        return "antibody"
     if "antibody" in lowered:
         return "antibody"
     return None
@@ -718,11 +765,17 @@ def _indication_from_context(context: str) -> str | None:
         "asthma",
         "COPD",
         "gMG",
+        "IBD",
+        "IgAN",
         "mCRC",
         "HCC",
+        "CRC",
+        "NEN",
         "melanoma",
+        "CNS diseases",
+        "obesity",
     )
-    lowered = context.lower()
+    lowered = re.sub(r"\s+", " ", context).lower()
     found = [term for term in terms if term.lower() in lowered]
     if "breast cancer" not in found and re.search(r"\bBC\b", context):
         found.append("breast cancer")

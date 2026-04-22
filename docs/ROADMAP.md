@@ -231,9 +231,10 @@ resilience and validator tightening remain).
 
 - **Partially done** — Harden HKEX PDF text parsing for packed tables. Current
   extraction handles slash aliases with whitespace/newlines, local phase
-  context, day-month financial dates, and USD/HKD/RMB thousand-unit statements.
-  Remaining packed-table warnings need targeted triage rather than broad
-  suppression.
+  context, day-month financial dates, immediate-left table row fields, and
+  USD/HKD/RMB thousand-unit statements. Remaining phase or undisclosed-target
+  warnings are intentionally left for human review unless the source text
+  clearly resolves them.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

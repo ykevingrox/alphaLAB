@@ -75,6 +75,10 @@ Use this shape:
 - Live Harbour BioMed smoke reporting remains one-command and source-backed;
   `AZD5863` no longer appears as a standalone generated-asset warning when it
   is only a slash alias of `HBM7022`.
+- Harbour BioMed packed-table triage now fills source-backed fields for
+  `HBM2001`, `J9003`, `R2006`, `R7027`, and `HBM1020` from the immediate table
+  row. Remaining warnings are intentional: missing phases or undisclosed
+  targets/mechanisms that the source text does not reliably resolve.
 
 ## Current Repo State
 
@@ -125,7 +129,7 @@ Latest smoke result:
 - Report ran successfully.
 - Suggested rerun command preserved `--auto-inputs`.
 - Generated financials correctly use USD and thousand-unit scaling.
-- Generated pipeline warning count was 10; total input warning count was 11.
+- Generated pipeline warning count was 8; total input warning count was 9.
 - Quality gate was `research_ready_with_review`.
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
@@ -134,22 +138,24 @@ Latest smoke result:
 
 ### Current Task
 
-Reduce remaining generated-input warnings caused by packed HKEX portfolio tables
-while keeping extraction conservative and source-backed.
+Decide whether the remaining `DB-1312` indication gap in the DualityBio fixture
+can be filled from source-backed HKEX text.
 
 ### Next Action
 
-Triage the remaining Harbour BioMed generated pipeline warnings for `HBM2001`,
-`J9003`, `R2006`, `R7027`, and `HBM1020`. Add a focused fixture assertion only
-when the source text clearly supports a parser improvement; otherwise leave the
-warning as a human-review item.
+Inspect the latest DualityBio generated pipeline and the HKEX annual-results
+source text for `DB-1312/BG-C9074`. If the source clearly supports an
+indication, add a focused fixture assertion and parser improvement. If not,
+document that the warning should remain and move on to the source-backed
+market-data connector.
 
 ### Acceptance Criteria
 
 - Any parser change is backed by a small source-shaped fixture assertion.
-- No real asset is suppressed just to reduce the warning count.
-- Live `company-report --auto-inputs` still returns a usable report when these
-  packed-table entries remain incomplete.
+- No indication is inferred from neighboring table rows or unsourced domain
+  assumptions.
+- Live `company-report --auto-inputs` still returns a usable report if the
+  `DB-1312` indication remains a warning.
 - `docs/HANDOFF.md` records the triage result and the next concrete action.
 
 ### Validation
@@ -164,12 +170,11 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 ### Queue
 
-1. Triage remaining Harbour BioMed packed-table warnings.
-2. Decide whether `DB-1312` indication can be filled from source-backed text; if
+1. Decide whether `DB-1312` indication can be filled from source-backed text; if
    not, keep the warning.
-3. Design a source-backed market-data connector before auto valuation drafts.
-4. Add auto competitor drafts only after pipeline extraction is reliable.
-5. Keep broadening fixtures across representative HK biotech disclosure styles.
+2. Design a source-backed market-data connector before auto valuation drafts.
+3. Add auto competitor drafts only after pipeline extraction is reliable.
+4. Keep broadening fixtures across representative HK biotech disclosure styles.
 
 ## Do Not Break
 

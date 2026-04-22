@@ -70,6 +70,12 @@ HBM7575 (TSLP undisclosed target BsAb)
 The China IND application for atopic dermatitis was accepted and approved.
 Global (Out-licensed) Solid Tumors MSLN ADC HBM9033 / SGN-MesoC2.
 Global (Out-licensed) Solid Tumors MSLN ADCHBM9033 table artifact.
+GlobalIBD*TL1A xI L23p19HBM2001
+GlobalIBD*Undisclosed (mAb)J9003
+GlobalAutoimmune DiseasesCD3xCD19R2006
+GlobalAutoimmune Diseases Undisclosed (BsAb)R7027
+Oncology/Immuno-Oncology Greater China NSCLC, HCC, NEN, CRC* CTLA-4 HBM4003.
+GlobalSolid TumorsB7H7/HHLA2HBM1020
 Global solid tumors CLDN18.2xCD3HBM7022/ AZD5863.
 """
 
@@ -278,6 +284,23 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("atopic dermatitis", hbm7575["indication"])
         hbm7022 = _asset_by_name(payload, "HBM7022")
         self.assertIn("AZD5863", hbm7022["aliases"])
+        hbm2001 = _asset_by_name(payload, "HBM2001")
+        self.assertEqual(hbm2001["target"], "TL1A/IL23p19")
+        self.assertEqual(hbm2001["indication"], "IBD")
+        j9003 = _asset_by_name(payload, "J9003")
+        self.assertIsNone(j9003["target"])
+        self.assertEqual(j9003["modality"], "antibody")
+        self.assertEqual(j9003["indication"], "IBD")
+        r2006 = _asset_by_name(payload, "R2006")
+        self.assertEqual(r2006["target"], "CD3/CD19")
+        self.assertEqual(r2006["indication"], "autoimmune diseases")
+        r7027 = _asset_by_name(payload, "R7027")
+        self.assertIsNone(r7027["target"])
+        self.assertEqual(r7027["modality"], "bispecific antibody")
+        self.assertEqual(r7027["indication"], "autoimmune diseases")
+        hbm1020 = _asset_by_name(payload, "HBM1020")
+        self.assertEqual(hbm1020["target"], "B7H7/HHLA2")
+        self.assertEqual(hbm1020["indication"], "solid tumors")
 
 
 def _source(
