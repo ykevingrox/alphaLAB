@@ -88,6 +88,28 @@ def _hkma_hibor_payload() -> dict:
     }
 
 
+def _google_news_rss() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Google News - Hong Kong biotech</title>
+    <item>
+      <title>HK biotech financing window reopens</title>
+      <link>https://example.com/news1</link>
+      <pubDate>Wed, 22 Apr 2026 09:00:00 GMT</pubDate>
+      <source url="https://example.com">Example Media</source>
+    </item>
+    <item>
+      <title>FDA commentary impacts Asia biotech sentiment</title>
+      <link>https://example.com/news2</link>
+      <pubDate>Wed, 22 Apr 2026 08:00:00 GMT</pubDate>
+      <source url="https://example.org">Another Media</source>
+    </item>
+  </channel>
+</rss>
+"""
+
+
 class _StubResponse:
     def __init__(self, payload: Any, status: int = 200) -> None:
         self._payload = payload
@@ -132,6 +154,8 @@ class _StubSession:
             if suffix.lower() == symbol:
                 return response
             if suffix == "hkma" and "hkma.gov.hk" in url:
+                return response
+            if suffix == "google-news" and "news.google.com" in url:
                 return response
         raise AssertionError(f"unexpected URL: {url}")
 
@@ -244,6 +268,7 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
                 "^HSBI": _StubResponse(_hsi_chart_payload(closes, timestamps)),
                 "HKD=X": _StubResponse(_hkd_chart_payload(7.83)),
                 "hkma": _StubResponse(_hkma_hibor_payload()),
+                "google-news": _StubResponse(_google_news_rss()),
             }
         )
         frozen_now = datetime(2025, 4, 1, 12, tzinfo=timezone.utc)
@@ -259,9 +284,11 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
         self.assertIsNotNone(signals["hsbio"])
         self.assertIsNotNone(signals["hkd_usd"])
         self.assertIsNotNone(signals["hibor"])
+        self.assertIsNotNone(signals["news"])
+        self.assertEqual(signals["news"]["count"], 2)
         self.assertEqual(signals["notes"], [])
-        # Yahoo now requests HSI, HSBIO, HKD=X and one HKMA HIBOR call.
-        self.assertEqual(len(stub.calls), 4)
+        # Yahoo now requests HSI, HSBIO, HKD=X, HKMA, and RSS news.
+        self.assertEqual(len(stub.calls), 5)
         # User-Agent was injected on the session.
         self.assertIn("User-Agent", stub.headers)
 
@@ -273,6 +300,7 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
                 "^HSBI": _StubResponse(ValueError("bad json")),
                 "HKD=X": _StubResponse(_hkd_chart_payload(7.84)),
                 "hkma": _StubResponse(_hkma_hibor_payload()),
+                "google-news": _StubResponse(_google_news_rss()),
             }
         )
         signals = hk_macro_signals_yahoo("HK", session=stub)
@@ -282,6 +310,7 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
         self.assertIsNone(signals["hsbio"])
         self.assertIsNotNone(signals["hkd_usd"])
         self.assertIsNotNone(signals["hibor"])
+        self.assertIsNotNone(signals["news"])
         self.assertTrue(
             any("hsi" in note for note in signals["notes"]),
             signals["notes"],
@@ -295,6 +324,7 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
                 "^HSBI": _StubResponse(ValueError("bad json")),
                 "HKD=X": _StubResponse(ValueError("bad json")),
                 "hkma": _StubResponse(ValueError("bad json")),
+                "google-news": _StubResponse(""),
             }
         )
         self.assertIsNone(hk_macro_signals_yahoo("HK", session=stub))
@@ -316,6 +346,7 @@ class HkMacroSignalsStooqTest(unittest.TestCase):
                 "hsbi": _StubResponse(hsi_csv),
                 "usdhkd": _StubResponse(usdhkd_csv),
                 "hkma": _StubResponse(_hkma_hibor_payload()),
+                "google-news": _StubResponse(_google_news_rss()),
             }
         )
         out = hk_macro_signals_stooq("HK", session=stub)
@@ -328,6 +359,7 @@ class HkMacroSignalsStooqTest(unittest.TestCase):
         self.assertAlmostEqual(
             out["hibor"]["one_month_pct"], 3.45, places=2
         )
+        self.assertEqual(out["news"]["count"], 2)
         self.assertEqual(out["notes"], [])
         self.assertTrue(out["hsi"]["source"].startswith(STOOQ_QUOTE_URL))
 
@@ -338,6 +370,7 @@ class HkMacroSignalsStooqTest(unittest.TestCase):
                 "hsbi": _StubResponse(""),
                 "usdhkd": _StubResponse(""),
                 "hkma": _StubResponse(""),
+                "google-news": _StubResponse(""),
             }
         )
         self.assertIsNone(hk_macro_signals_stooq("HK", session=stub))
@@ -411,6 +444,7 @@ class MacroContextLiveSignalsIntegrationTest(unittest.TestCase):
                 "hsbio": {"symbol": "^HSBIO", "level": 4123.0},
                 "hkd_usd": {"symbol": "HKD=X", "spot": 7.83},
                 "hibor": {"one_month_pct": 3.45},
+                "news": {"count": 2, "items": [{"title": "headline"}]},
                 "notes": [],
             },
         )
@@ -422,8 +456,9 @@ class MacroContextLiveSignalsIntegrationTest(unittest.TestCase):
         self.assertNotIn("HSBIO", joined)
         self.assertNotIn("USD/HKD", joined)
         self.assertNotIn("HIBOR", joined)
+        self.assertNotIn("news", joined)
         # Non-covered unknowns remain.
-        self.assertIn("news", joined)
+        self.assertIn("IPO sentiment", joined)
 
     def test_no_live_signals_keeps_full_unknowns(self) -> None:
         from biotech_alpha.company_report import _build_macro_context

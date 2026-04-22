@@ -282,10 +282,9 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   `hk_macro_signals_yahoo` before surrendering to the stale-cache
   fallback, so the first cold run has a better chance of warming the
   cache.
-- **Partially done** — Extend the macro-signals feed:
-  HIBOR tenors and Hang Seng Biotech sub-index (^HSBIO) are now
-  included when reachable; source-tagged sector news headlines remain
-  open.
+- **Done** — Extend the macro-signals feed:
+  HIBOR tenors, Hang Seng Biotech sub-index (^HSBIO), and compact
+  source-tagged sector news are now included when reachable.
 - **Not started** — Technical / K-line agent (long-horizon trend read on top
   of a future market-data pipeline).
 - **Not started** — Orchestration fall-back: when an LLM agent fails schema
@@ -445,5 +444,4 @@ adapter, and starting a technical / K-line agent.
   `Yahoo -> Stooq -> stale cache`, preserving current
   `macro_context.live_signals` output contract and audit keys.
 - **Not started** — Short exponential backoff on Yahoo 429/503 inside
-  `hk_macro_signals_yahoo`, then extend the feed with source-tagged
-  sector news headlines.
+  `hk_macro_signals_yahoo` so first cold runs warm cache more often.

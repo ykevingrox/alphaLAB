@@ -404,6 +404,10 @@ Use this shape:
     corresponding live signals are present.
   - Yahoo and Stooq providers both attempt HKMA HIBOR snapshot so the
     fallback chain still preserves the broader macro shape.
+  - `live_signals.news` is now present when a compact source-tagged
+    RSS fetch succeeds (Google News query: "Hong Kong biotech"), and
+    `_build_macro_context` removes the "recent sector-relevant news
+    titles" unknown when news payload is present.
 
 ## Current Repo State
 
@@ -539,8 +543,9 @@ Latest smoke result:
 ### Current Task
 
 `--macro-signals yahoo-hk` now threads a broader source-tagged macro
-block into `macro_context`: HSI, HSBIO, USD/HKD, and HIBOR tenors
-(when reachable), through a multi-source chain
+block into `macro_context`: HSI, HSBIO, USD/HKD, HIBOR tenors, and
+compact sector news (all optional, all degradable), through a
+multi-source chain
 `Yahoo -> Stooq -> stale cache`. The disk-backed TTL cache
 (`CachingMacroSignalsProvider`) keeps back-to-back HK biotech runs to
 one upstream fetch per TTL. Anthropic provider support is implemented
@@ -553,10 +558,10 @@ Two immediate tracks:
   supports both `openai-compatible` and `anthropic` providers; we
   still need one real Anthropic macro-context run to validate network
   behavior and trace fields against production responses.
-- Macro-signals live smoke + sector-news enrichment. With fallback +
-  breadth now implemented, capture one successful four-agent run
-  showing non-`insufficient_data` macro regime and then add a small
-  source-tagged sector-news block.
+- Macro-signals live smoke + resiliency tuning. With fallback +
+  breadth + sector news implemented, capture one successful four-agent
+  run showing non-`insufficient_data` macro regime, then add short
+  upstream backoff for Yahoo 429/503.
 
 ### Next Action
 
@@ -572,8 +577,8 @@ Two immediate tracks:
    `data/cache/macro_signals/HK_yahoo-hk+stooq-hk.json` and confirm
    that a subsequent run on a second HK ticker reuses it without
    hitting upstream.
-3. Extend macro signals with a compact source-tagged sector-news
-   block while preserving existing `live_signals` compatibility keys.
+3. Add short retry/backoff on Yahoo 429/503 before surrendering to
+   fallback, so first cold runs warm cache more often.
 
 ### Acceptance Criteria
 
@@ -620,19 +625,17 @@ set -a; source .env; set +a
    `hk_macro_signals_yahoo` before surrendering to the stale-cache
    fallback, so the first cold run has a better chance of warming
    the cache.
-3. Extend macro signals with a compact source-tagged sector-news
-   block.
-4. Add auto competitor drafts once pipeline extraction is reliable.
-5. Keep broadening fixtures across representative HK biotech disclosure
+3. Add auto competitor drafts once pipeline extraction is reliable.
+4. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-6. Tighten validator checks for stale placeholders and weak evidence
+5. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-7. Add a US-market sibling market-data provider, so the auto-draft path
+6. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-8. Consider a deterministic post-processor that turns LLM findings into
+7. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-9. Consider a `K-line technical agent` (name TBD) that reads a
+8. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.

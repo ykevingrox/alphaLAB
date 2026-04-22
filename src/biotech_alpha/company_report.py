@@ -720,6 +720,10 @@ def _build_macro_context(
             known_unknowns = [
                 item for item in known_unknowns if "HIBOR" not in item
             ]
+        if live_block.get("news"):
+            known_unknowns = [
+                item for item in known_unknowns if "news titles" not in item
+            ]
 
     return {
         "market": market,

@@ -37,6 +37,7 @@ HKMA_HIBOR_URL = (
     "https://api.hkma.gov.hk/public/market-data-and-statistics/"
     "daily-monetary-statistics/interbank-ir"
 )
+SECTOR_NEWS_RSS_URL = "https://news.google.com/rss/search"
 
 # Yahoo's public chart endpoint aggressively 429s low-volume /
 # bot-flavoured User-Agents. A browser-class string reduces the
@@ -95,6 +96,7 @@ def hk_macro_signals_yahoo(
             http, symbol="HKD=X", interval="1d", range_="5d", timeout=timeout
         )
         hibor = _fetch_hkma_hibor_snapshot(http, timeout=timeout)
+        news = _fetch_sector_news_rss(http, timeout=timeout)
     finally:
         if owned:
             http.close()
@@ -118,8 +120,16 @@ def hk_macro_signals_yahoo(
         notes.append("hsbio: unavailable (chart fetch failed or empty)")
     if hibor is None:
         notes.append("hibor: unavailable (hkma feed failed or empty)")
+    if news is None:
+        notes.append("news: unavailable (rss feed failed or empty)")
 
-    if hsi is None and hkd_usd is None and hsbio is None and hibor is None:
+    if (
+        hsi is None
+        and hkd_usd is None
+        and hsbio is None
+        and hibor is None
+        and news is None
+    ):
         return None
 
     as_of = (now or datetime.now(tz=timezone.utc)).isoformat()
@@ -130,6 +140,7 @@ def hk_macro_signals_yahoo(
         "hsbio": hsbio,
         "hkd_usd": hkd_usd,
         "hibor": hibor,
+        "news": news,
         "notes": notes,
     }
 
@@ -446,6 +457,7 @@ def hk_macro_signals_stooq(
             http, symbol="usdhkd", timeout=timeout
         )
         hibor = _fetch_hkma_hibor_snapshot(http, timeout=timeout)
+        news = _fetch_sector_news_rss(http, timeout=timeout)
     finally:
         if owned:
             http.close()
@@ -461,8 +473,16 @@ def hk_macro_signals_stooq(
         notes.append("hsbio: unavailable (stooq fetch failed or empty)")
     if hibor is None:
         notes.append("hibor: unavailable (hkma feed failed or empty)")
+    if news is None:
+        notes.append("news: unavailable (rss feed failed or empty)")
 
-    if hsi is None and hkd_usd is None and hsbio is None and hibor is None:
+    if (
+        hsi is None
+        and hkd_usd is None
+        and hsbio is None
+        and hibor is None
+        and news is None
+    ):
         return None
 
     as_of = (now or datetime.now(tz=timezone.utc)).isoformat()
@@ -473,6 +493,7 @@ def hk_macro_signals_stooq(
         "hsbio": hsbio,
         "hkd_usd": hkd_usd,
         "hibor": hibor,
+        "news": news,
         "notes": notes,
     }
 
@@ -686,3 +707,83 @@ def _pick_first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
         if key in record and record.get(key) not in (None, "", "N/A"):
             return record.get(key)
     return None
+
+
+def _fetch_sector_news_rss(
+    session: requests.Session,
+    *,
+    timeout: float,
+    query: str = "Hong Kong biotech",
+    hl: str = "en-HK",
+    gl: str = "HK",
+    ceid: str = "HK:en",
+    limit: int = 5,
+) -> dict[str, Any] | None:
+    try:
+        response = session.get(
+            SECTOR_NEWS_RSS_URL,
+            params={
+                "q": query,
+                "hl": hl,
+                "gl": gl,
+                "ceid": ceid,
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+    return _parse_google_news_rss(
+        response.text,
+        query=query,
+        limit=limit,
+    )
+
+
+def _parse_google_news_rss(
+    xml_text: str,
+    *,
+    query: str,
+    limit: int = 5,
+) -> dict[str, Any] | None:
+    if not xml_text.strip():
+        return None
+    try:
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(xml_text)
+    except Exception:  # noqa: BLE001 - malformed XML should degrade
+        return None
+    items = root.findall(".//item")
+    headlines: list[dict[str, Any]] = []
+    for item in items[:limit]:
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        pub_date = (item.findtext("pubDate") or "").strip()
+        source_node = item.find("source")
+        source_name = ""
+        source_url = ""
+        if source_node is not None:
+            source_name = (source_node.text or "").strip()
+            source_url = (source_node.attrib.get("url") or "").strip()
+        if not title or not link:
+            continue
+        headlines.append(
+            {
+                "title": title,
+                "url": link,
+                "published_at": pub_date or None,
+                "publisher": source_name or None,
+                "publisher_url": source_url or None,
+            }
+        )
+    if not headlines:
+        return None
+    return {
+        "query": query,
+        "count": len(headlines),
+        "items": headlines,
+        "source": (
+            f"{SECTOR_NEWS_RSS_URL}?q={query}&hl=en-HK&gl=HK&ceid=HK:en"
+        ),
+    }
