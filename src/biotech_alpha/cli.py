@@ -274,6 +274,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "scientific-skeptic",
             "pipeline-triage",
             "financial-triage",
+            "macro-context",
         ),
         help=(
             "Opt-in LLM agents to run after deterministic research. "

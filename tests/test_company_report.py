@@ -503,7 +503,14 @@ class SourceTextExcerptTest(unittest.TestCase):
                 class _Memo:
                     findings: tuple = ()
 
+                class _Ctx:
+                    company = "Stub"
+                    ticker = None
+                    market = "HK"
+                    as_of_date = None
+
                 self.memo = _Memo()
+                self.context = _Ctx()
                 self.pipeline_assets = ()
                 self.trials = ()
                 self.asset_trial_matches = ()

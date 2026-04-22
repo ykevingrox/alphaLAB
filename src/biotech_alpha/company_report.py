@@ -284,6 +284,7 @@ SUPPORTED_LLM_AGENTS = (
     "scientific-skeptic",
     "pipeline-triage",
     "financial-triage",
+    "macro-context",
 )
 
 
@@ -307,6 +308,7 @@ def _run_llm_agent_pipeline(
     from biotech_alpha.agents import AgentContext
     from biotech_alpha.agents_llm import (
         FinancialTriageLLMAgent,
+        MacroContextLLMAgent,
         PipelineTriageLLMAgent,
         ScientificSkepticLLMAgent,
     )
@@ -365,6 +367,13 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "macro-context" in llm_agents:
+        graph.add(
+            MacroContextLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
         # When upstream triage agents are requested, chain the skeptic so
         # the skeptic's FactStore view already contains their payloads.
@@ -377,6 +386,8 @@ def _run_llm_agent_pipeline(
             skeptic_deps = skeptic_deps + ("pipeline_triage_llm_agent",)
         if "financial-triage" in llm_agents:
             skeptic_deps = skeptic_deps + ("financial_triage_llm_agent",)
+        if "macro-context" in llm_agents:
+            skeptic_deps = skeptic_deps + ("macro_context_llm_agent",)
         graph.add(
             ScientificSkepticLLMAgent(
                 llm_client=llm_client,
@@ -521,6 +532,10 @@ def build_llm_agent_facts(
         research_result=research_result,
         financial_warnings=financial_warnings,
     )
+    macro_context = _build_macro_context(
+        research_result=research_result,
+        auto_input_artifacts=auto_input_artifacts,
+    )
 
     return {
         "skeptic_risks": skeptic_risks,
@@ -530,6 +545,7 @@ def build_llm_agent_facts(
         "input_warnings": input_warnings,
         "source_text_excerpt": source_text_excerpt,
         "financials_snapshot": financials_snapshot,
+        "macro_context": macro_context,
     }
 
 
@@ -608,6 +624,71 @@ def _build_financials_snapshot(
         }
     snapshot["financial_warnings"] = financial_warnings
     return snapshot
+
+
+def _build_macro_context(
+    *,
+    research_result: SingleCompanyResearchResult,
+    auto_input_artifacts: Any | None,
+) -> dict[str, Any] | None:
+    """Return a minimal macro-context fact for the MacroContextLLMAgent.
+
+    Today we do not have a live rate / index / FX feed wired up, so the
+    fact is intentionally thin: it advertises what the deterministic
+    layer knows (market, sector, as-of dates, source publication date,
+    source type) and exposes a ``known_unknowns`` list naming the
+    macro signals the agent would benefit from but which we cannot
+    provide yet. Agents are expected to return
+    ``macro_regime = "insufficient_data"`` when the stub is too thin
+    to form a view, rather than hallucinate macro themes.
+
+    This shape will grow as we wire in news titles, HSI trend summary,
+    rate environment, and FX context. Keeping the agent pluggable on
+    the fact rather than pulling raw data inside the agent means we
+    can swap data sources without touching prompt logic.
+    """
+
+    context = research_result.context
+    market = getattr(context, "market", None) or "HK"
+    as_of_date = getattr(context, "as_of_date", None)
+
+    source_publication_dates: list[str] = []
+    source_titles: list[str] = []
+    source_types: list[str] = []
+    if auto_input_artifacts is not None:
+        for doc in getattr(auto_input_artifacts, "source_documents", ()) or ():
+            if getattr(doc, "publication_date", None):
+                source_publication_dates.append(str(doc.publication_date))
+            if getattr(doc, "title", None):
+                source_titles.append(str(doc.title))
+            if getattr(doc, "source_type", None):
+                source_types.append(str(doc.source_type))
+
+    financial = research_result.financial_snapshot
+    financial_as_of = (
+        getattr(financial, "as_of_date", None)
+        if financial is not None
+        else None
+    )
+
+    return {
+        "market": market,
+        "sector": "biotech",
+        "ticker": getattr(context, "ticker", None) or None,
+        "company": getattr(context, "company", None) or None,
+        "report_run_date": as_of_date,
+        "financial_as_of_date": financial_as_of,
+        "source_publication_dates": source_publication_dates,
+        "source_titles": source_titles,
+        "source_types": source_types,
+        "known_unknowns": [
+            "live HSI / HSBIO index trend",
+            "Hong Kong IPO sentiment for biotech",
+            "US rate environment and USD/HKD peg status",
+            "recent sector-relevant news titles",
+            "FDA / NMPA regulatory posture this quarter",
+        ],
+    }
 
 
 def _build_source_text_excerpt(

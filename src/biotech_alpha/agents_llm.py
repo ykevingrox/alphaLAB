@@ -58,6 +58,8 @@ SCIENTIFIC_SKEPTIC_PROMPT = StructuredPrompt(
         "present):\n${pipeline_triage}\n\n"
         "Financial triage findings (from the financial-triage LLM agent, "
         "if present):\n${financial_triage}\n\n"
+        "Macro context findings (from the macro-context LLM agent, if "
+        "present):\n${macro_context}\n\n"
         "Trial coverage summary:\n${trial_summary}\n\n"
         "Valuation + cash snapshot:\n${valuation_snapshot}\n\n"
         "Input warnings:\n${input_warnings}\n\n"
@@ -228,6 +230,9 @@ class ScientificSkepticLLMAgent(Agent):
             ),
             "financial_triage": _json_block(
                 store.get("financial_triage_payload")
+            ),
+            "macro_context": _json_block(
+                store.get("macro_context_payload")
             ),
             "trial_summary": _json_block(store.get("trial_summary")),
             "valuation_snapshot": _json_block(
@@ -794,6 +799,270 @@ def _financial_triage_finding_from_payload(
         evidence=evidence,
         confidence=confidence,
         needs_human_review=True if needs_review else True,
+    )
+
+
+MACRO_CONTEXT_PROMPT = StructuredPrompt(
+    name="macro_context",
+    tags=("macro", "context", "llm"),
+    system=(
+        "You are a macro strategist scoped to Hong Kong-listed biotech and "
+        "China innovative-drug equities. You receive a small deterministic "
+        "stub of macro facts (market, sector, report-run date, source "
+        "publication dates, and a list of `known_unknowns` the caller "
+        "could not provide). Your job is to give the downstream skeptic "
+        "agent a sober, explicitly-scoped read of the macro regime for "
+        "this company.\n\n"
+        "Ground rules:\n"
+        "- Work only from the stub. Do NOT invent specific index moves, "
+        "rate prints, news headlines, or FDA actions. If you need data "
+        "that is not in the stub, reflect that in the output by returning "
+        "`macro_regime = \"insufficient_data\"` and listing the gap in "
+        "`sector_headwinds` or `sector_drivers` only as a factually-"
+        "framed unknown (e.g. \"rate trajectory unclear from provided "
+        "inputs\").\n"
+        "- Prefer short, decision-grade phrases in `sector_drivers` and "
+        "`sector_headwinds`. Aim for 2-5 items per side, max 8. No "
+        "duplicates across the two lists.\n"
+        "- Flag stale report-run date or stale source publication date "
+        "(> 180 days old) in `sector_headwinds` as a data-freshness "
+        "concern.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required top-level keys: macro_regime, summary, "
+        "sector_drivers, sector_headwinds.\n"
+        "- Optional top-level keys: confidence.\n"
+        "- `macro_regime` is exactly one of "
+        "\"expansion\", \"contraction\", \"transition\", "
+        "\"insufficient_data\".\n"
+        "- `sector_drivers` and `sector_headwinds` are lists of short "
+        "strings (2-200 chars each).\n"
+        "- Never nest the output inside `macro_context`, `analysis`, "
+        "`result`, or any other wrapper key."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Macro context stub (deterministic):\n${macro_context}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"macro_regime\": "
+        "\"expansion|contraction|transition|insufficient_data\",\n"
+        "  \"summary\": \"<1-3 sentence read on the macro regime>\",\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"sector_drivers\": [\"<short driver>\"],\n"
+        "  \"sector_headwinds\": [\"<short headwind>\"]\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "macro_regime",
+            "summary",
+            "sector_drivers",
+            "sector_headwinds",
+        ],
+        "properties": {
+            "macro_regime": {
+                "type": "string",
+                "enum": [
+                    "expansion",
+                    "contraction",
+                    "transition",
+                    "insufficient_data",
+                ],
+            },
+            "summary": {"type": "string", "min_length": 1},
+            "confidence": {"type": ["number", "null"]},
+            "sector_drivers": {
+                "type": "array",
+                "max_items": 8,
+                "items": {
+                    "type": "string",
+                    "min_length": 2,
+                    "max_length": 200,
+                },
+            },
+            "sector_headwinds": {
+                "type": "array",
+                "max_items": 8,
+                "items": {
+                    "type": "string",
+                    "min_length": 2,
+                    "max_length": 200,
+                },
+            },
+        },
+    },
+)
+
+
+@dataclass
+class MacroContextLLMAgent(Agent):
+    """LLM agent that reads a macro-context stub and frames the regime.
+
+    Consumes the deterministic ``macro_context`` fact (market, sector,
+    report date, source publication dates, and ``known_unknowns``) and
+    produces a structured macro regime read for the skeptic to reason
+    against. The agent is explicitly allowed (and instructed) to return
+    ``macro_regime = "insufficient_data"`` when the stub is too thin,
+    which is the expected early-state outcome until the fact is enriched
+    with live index / rate / FX / news feeds.
+    """
+
+    llm_client: LLMClient
+    name: str = "macro_context_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "macro_context_llm_finding",
+        "macro_context_payload",
+    )
+    max_tokens: int | None = 900
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("MacroContextLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        macro_context = store.get("macro_context")
+        if not isinstance(macro_context, dict) or not macro_context:
+            return AgentStepResult(
+                agent_name=self.name,
+                skipped=True,
+                error=(
+                    "no macro_context fact available; upstream "
+                    "publish_research_facts must supply at least a "
+                    "market / sector stub for this agent to run"
+                ),
+            )
+
+        variables = self._collect_variables(context, store)
+        system, user = MACRO_CONTEXT_PROMPT.render(variables)
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = MACRO_CONTEXT_PROMPT.parse_response(
+                call.response_text
+            )
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _macro_context_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "macro_context_llm_finding": finding,
+                "macro_context_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "macro_context": _json_block(store.get("macro_context")),
+        }
+
+
+def _macro_context_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "Macro context analysis completed."
+
+    macro_regime = str(payload.get("macro_regime") or "").strip().lower()
+
+    risks: list[str] = []
+    if macro_regime == "contraction":
+        risks.append("[macro_regime] contraction")
+    elif macro_regime == "insufficient_data":
+        risks.append("[macro_regime] insufficient_data")
+
+    headwinds = payload.get("sector_headwinds") or []
+    for headwind in headwinds:
+        text = str(headwind).strip()
+        if text:
+            risks.append(f"[headwind] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Macro context analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=True,
     )
 
 
