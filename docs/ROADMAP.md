@@ -135,7 +135,10 @@ landscape findings, risks, and artifacts exist. Auto-input now emits
 heuristic competitor seed drafts from extracted target overlap to reduce
 zero-competitor runs, while keeping all rows human-review flagged.
 Data maturity comparison, efficacy/safety comparisons, and commercialization
-analysis are pending.
+analysis are pending. Seed drafting is now versioned and covers a
+broader conservative HK-biotech target set, including BCMA/CD3,
+CTLA-4, FcRn, TSLP, and normalized B7H4/B7-H4 composite matching,
+while still marking generated competitors for human review.
 
 - Group assets by target, mechanism, indication, and geography.
 - Compare stage, data maturity, safety, efficacy, and commercialization status.
@@ -355,7 +358,9 @@ resilience and validator tightening remain).
   `planned to start in 2026`. Target/mechanism cleanup now handles
   HAT001/HBM9013 (`anti-CRH`, avoiding HBM7020 BCMA/CD3 leakage) and
   undisclosed-target packed rows such as J9003/R7027 without inventing
-  source-unsupported targets.
+  source-unsupported targets. B7H4/CD3 local context now stops at the
+  next numbered section so HBM7004 does not inherit Metabolic Disease /
+  obesity text from a later source section.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from
@@ -385,7 +390,9 @@ and web ingestion out).
 - **Partially done** — Improve competitor intelligence from deterministic
   target/indication matching toward better data-maturity and differentiation
   checks. Auto competitor seed drafting from extracted pipeline targets is
-  now in place as a conservative bootstrap.
+  now in place as a conservative bootstrap; generated seed drafts refresh
+  by extractor version and cover the current Harbour BioMed target families
+  without treating them as curated truth.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`

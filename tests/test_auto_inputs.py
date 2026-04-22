@@ -9,6 +9,7 @@ from unittest.mock import patch
 import requests
 
 from biotech_alpha.auto_inputs import (
+    COMPETITOR_EXTRACTOR_VERSION,
     PIPELINE_EXTRACTOR_VERSION,
     SourceDocument,
     _resolve_hkex_stock_id,
@@ -175,6 +176,10 @@ class AutoInputsTest(unittest.TestCase):
 
         self.assertEqual(payload["company"], "DualityBio")
         self.assertEqual(payload["generated_by"], "auto_inputs.target_overlap_seed")
+        self.assertEqual(
+            payload["generated_extractor_version"],
+            COMPETITOR_EXTRACTOR_VERSION,
+        )
         self.assertTrue(payload["needs_human_review"])
         self.assertGreaterEqual(len(payload["competitors"]), 1)
         first = payload["competitors"][0]
@@ -182,6 +187,53 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("asset_name", first)
         self.assertIn("target", first)
         self.assertTrue(first["evidence"][0]["is_inferred"])
+
+    def test_drafts_competitor_assets_for_hbm_targets(self) -> None:
+        identity = CompanyIdentity(company="Harbour BioMed", ticker="02142.HK")
+        source = _hbm_source()
+        pipeline_payload = draft_pipeline_assets(
+            identity=identity,
+            text=HBM_SAMPLE_TEXT,
+            source=source,
+        )
+        payload = draft_competitor_assets(
+            identity=identity,
+            pipeline_assets_payload=pipeline_payload,
+            source=source,
+        )
+
+        pairs = {
+            (row["company"], row["asset_name"], row["target"])
+            for row in payload["competitors"]
+        }
+        self.assertIn(("argenx", "VYVGART", "FcRn"), pairs)
+        self.assertIn(("UCB", "RYSTIGGO", "FcRn"), pairs)
+        self.assertIn(("AstraZeneca/Amgen", "TEZSPIRE", "TSLP"), pairs)
+        self.assertIn(("Nuvation Bio", "B7-H4 ADC program", "B7H4/CD3"), pairs)
+
+    def test_drafts_competitor_assets_for_exact_composite_targets(self) -> None:
+        identity = CompanyIdentity(company="Example Bio", ticker="9999.HK")
+        source = _source()
+        pipeline_payload = {
+            "assets": [
+                {"name": "BCMA Asset", "target": "BCMA/CD3"},
+                {"name": "CTLA Asset", "target": "CTLA-4"},
+            ]
+        }
+
+        payload = draft_competitor_assets(
+            identity=identity,
+            pipeline_assets_payload=pipeline_payload,
+            source=source,
+        )
+
+        pairs = {
+            (row["company"], row["asset_name"], row["target"])
+            for row in payload["competitors"]
+        }
+        self.assertIn(("Johnson & Johnson", "TECVAYLI", "BCMA/CD3"), pairs)
+        self.assertIn(("Pfizer", "ELREXFIO", "BCMA/CD3"), pairs)
+        self.assertIn(("Bristol Myers Squibb", "YERVOY", "CTLA-4"), pairs)
 
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
@@ -317,6 +369,18 @@ class AutoInputsTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            competitors_path = generated_dir / "09606_hk_competitors.json"
+            competitors_path.write_text(
+                json.dumps(
+                    {
+                        "company": "DualityBio",
+                        "ticker": "09606.HK",
+                        "generated_by": "auto_inputs.target_overlap_seed",
+                        "competitors": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
             source = _source(
                 file_path=root / "results.pdf",
                 text_path=root / "results.txt",
@@ -347,6 +411,10 @@ class AutoInputsTest(unittest.TestCase):
             self.assertEqual(artifacts.source_documents, (source,))
             self.assertEqual(artifacts.pipeline_assets, pipeline_path)
             competitors = _read_json(artifacts.competitors)
+            self.assertEqual(
+                competitors["generated_extractor_version"],
+                COMPETITOR_EXTRACTOR_VERSION,
+            )
             self.assertGreaterEqual(len(competitors["competitors"]), 1)
 
     def test_generate_auto_inputs_refreshes_stale_generated_pipeline(
@@ -679,8 +747,11 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("atopic dermatitis", hbm7575["indication"])
         hbm7022 = _asset_by_name(payload, "HBM7022")
         self.assertIn("AZD5863", hbm7022["aliases"])
+        hbm7004 = _asset_by_name(payload, "HBM7004")
+        self.assertNotIn("obesity", hbm7004["indication"] or "")
         hbm2001 = _asset_by_name(payload, "HBM2001")
         self.assertEqual(hbm2001["target"], "TL1A/IL23p19")
+        self.assertIsNone(hbm2001["mechanism"])
         self.assertEqual(hbm2001["indication"], "IBD")
         j9003 = _asset_by_name(payload, "J9003")
         self.assertIsNone(j9003["target"])
@@ -689,6 +760,7 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(j9003["indication"], "IBD")
         r2006 = _asset_by_name(payload, "R2006")
         self.assertEqual(r2006["target"], "CD3/CD19")
+        self.assertIsNone(r2006["mechanism"])
         self.assertEqual(r2006["indication"], "autoimmune diseases")
         r7027 = _asset_by_name(payload, "R7027")
         self.assertIsNone(r7027["target"])

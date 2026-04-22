@@ -50,7 +50,8 @@ HKEX_ACTIVE_STOCKS_URL = (
     f"{HKEX_BASE_URL}/ncms/script/eds/activestock_sehk_e.json"
 )
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
-PIPELINE_EXTRACTOR_VERSION = 2
+PIPELINE_EXTRACTOR_VERSION = 4
+COMPETITOR_EXTRACTOR_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,11 @@ def generate_auto_inputs(
         _write_json(pipeline_path, pipeline_payload)
     else:
         pipeline_payload = _read_json(pipeline_path)
-    if overwrite or not competitors_path.exists():
+    if (
+        overwrite
+        or not competitors_path.exists()
+        or _competitor_draft_needs_refresh(competitors_path)
+    ):
         _write_json(
             competitors_path,
             draft_competitor_assets(
@@ -331,6 +336,20 @@ _COMPETITOR_SEEDS_BY_TARGET: dict[str, list[dict[str, str]]] = {
     "B7-H4": [
         {"company": "Nuvation Bio", "asset_name": "B7-H4 ADC program"},
     ],
+    "BCMA/CD3": [
+        {"company": "Johnson & Johnson", "asset_name": "TECVAYLI"},
+        {"company": "Pfizer", "asset_name": "ELREXFIO"},
+    ],
+    "CTLA-4": [
+        {"company": "Bristol Myers Squibb", "asset_name": "YERVOY"},
+    ],
+    "FcRn": [
+        {"company": "argenx", "asset_name": "VYVGART"},
+        {"company": "UCB", "asset_name": "RYSTIGGO"},
+    ],
+    "TSLP": [
+        {"company": "AstraZeneca/Amgen", "asset_name": "TEZSPIRE"},
+    ],
 }
 
 
@@ -360,7 +379,7 @@ def draft_competitor_assets(
         if not target:
             continue
         indication = str(row.get("indication") or "").strip() or None
-        for seed in _COMPETITOR_SEEDS_BY_TARGET.get(target, []):
+        for seed in _competitor_seeds_for_target(target):
             key = (seed["company"], seed["asset_name"])
             if key in seen:
                 continue
@@ -398,9 +417,48 @@ def draft_competitor_assets(
         "company": identity.company,
         "ticker": identity.ticker,
         "generated_by": "auto_inputs.target_overlap_seed",
+        "generated_extractor_version": COMPETITOR_EXTRACTOR_VERSION,
         "needs_human_review": True,
         "competitors": competitors,
     }
+
+
+def _competitor_seeds_for_target(target: str) -> tuple[dict[str, str], ...]:
+    seeds: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for key in _target_seed_keys(target):
+        for seed in _COMPETITOR_SEEDS_BY_TARGET.get(key, []):
+            seed_key = (seed["company"], seed["asset_name"])
+            if seed_key in seen:
+                continue
+            seen.add(seed_key)
+            seeds.append(seed)
+    return tuple(seeds)
+
+
+def _target_seed_keys(target: str) -> tuple[str, ...]:
+    normalized = target.strip()
+    if not normalized:
+        return ()
+    compact = _compact_target_key(normalized)
+    keys = [normalized]
+    for known in _COMPETITOR_SEEDS_BY_TARGET:
+        if _compact_target_key(known) == compact:
+            keys.append(known)
+    for part in re.split(r"[/×x]", normalized):
+        item = part.strip()
+        if not item:
+            continue
+        keys.append(item)
+        compact_item = _compact_target_key(item)
+        for known in _COMPETITOR_SEEDS_BY_TARGET:
+            if _compact_target_key(known) == compact_item:
+                keys.append(known)
+    return tuple(dict.fromkeys(keys))
+
+
+def _compact_target_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
 def _draft_asset_from_context(
@@ -424,6 +482,8 @@ def _draft_asset_from_context(
             or mechanism
         )
         indication = _indication_from_context(packed_context) or indication
+    if target:
+        mechanism = None
     source_year = _year_from_source_date(source.publication_date)
     return {
         "name": primary,
@@ -464,7 +524,16 @@ def _local_asset_context(
     match = _asset_code_match(context=context, asset_name=asset_name)
     if not match:
         return context
-    return context[match.start(): match.start() + size]
+    return _truncate_at_next_numbered_section(
+        context[match.start(): match.start() + size]
+    )
+
+
+def _truncate_at_next_numbered_section(context: str) -> str:
+    match = re.search(r"\n\s*\d+\.\s+[A-Z]", context)
+    if not match:
+        return context
+    return context[:match.start()]
 
 
 def _packed_left_context(
@@ -1386,6 +1455,21 @@ def _pipeline_draft_needs_refresh(path: Path) -> bool:
         any(marker in warning for marker in refresh_markers)
         for warning in report.warnings
     )
+
+
+def _competitor_draft_needs_refresh(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = _read_json(path)
+    except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
+        return True
+    if payload.get("generated_by") == "auto_inputs.target_overlap_seed":
+        return (
+            payload.get("generated_extractor_version")
+            != COMPETITOR_EXTRACTOR_VERSION
+        )
+    return False
 
 
 def _jsonable(value: Any) -> Any:
