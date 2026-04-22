@@ -193,43 +193,29 @@ def draft_pipeline_assets(
     """Extract a conservative draft pipeline asset file from source text."""
 
     assets = []
-    seen: set[str] = set()
-    seen_codes: set[str] = set()
+    seen_assets: dict[str, dict[str, Any]] = {}
+    seen_codes: dict[str, str] = {}
     for match in _asset_mentions(text):
         primary, aliases = _split_asset_codes(match["name"])
         key = primary.casefold()
-        if key in seen or key in seen_codes:
-            continue
-        seen.add(key)
-        seen_codes.add(key)
-        seen_codes.update(alias.casefold() for alias in aliases)
+        existing_key = seen_codes.get(key)
         context = match["context"]
-        assets.append(
-            {
-                "name": primary,
-                "aliases": aliases,
-                "target": _target_from_context(context),
-                "modality": _modality_from_context(context),
-                "mechanism": None,
-                "indication": _indication_from_context(context),
-                "phase": _phase_from_context(context),
-                "geography": _geography_from_context(context),
-                "rights": None,
-                "partner": _partner_from_context(context),
-                "next_milestone": _milestone_from_context(context),
-                "evidence": [
-                    {
-                        "claim": _clean_claim(context),
-                        "source": source.url,
-                        "source_date": source.publication_date,
-                        "confidence": 0.45,
-                        "is_inferred": True,
-                    }
-                ],
-            }
+        candidate = _draft_asset_from_context(
+            primary=primary,
+            aliases=aliases,
+            context=context,
+            source=source,
         )
+        if existing_key:
+            _merge_asset_fields(seen_assets[existing_key], candidate)
+            continue
         if len(assets) >= 12:
-            break
+            continue
+        assets.append(candidate)
+        seen_assets[key] = candidate
+        seen_codes[key] = key
+        for alias in aliases:
+            seen_codes[alias.casefold()] = key
 
     return {
         "company": identity.company,
@@ -238,6 +224,67 @@ def draft_pipeline_assets(
         "needs_human_review": True,
         "assets": assets,
     }
+
+
+def _draft_asset_from_context(
+    *,
+    primary: str,
+    aliases: list[str],
+    context: str,
+    source: SourceDocument,
+) -> dict[str, Any]:
+    local_context = _local_asset_context(context=context, asset_name=primary)
+    return {
+        "name": primary,
+        "aliases": aliases,
+        "target": _target_from_context(local_context),
+        "modality": _modality_from_context(local_context),
+        "mechanism": None,
+        "indication": _indication_from_context(local_context),
+        "phase": _phase_from_context(context),
+        "geography": _geography_from_context(context),
+        "rights": None,
+        "partner": _partner_from_context(context),
+        "next_milestone": _milestone_from_context(context),
+        "evidence": [
+            {
+                "claim": _clean_claim(context),
+                "source": source.url,
+                "source_date": source.publication_date,
+                "confidence": 0.45,
+                "is_inferred": True,
+            }
+        ],
+    }
+
+
+def _local_asset_context(
+    *,
+    context: str,
+    asset_name: str,
+    size: int = 700,
+) -> str:
+    match = re.search(rf"\b{re.escape(asset_name)}\b", context)
+    if not match:
+        return context
+    return context[match.start(): match.start() + size]
+
+
+def _merge_asset_fields(
+    existing: dict[str, Any],
+    candidate: dict[str, Any],
+) -> None:
+    for key in (
+        "target",
+        "modality",
+        "indication",
+        "phase",
+        "geography",
+        "partner",
+        "next_milestone",
+    ):
+        if not existing.get(key) and candidate.get(key):
+            existing[key] = candidate[key]
 
 
 def draft_financial_snapshot(
@@ -448,6 +495,8 @@ def _asset_mentions(text: str) -> list[dict[str, str]]:
         name = match.group(1)
         if _looks_like_non_asset_code(name):
             continue
+        if _looks_like_merged_target_code(name):
+            continue
         previous_match = _adjacent_different_asset_match(
             matches=matches,
             index=index,
@@ -598,6 +647,11 @@ def _indication_from_context(context: str) -> str | None:
     if "breast cancer" not in found and re.search(r"\bBC\b", context):
         found.append("breast cancer")
     if (
+        "solid tumors" not in found
+        and re.search(r"\bMono\s*Solid\s*Tumors\b", context, flags=re.IGNORECASE)
+    ):
+        found.append("solid tumors")
+    if (
         "systemic lupus erythematosus" not in found
         and re.search(r"\bSLE\b", context)
     ):
@@ -637,10 +691,11 @@ def _context_window(
     start: int,
     end: int,
     size: int = 700,
+    left_size: int = 180,
     left_boundary: int | None = None,
     right_boundary: int | None = None,
 ) -> str:
-    left = start
+    left = max(0, start - left_size)
     if left_boundary is not None:
         left = max(left, left_boundary)
     right = min(len(text), end + size)
@@ -698,6 +753,14 @@ def _looks_like_non_asset_code(value: str) -> bool:
     compact = value.replace("-", "")
     prefixes = ("NCT", "RMB", "HKD", "USD")
     return compact.isdigit() or any(compact.startswith(prefix) for prefix in prefixes)
+
+
+def _looks_like_merged_target_code(value: str) -> bool:
+    prefix = value.split("-", 1)[0]
+    if not prefix.endswith("DB"):
+        return False
+    target_fragment = prefix[:-2]
+    return target_fragment in {"GFR", "EGFR", "HER", "VEGF"}
 
 
 def _financial_multiplier(text: str) -> int:

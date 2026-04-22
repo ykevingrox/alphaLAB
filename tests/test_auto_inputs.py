@@ -43,6 +43,7 @@ DB-2304 payload P2025 exposures increased dose-proportionally.
 Proprietary payloads P1003 and P1021 improved systemic stability.
 DB-1311/BNT324 is being evaluated in combination with BNT116.
 B7-H4 DB-1312/BG-C9074 Global mono solid tumors.
+HER3 xE GFRDB-1418 table artifact.
 """
 
 
@@ -67,6 +68,7 @@ class AutoInputsTest(unittest.TestCase):
         self.assertNotIn("P1021", names)
         self.assertNotIn("BNT116", names)
         self.assertNotIn("C9074", names)
+        self.assertNotIn("GFRDB-1418", names)
         first = payload["assets"][0]
         self.assertEqual(first["aliases"], ["BNT323"])
         self.assertEqual(first["target"], "HER2")
@@ -79,6 +81,23 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("systemic lupus erythematosus", db2304["indication"])
         self.assertEqual(_asset_by_name(payload, "DB-1317")["target"], "ADAM9")
         self.assertEqual(_asset_by_name(payload, "DB-1324")["target"], "CDH17")
+        self.assertIn("solid tumors", _asset_by_name(payload, "DB-1312")["indication"])
+
+    def test_drafts_pipeline_assets_enriches_repeated_asset_mentions(self) -> None:
+        text = """
+        DB-9999 (HER2 ADC) Clinical readout in breast cancer.
+        DB-8888 (TROP2 ADC) Clinical readout in solid tumors.
+        A global Phase 2 clinical trial evaluates DB-9999 in breast cancer.
+        """
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Example Bio", ticker="9999.HK"),
+            text=text,
+            source=_source(),
+        )
+
+        names = [asset["name"] for asset in payload["assets"]]
+        self.assertEqual(names.count("DB-9999"), 1)
+        self.assertEqual(_asset_by_name(payload, "DB-9999")["phase"], "Phase 2")
 
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(

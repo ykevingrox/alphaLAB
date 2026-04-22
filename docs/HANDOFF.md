@@ -48,6 +48,8 @@ from getting the MVP stable.
   richer phase strings, and filters payload-only mentions such as `P1021`.
 - Generated pipeline extraction also avoids partial hyphen-code matches such as
   `C9074` from `BG-C9074`, and combination partner assets such as `BNT116`.
+- Repeated asset mentions now enrich missing fields, so later detailed sections
+  can fill phase or indication fields from earlier summary mentions.
 
 ## Current Repo State
 
@@ -96,7 +98,7 @@ Latest smoke result:
   generated.
 - Report ran successfully.
 - Suggested rerun command preserved `--auto-inputs`.
-- Generated pipeline validation warnings fell to 4 in the latest smoke run.
+- Generated pipeline validation warnings fell to 1 in the latest smoke run.
 - Quality gate was `research_ready_with_review`.
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
@@ -104,8 +106,8 @@ Latest smoke result:
 ## Next Best Action
 
 1. Commit the current validated local changes as a small checkpoint.
-2. Continue tightening generated pipeline extraction for remaining missing
-   phase or indication warnings.
+2. Continue tightening generated pipeline extraction for remaining source-backed
+   missing indication cases such as `DB-1312`.
 3. Improve HKEX source discovery robustness and retry behavior.
 4. Add auto valuation drafts once source-backed market data is available.
 5. Add auto competitor drafts only after pipeline extraction is more reliable.
