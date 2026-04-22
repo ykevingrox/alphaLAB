@@ -172,6 +172,52 @@ Use this shape:
     `data/input/generated/`, so the smoke was temporarily validated by
     moving `02142_hk_*.json` aside. Files were restored immediately
     afterwards; see Queue for the fix task.
+- `discover_company_inputs` cross-ticker leak is fixed: `_select_input_file`
+  now requires all numeric `ticker_tokens` (derived from
+  `CompanyIdentity.ticker`) to appear in the filename stem, so
+  `09606.HK` no longer pulls `02142_hk_*.json` drafts. Regression test
+  covers the 02142 vs 09606 scenario.
+- `BIOTECH_ALPHA_LLM_DEBUG_PROMPT=1` env flag writes rendered system+user
+  prompts to `data/traces/<run_id>_<agent>_prompt.txt` so prompt-drift is
+  debuggable without re-guessing.
+- Second LLM agent `PipelineTriageLLMAgent` is live (M2):
+  - New fact `source_text_excerpt`: a ~4k-char window of the latest HKEX
+    source document anchored on the first pipeline-asset name mention
+    (falls back to the first 4k chars when no anchor is found). Built by
+    `_build_source_text_excerpt` in `company_report.py` and included in
+    `build_llm_agent_facts` output.
+  - `PIPELINE_TRIAGE_PROMPT` / `PipelineTriageLLMAgent` triage each asset
+    for phase / milestone / target-indication plausibility vs the source
+    text, emitting a strict per-asset JSON (`name`, `severity`,
+    `issues[]`, optional `suggested_fixes[]` / `confidence`) plus
+    top-level `coverage_confidence` and `global_warnings`.
+  - `AgentGraph` wiring: `--llm-agents pipeline-triage scientific-skeptic`
+    runs triage first; the skeptic `depends_on` triage in combined mode
+    so its `FactStore` view already includes `pipeline_triage_payload`
+    and its prompt now renders the triage payload in a dedicated block.
+    Running only `--llm-agents scientific-skeptic` keeps the skeptic
+    independent of triage.
+  - CLI `--llm-agents` choices updated to
+    `('scientific-skeptic', 'pipeline-triage')`; help text documents the
+    DAG ordering.
+  - New tests `tests/test_pipeline_triage_agent.py` cover happy-path
+    finding construction, empty-pipeline skip, schema-drift error
+    capture, in-graph chain with the skeptic, and the skeptic-is-skipped
+    propagation when triage fails. Also a self-skipping
+    `PipelineTriageOnlineTest`.
+- Live Bailian Qwen dual-agent smoke validated on 2026-04-22:
+  - `company-report --ticker 09606.HK --auto-inputs --market-data hk-public
+    --llm-agents pipeline-triage scientific-skeptic`: 2 LLM calls, 2 OK,
+    5549 prompt + 1749 completion tokens = 7298 total, 35.3 s combined
+    latency.
+  - Triage finding (confidence 0.6) flagged `DB-1312`'s `"in 2017"`
+    milestone as high-severity and surfaced 8 medium-severity assets
+    whose source coverage was lost to the excerpt window.
+  - Skeptic finding (confidence 0.3) consumed those triage findings and
+    produced a sharper bear case ("validation confidence critically low
+    for 8 assets", "data quality failures indicate poor corporate
+    governance or outdated reporting"), demonstrating real multi-agent
+    collaboration.
 
 ## Current Repo State
 
@@ -185,7 +231,8 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-22 after M1 LLM + Agent runtime rollout:
+Last validated on 2026-04-22 after M2 dual-agent rollout (pipeline triage
++ scientific skeptic running together in the AgentGraph):
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -197,15 +244,13 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 149 unit tests ran, 146 passed, 3 skipped (online Yahoo / online Tencent /
+- 157 unit tests ran, 153 passed, 4 skipped (online Yahoo / online Tencent /
   online Bailian Qwen integration tests self-skip without the matching
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1` env flag).
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
-- 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'` plus
-  the new untracked `src/biotech_alpha/{llm,agent_runtime,agents_llm}*`,
-  `tests/test_{llm_client,agent_runtime,scientific_skeptic_agent}.py`, and
-  `.env.example`.
+- 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
+  plus `tests/test_pipeline_triage_agent.py` (new).
 - Deterministic `company-report --auto-inputs --market-data hk-public`
   smoke still produces `research_ready_with_review` reports for
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) with Tencent
@@ -230,12 +275,12 @@ Latest smoke commands:
   --ticker 09606.HK --auto-inputs --overwrite-auto-inputs \
   --market-data hk-public
 
-# LLM + agent runtime opt-in (new)
+# LLM + agent runtime opt-in (dual agent)
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
-  --llm-agents scientific-skeptic
+  --llm-agents pipeline-triage scientific-skeptic
 
 # One-shot LLM ping for provider/model smoke
 PYTHONPATH=src .venv/bin/python scripts/llm_smoke.py
@@ -249,92 +294,77 @@ Latest smoke result:
 - LLM agent pipeline writes `data/memos/<run_id>_llm_findings.json` and
   `data/traces/<run_id>.jsonl`. The trace JSONL captures timestamp, agent,
   model, prompt_hash, token counts, latency, retries, and `ok`/`error`.
-- Sample DualityBio LLM risks include:
-  - `[high][DB-1312] past milestone date (2017) on a Phase 1 asset`
-  - `[high][DB-1311, DB-1310] no 12-24 month binary catalysts, milestones
-    only in 2026`
-  - `[bear] Heavy dependence on partner BioNTech for lead assets`
-- Qwen3's default implicit thinking is actively suppressed via
-  `extra_body.enable_thinking=False` when the base URL matches Bailian;
-  without this, the same ping burned 385 completion tokens at 10 s instead
-  of 28 tokens at 3 s. `BIOTECH_ALPHA_LLM_ENABLE_THINKING=1` re-enables it.
-- Known gap uncovered by the smoke: `discover_company_inputs` mis-matched
-  `02142_hk_pipeline_assets.json` when querying `09606.HK`. The LLM smoke
-  was validated by temporarily relocating the 02142 drafts; they were
-  restored after verification. See Queue item #1 for the fix task.
+- Dual-agent DualityBio smoke (`pipeline-triage` + `scientific-skeptic`):
+  - 2 LLM calls, 2 OK, 5549 prompt + 1749 completion tokens (7298 total),
+    35.3 s combined latency.
+  - Triage finding (confidence 0.6): 3 data-quality issues high-severity,
+    8 medium-severity missing-source-coverage flags, including the
+    correct `DB-1312 next_milestone "in 2017"` callout.
+  - Skeptic finding (confidence 0.3) consumed those triage findings and
+    produced a sharper bear case: "validation confidence critically low
+    for 8 assets", "absence of TTM revenue prevents valuation
+    benchmarking", "heavy concentration in solid tumor ADCs/bispecifics
+    exposes the company to crowded competitive landscapes".
+- Qwen3's default implicit thinking remains actively suppressed via
+  `extra_body.enable_thinking=False` on Bailian; that continues to keep
+  completion token usage low.
 
 ## Execution Plan
 
 ### Current Task
 
-Ship the **second** LLM agent in the AgentGraph — a `PipelineTriageAgent`
-that consumes the deterministic pipeline + source-text window and produces a
-per-asset structured triage (phase plausibility, milestone plausibility,
-target/indication alignment with the source text, and a `confidence` per
-asset) — and fix the `discover_company_inputs` cross-ticker mis-match that
-today lets a stale `02142_hk_*.json` draft leak into a `09606.HK` run.
+Broaden the multi-agent graph in two directions and tighten what we have:
 
-The skeptic agent is now the canary for all LLM agents; the next agent must
-share the same contract so `AgentGraph` scheduling, tracing, cost summary,
-and `AgentFinding` surfacing stay uniform.
+- Lift the `source_text_excerpt` window strategy so triage can cover all
+  pipeline assets (today the 4k-char anchor is pinned to the first asset,
+  which leaves later-listed assets with only `medium` "not in excerpt"
+  warnings).
+- Introduce a `FinancialTriageLLMAgent` that cross-checks burn rate,
+  runway months, and cash-vs-debt sanity. This is the third agent and the
+  first non-pipeline domain, so it's the real test that `AgentGraph` is
+  domain-agnostic.
+
+Both tasks build on the stable M1/M2 foundation (runtime + pipeline
+triage + skeptic) and must not regress the current dual-agent smoke.
 
 ### Next Action
 
-1. Fix `discover_company_inputs` first. Reproduce with:
+1. Rework `_build_source_text_excerpt` in `company_report.py` to support
+   multiple anchors: when there are N assets, try to produce one excerpt
+   window per asset name (or one combined deduped concatenation capped at
+   ~8k chars total), so the triage agent doesn't need to flag "not in
+   excerpt" for assets that do appear in the source. Add a unit test that
+   exercises a fixture with two assets far apart in the text.
 
-   ```bash
-   PYTHONPATH=src .venv/bin/python -c \
-     "from biotech_alpha.company_report import \
-     discover_company_inputs, CompanyIdentity; \
-     print(discover_company_inputs(CompanyIdentity(\
-     company='DualityBio', ticker='09606.HK', market='HK'), \
-     input_dir='data/input/generated').pipeline_assets)"
-   ```
+2. Add `FinancialTriageLLMAgent` in `src/biotech_alpha/agents_llm.py`:
+   - Inputs: `valuation_snapshot`, `trial_summary`, `input_warnings`,
+     plus a new `financials_snapshot` fact (burn-rate estimate, last
+     cash, last debt, revenue TTM, the deterministic cash-runway
+     estimate, and any auto-input warnings relevant to financials).
+   - Output: strict JSON with `summary`,
+     `runway_sanity ∈ {"consistent","stretch","inconsistent"}`, per-line
+     anomalies, and `confidence`.
+   - Register under `--llm-agents financial-triage`, composable with the
+     other two agents. Skeptic should optionally `depends_on` it too so
+     it sees financial anomalies.
 
-   Today this returns `data/input/generated/02142_hk_pipeline_assets.json`.
-   Expected: only accept filenames whose slug (stem up to the first
-   input-kind suffix like `_pipeline_assets`, `_financials`, `_valuation`,
-   `_conference_catalysts`) matches `CompanyIdentity` slug tokens, not any
-   filename that shares loose tokens with the company name. Add a
-   regression test using two cached slugs under the same
-   `generated_input_dir`.
-
-2. Then add `PipelineTriageAgent` in `src/biotech_alpha/agents_llm.py`:
-   - Declares `depends_on=('research_facts',)` and
-     `produces='pipeline_triage'`.
-   - Consumes the deterministic `pipeline_snapshot` (already in the
-     `FactStore`) plus a new `source_text_excerpt` fact extracted from the
-     latest HKEX annual-results text (cap at ~4k chars around the pipeline
-     table).
-   - Emits an `AgentFinding` per asset via `AgentFinding.details.assets`,
-     with `severity` ∈ {"low","medium","high"} for each anomaly, and a
-     top-level `coverage_confidence` 0-1.
-   - Strict JSON schema enforced via `StructuredPrompt`.
-
-3. Register it under `--llm-agents pipeline-triage` (composable, so
-   `--llm-agents scientific-skeptic pipeline-triage` runs both in the
-   AgentGraph; the skeptic can `depends_on=('pipeline_triage',)` so it sees
-   triage findings through the `FactStore`).
-
-4. Add `BIOTECH_ALPHA_LLM_DEBUG_PROMPT=1` env flag while you are here: when
-   set, `_run_llm_agent_pipeline` writes the rendered system+user prompt to
-   `data/traces/<run_id>_<agent>_prompt.txt` so prompt-drift issues are
-   debuggable without re-guessing.
+3. After financial triage is live, expose
+   `--market-data-freshness-days` on `company-report` so operators can
+   tune Tencent staleness without patching code.
 
 ### Acceptance Criteria
 
-- `discover_company_inputs` no longer cross-matches tickers; regression
-  test exercises the `02142` vs `09606` scenario.
-- `--llm-agents pipeline-triage` produces at least one `AgentFinding` with
-  per-asset entries for DualityBio and Harbour BioMed smoke runs, and the
-  run writes its `AgentFinding` JSON under `data/memos/`.
-- Running both agents together still respects DAG ordering: triage runs
-  first, skeptic consumes its findings, and the cost summary lists 2 calls.
-- Strict JSON schema passes on the first try for both agents on Qwen3.6;
-  if it fails, the error is captured in `AgentStepResult.error` without
-  crashing the deterministic report.
-- `BIOTECH_ALPHA_LLM_DEBUG_PROMPT=1` writes prompt files under
-  `data/traces/`; unsetting it writes nothing.
+- `source_text_excerpt` contains all pipeline assets that actually appear
+  in the source text (verified by a unit test with two distant anchors).
+  The live DualityBio smoke should drop at least two of the existing
+  "not in excerpt" mediums.
+- `--llm-agents financial-triage` produces an `AgentFinding` with at
+  least one concrete numeric anomaly on the DualityBio smoke.
+- Running `--llm-agents pipeline-triage financial-triage
+  scientific-skeptic` together keeps strict JSON schema passing on the
+  first try, shows 3 calls in the cost summary, and preserves DAG order
+  (triage agents first, skeptic last).
+- Deterministic report path is unchanged without `--llm-agents`.
 
 ### Validation
 
@@ -349,28 +379,29 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs --market-data hk-public \
-  --llm-agents pipeline-triage scientific-skeptic
+  --llm-agents pipeline-triage financial-triage scientific-skeptic
 ```
 
 ### Queue
 
-1. Fix `discover_company_inputs` cross-ticker mis-match (blocker; today
-   requires manually relocating other tickers' drafts to get a clean LLM
-   input for any one ticker).
-2. Add `PipelineTriageAgent` + register under `--llm-agents pipeline-triage`.
-3. Add `BIOTECH_ALPHA_LLM_DEBUG_PROMPT` env flag for prompt-drift debugging.
-4. Expose `--market-data-freshness-days` on `company-report` so operators
+1. Multi-anchor `source_text_excerpt` so triage coverage is not
+   first-asset-only.
+2. Add `FinancialTriageLLMAgent` (burn rate / runway / cash-debt sanity).
+3. Expose `--market-data-freshness-days` on `company-report` so operators
    can tune Tencent staleness without patching code.
-5. Add auto competitor drafts once pipeline extraction is reliable.
-6. Keep broadening fixtures across representative HK biotech disclosure
+4. Per-agent LLM call budget cap in `LLMConfig` so no single agent can
+   blow the daily token budget on its own.
+5. Claude adapter alongside the OpenAI-compatible adapter so the runtime
+   is not single-vendor.
+6. Add auto competitor drafts once pipeline extraction is reliable.
+7. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-7. Tighten validator checks for stale placeholders and weak evidence
+8. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-8. Add a US-market sibling market-data provider once HK freshness lands, so
-   the auto-draft path is not HK-only.
-9. After two LLM agents are stable, introduce a `FinancialTriageAgent`
-   (burn-rate sanity + runway cross-check) and a `MacroContextAgent` so the
-   multi-agent story has deterministic + LLM representation in each domain.
+9. Add a US-market sibling market-data provider once HK freshness lands,
+   so the auto-draft path is not HK-only.
+10. `MacroContextAgent` once financial triage stabilises, so macro drivers
+    (rate environment, HK biotech sentiment, policy) enter the graph.
 
 ## Do Not Break
 

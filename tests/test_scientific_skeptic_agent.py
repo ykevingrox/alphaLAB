@@ -124,7 +124,10 @@ class ScientificSkepticLLMAgentHappyPathTest(unittest.TestCase):
 
     def test_writes_debug_prompt_when_store_has_debug_keys(self) -> None:
         payload = {
-            "summary": "Pipeline concentration and milestone quality risks remain high.",
+            "summary": (
+                "Pipeline concentration and milestone quality risks "
+                "remain high."
+            ),
             "bear_case": ["Lead assets have delayed timelines."],
             "risks": [
                 {

@@ -265,6 +265,7 @@ def run_company_report(
             output_dir=output_dir,
             save=save,
             llm_trace_path=llm_trace_path,
+            auto_input_artifacts=auto_input_artifacts,
         )
 
     return CompanyReportResult(
@@ -279,7 +280,7 @@ def run_company_report(
     )
 
 
-SUPPORTED_LLM_AGENTS = ("scientific-skeptic",)
+SUPPORTED_LLM_AGENTS = ("scientific-skeptic", "pipeline-triage")
 
 
 def _run_llm_agent_pipeline(
@@ -291,6 +292,7 @@ def _run_llm_agent_pipeline(
     output_dir: str | Path,
     save: bool,
     llm_trace_path: str | Path | None,
+    auto_input_artifacts: Any | None = None,
 ) -> tuple[Any, Path | None]:
     """Run the opt-in LLM agent graph over a finished research result."""
 
@@ -299,7 +301,10 @@ def _run_llm_agent_pipeline(
         DeterministicAgent,
     )
     from biotech_alpha.agents import AgentContext
-    from biotech_alpha.agents_llm import ScientificSkepticLLMAgent
+    from biotech_alpha.agents_llm import (
+        PipelineTriageLLMAgent,
+        ScientificSkepticLLMAgent,
+    )
 
     unknown = [name for name in llm_agents if name not in SUPPORTED_LLM_AGENTS]
     if unknown:
@@ -308,7 +313,10 @@ def _run_llm_agent_pipeline(
             f"supported: {list(SUPPORTED_LLM_AGENTS)}"
         )
 
-    facts = build_llm_agent_facts(research_result=research_result)
+    facts = build_llm_agent_facts(
+        research_result=research_result,
+        auto_input_artifacts=auto_input_artifacts,
+    )
     context = AgentContext(
         company=identity.company,
         ticker=identity.ticker,
@@ -338,11 +346,26 @@ def _run_llm_agent_pipeline(
         return None
 
     graph.add(DeterministicAgent("publish_research_facts", _publish))
+    if "pipeline-triage" in llm_agents:
+        graph.add(
+            PipelineTriageLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
+        # When both agents are requested, chain the skeptic after triage so
+        # the skeptic's FactStore view already contains the triage payload.
+        # This is a hard dependency in the current runtime: if triage fails
+        # the skeptic is skipped. Callers who want the skeptic to survive a
+        # triage failure should run only `--llm-agents scientific-skeptic`.
+        skeptic_deps: tuple[str, ...] = ("publish_research_facts",)
+        if "pipeline-triage" in llm_agents:
+            skeptic_deps = skeptic_deps + ("pipeline_triage_llm_agent",)
         graph.add(
             ScientificSkepticLLMAgent(
                 llm_client=llm_client,
-                depends_on=("publish_research_facts",),
+                depends_on=skeptic_deps,
             )
         )
 
@@ -382,12 +405,19 @@ def _run_llm_agent_pipeline(
 def build_llm_agent_facts(
     *,
     research_result: SingleCompanyResearchResult,
+    auto_input_artifacts: Any | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
     The LLM adapter layer deliberately accepts only plain dicts/lists/strings
     (and numbers). This keeps prompts reproducible: the same research result
     always renders to the same prompt body regardless of dataclass identity.
+
+    When ``auto_input_artifacts`` is provided, a ``source_text_excerpt`` fact
+    is added that carries a short window of the HKEX annual-results text near
+    the pipeline area. Downstream agents (e.g. PipelineTriage) use this to
+    ground their reasoning in the real source instead of only the parsed
+    structured pipeline.
     """
 
     memo = research_result.memo
@@ -459,12 +489,86 @@ def build_llm_agent_facts(
             for warning in report.get("warnings", []) or []:
                 input_warnings.append(str(warning))
 
+    source_text_excerpt = _build_source_text_excerpt(
+        auto_input_artifacts=auto_input_artifacts,
+        pipeline_snapshot=pipeline_snapshot,
+    )
+
     return {
         "skeptic_risks": skeptic_risks,
         "pipeline_snapshot": pipeline_snapshot,
         "trial_summary": trial_summary,
         "valuation_snapshot": valuation_snapshot or None,
         "input_warnings": input_warnings,
+        "source_text_excerpt": source_text_excerpt,
+    }
+
+
+def _build_source_text_excerpt(
+    *,
+    auto_input_artifacts: Any | None,
+    pipeline_snapshot: dict[str, Any],
+    max_chars: int = 4000,
+) -> dict[str, Any] | None:
+    """Return a short excerpt of the source document near the pipeline area.
+
+    The excerpt is anchored to the first asset name found in the text so the
+    LLM sees the actual table-style prose (phase, target, milestone) rather
+    than the cover page. Falls back to the first ``max_chars`` of the text
+    when no asset name anchor is found.
+    """
+
+    if auto_input_artifacts is None:
+        return None
+    documents = getattr(auto_input_artifacts, "source_documents", ()) or ()
+    if not documents:
+        return None
+    document = documents[0]
+    text_path = getattr(document, "text_path", None)
+    if text_path is None:
+        return None
+    path = Path(text_path)
+    if not path.exists():
+        return None
+    try:
+        full_text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if not full_text.strip():
+        return None
+
+    assets = pipeline_snapshot.get("assets") or []
+    anchor_name: str | None = None
+    anchor_index: int = -1
+    for asset in assets:
+        name = (asset.get("name") or "").strip()
+        if not name or len(name) < 3:
+            continue
+        index = full_text.find(name)
+        if index != -1:
+            anchor_name = name
+            anchor_index = index
+            break
+
+    half = max_chars // 2
+    if anchor_index >= 0:
+        start = max(0, anchor_index - half)
+        end = min(len(full_text), anchor_index + half)
+        excerpt = full_text[start:end]
+        anchor = anchor_name
+    else:
+        excerpt = full_text[:max_chars]
+        anchor = None
+
+    return {
+        "source_type": getattr(document, "source_type", None),
+        "title": getattr(document, "title", None),
+        "url": getattr(document, "url", None),
+        "publication_date": getattr(document, "publication_date", None),
+        "anchor_asset": anchor,
+        "total_chars": len(full_text),
+        "excerpt_chars": len(excerpt),
+        "excerpt": excerpt,
     }
 
 

@@ -222,9 +222,15 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
 - **Done** — `AgentGraph` + `FactStore` + `Agent` + `DeterministicAgent`.
 - **Done** — First LLM agent (`ScientificSkepticLLMAgent`) with strict
   top-level JSON shape, per-risk severity enum, and asset/evidence refs.
-- **In progress** — Second LLM agent (`PipelineTriageAgent`): structured
+- **Done** — Second LLM agent (`PipelineTriageLLMAgent`): structured
   per-asset triage against the deterministic pipeline and source-text
-  excerpts.
+  excerpts. Produces `coverage_confidence` plus per-asset severity
+  (`none|low|medium|high`) with issues and suggested fixes. Composable
+  with the skeptic under `--llm-agents pipeline-triage
+  scientific-skeptic`; the skeptic's prompt renders the triage payload
+  in a dedicated block so counter-thesis reasoning can cite it.
+- **In progress** — Multi-anchor `source_text_excerpt` so triage coverage
+  is not first-asset-only.
 - **Not started** — Financial triage agent (burn-rate + runway cross-check).
 - **Not started** — Macro context agent (sector / policy / rate-sensitivity
   narrative; feeds the skeptic via `FactStore`).
@@ -323,19 +329,30 @@ and web ingestion out).
 
 ### Sprint 4: Multi-LLM Agent Collaboration
 
-**Sprint status:** started. LLM adapter + AgentGraph + first LLM agent landed
-on 2026-04-22 with a live Bailian Qwen3.6 smoke. Sprint continues with the
-second LLM agent and the `discover_company_inputs` fix that the smoke
-surfaced.
+**Sprint status:** dual-agent collaboration landed on 2026-04-22. The
+runtime + two distinct LLM agents (pipeline-triage -> scientific-skeptic)
+now run in a single AgentGraph with shared facts, and the skeptic actually
+consumes triage findings. Sprint continues with a third agent and coverage
+improvements.
 
 - **Done** — LLM + Agent runtime skeleton (config, client, trace, prompt,
   schema, FactStore, AgentGraph, opt-in CLI flag).
 - **Done** — First LLM agent: `ScientificSkepticLLMAgent`.
-- **In progress** — Fix `discover_company_inputs` cross-ticker mis-match
-  uncovered by the smoke (blocker for clean multi-ticker LLM runs).
-- **Not started** — `PipelineTriageAgent`: per-asset structured triage.
-- **Not started** — `BIOTECH_ALPHA_LLM_DEBUG_PROMPT` env flag to dump
-  rendered prompts to `data/traces/<run>_<agent>_prompt.txt` for offline
-  prompt debugging.
+- **Done** — Fix `discover_company_inputs` cross-ticker mis-match
+  uncovered by the initial smoke.
+- **Done** — `BIOTECH_ALPHA_LLM_DEBUG_PROMPT` env flag that dumps rendered
+  prompts to `data/traces/<run>_<agent>_prompt.txt` for offline prompt
+  debugging.
+- **Done** — Second LLM agent: `PipelineTriageLLMAgent` with
+  `source_text_excerpt` fact and in-graph chaining into the skeptic.
+  Validated end-to-end via live Bailian Qwen3.6 dual-agent smoke
+  (7298 total tokens, 2/2 calls OK, findings for both agents).
+- **In progress** — Multi-anchor `source_text_excerpt`: today the window
+  is anchored on the first matching asset name, which leaves later-listed
+  assets marked `medium [not in excerpt]`. Next iteration produces one
+  window per asset or a capped concatenated multi-anchor excerpt.
+- **Not started** — `FinancialTriageLLMAgent`: burn-rate, runway, cash vs
+  debt sanity. First non-pipeline-domain LLM agent and the real test
+  that the agent graph is domain-agnostic.
 - **Not started** — Add a Claude adapter so the runtime is not single-vendor.
 - **Not started** — Per-agent LLM call budget cap.
