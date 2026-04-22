@@ -165,6 +165,7 @@ def run_company_report(
     llm_agents: tuple[str, ...] = (),
     llm_client: Any | None = None,
     llm_trace_path: str | Path | None = None,
+    macro_signals_provider: Callable[[str], dict[str, Any] | None] | None = None,
 ) -> CompanyReportResult:
     """Run a company report from a company name or ticker.
 
@@ -266,6 +267,7 @@ def run_company_report(
             save=save,
             llm_trace_path=llm_trace_path,
             auto_input_artifacts=auto_input_artifacts,
+            macro_signals_provider=macro_signals_provider,
         )
 
     return CompanyReportResult(
@@ -298,6 +300,7 @@ def _run_llm_agent_pipeline(
     save: bool,
     llm_trace_path: str | Path | None,
     auto_input_artifacts: Any | None = None,
+    macro_signals_provider: Callable[[str], dict[str, Any] | None] | None = None,
 ) -> tuple[Any, Path | None]:
     """Run the opt-in LLM agent graph over a finished research result."""
 
@@ -320,9 +323,18 @@ def _run_llm_agent_pipeline(
             f"supported: {list(SUPPORTED_LLM_AGENTS)}"
         )
 
+    macro_signals: dict[str, Any] | None = None
+    if macro_signals_provider is not None and "macro-context" in llm_agents:
+        market_label = identity.market or "HK"
+        try:
+            macro_signals = macro_signals_provider(market_label)
+        except Exception:  # noqa: BLE001 - never fail the run on a live feed
+            macro_signals = None
+
     facts = build_llm_agent_facts(
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
+        macro_signals=macro_signals,
     )
     context = AgentContext(
         company=identity.company,
@@ -432,6 +444,7 @@ def build_llm_agent_facts(
     *,
     research_result: SingleCompanyResearchResult,
     auto_input_artifacts: Any | None = None,
+    macro_signals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
@@ -535,6 +548,7 @@ def build_llm_agent_facts(
     macro_context = _build_macro_context(
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
+        live_signals=macro_signals,
     )
 
     return {
@@ -630,22 +644,25 @@ def _build_macro_context(
     *,
     research_result: SingleCompanyResearchResult,
     auto_input_artifacts: Any | None,
+    live_signals: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Return a minimal macro-context fact for the MacroContextLLMAgent.
 
-    Today we do not have a live rate / index / FX feed wired up, so the
-    fact is intentionally thin: it advertises what the deterministic
-    layer knows (market, sector, as-of dates, source publication date,
-    source type) and exposes a ``known_unknowns`` list naming the
-    macro signals the agent would benefit from but which we cannot
-    provide yet. Agents are expected to return
+    When ``live_signals`` is ``None`` the fact is intentionally thin:
+    it advertises what the deterministic layer knows (market, sector,
+    as-of dates, source publication dates, source types) and exposes a
+    ``known_unknowns`` list naming the macro signals the agent would
+    benefit from. Agents are expected to return
     ``macro_regime = "insufficient_data"`` when the stub is too thin
     to form a view, rather than hallucinate macro themes.
 
-    This shape will grow as we wire in news titles, HSI trend summary,
-    rate environment, and FX context. Keeping the agent pluggable on
-    the fact rather than pulling raw data inside the agent means we
-    can swap data sources without touching prompt logic.
+    When ``live_signals`` is provided (e.g. by a CLI-selected
+    ``MacroSignalsProvider`` such as ``hk_macro_signals_yahoo``) the
+    dict is attached under a ``live_signals`` key and any
+    ``known_unknowns`` entry that the live feed already covers is
+    pruned. Fields the live feed still cannot supply (news titles,
+    HIBOR, regulatory posture, etc.) remain on ``known_unknowns`` so
+    the agent knows what it is still missing.
     """
 
     context = research_result.context
@@ -671,6 +688,29 @@ def _build_macro_context(
         else None
     )
 
+    known_unknowns = [
+        "live HSI / HSBIO index trend",
+        "Hong Kong IPO sentiment for biotech",
+        "US rate environment and USD/HKD peg status",
+        "recent sector-relevant news titles",
+        "FDA / NMPA regulatory posture this quarter",
+    ]
+    live_block: dict[str, Any] | None = None
+    if live_signals:
+        live_block = dict(live_signals)
+        if live_block.get("hsi"):
+            known_unknowns = [
+                item
+                for item in known_unknowns
+                if "HSI" not in item and "HSBIO" not in item
+            ]
+        if live_block.get("hkd_usd"):
+            known_unknowns = [
+                item
+                for item in known_unknowns
+                if "USD/HKD" not in item and "peg" not in item
+            ]
+
     return {
         "market": market,
         "sector": "biotech",
@@ -681,13 +721,8 @@ def _build_macro_context(
         "source_publication_dates": source_publication_dates,
         "source_titles": source_titles,
         "source_types": source_types,
-        "known_unknowns": [
-            "live HSI / HSBIO index trend",
-            "Hong Kong IPO sentiment for biotech",
-            "US rate environment and USD/HKD peg status",
-            "recent sector-relevant news titles",
-            "FDA / NMPA regulatory posture this quarter",
-        ],
+        "live_signals": live_block,
+        "known_unknowns": known_unknowns,
     }
 
 

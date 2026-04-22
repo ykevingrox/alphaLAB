@@ -245,6 +245,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--macro-signals",
+        choices=("none", "yahoo-hk"),
+        default="none",
+        help=(
+            "Optional live macro-signals feed for the MacroContextLLMAgent. "
+            "'yahoo-hk' pulls HSI level / 30-day trend and USD/HKD spot "
+            "from Yahoo's public chart endpoint and attaches them to the "
+            "macro_context fact under 'live_signals'. Failures degrade "
+            "silently (the macro agent falls back to 'insufficient_data')."
+        ),
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -616,6 +628,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.market_data,
             freshness_days=args.market_data_freshness_days,
         )
+        macro_signals_provider = _resolve_macro_signals_provider(
+            getattr(args, "macro_signals", "none"),
+        )
         llm_agents = tuple(getattr(args, "llm_agents", ()) or ())
         llm_client = _build_llm_client(llm_agents)
         result = run_company_report(
@@ -639,6 +654,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_agents=llm_agents,
             llm_client=llm_client,
             llm_trace_path=getattr(args, "llm_trace_path", None),
+            macro_signals_provider=macro_signals_provider,
         )
         print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
         return 0
@@ -940,6 +956,24 @@ def _resolve_market_data_provider(
             "--market-data-freshness-days requires --market-data to be set "
             "to a real provider (e.g. hk-public)"
         )
+    return None
+
+
+def _resolve_macro_signals_provider(choice: str):
+    """Return a macro-signals provider callable for a CLI choice, or None.
+
+    Providers are only consulted when ``macro-context`` is also in
+    ``--llm-agents``; ``_run_llm_agent_pipeline`` guards the call so
+    selecting ``--macro-signals yahoo-hk`` without the macro agent is a
+    no-op rather than an error.
+    """
+
+    if choice == "yahoo-hk":
+        from biotech_alpha.macro_signals_providers import (
+            hk_macro_signals_yahoo,
+        )
+
+        return hk_macro_signals_yahoo
     return None
 
 

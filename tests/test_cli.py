@@ -8,7 +8,11 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from biotech_alpha.cli import _resolve_market_data_provider, main
+from biotech_alpha.cli import (
+    _resolve_macro_signals_provider,
+    _resolve_market_data_provider,
+    main,
+)
 
 
 class CliTest(unittest.TestCase):
@@ -697,6 +701,78 @@ class CompanyReportFreshnessCliTest(unittest.TestCase):
             )
             provider = run.call_args.kwargs["market_data_provider"]
             self.assertIs(provider, hk_public_quote_provider)
+
+
+class ResolveMacroSignalsProviderTest(unittest.TestCase):
+    """Unit test the tiny resolver for --macro-signals."""
+
+    def test_none_returns_none(self) -> None:
+        self.assertIsNone(_resolve_macro_signals_provider("none"))
+
+    def test_yahoo_hk_returns_live_callable(self) -> None:
+        from biotech_alpha.macro_signals_providers import (
+            hk_macro_signals_yahoo,
+        )
+
+        self.assertIs(
+            _resolve_macro_signals_provider("yahoo-hk"),
+            hk_macro_signals_yahoo,
+        )
+
+
+class CompanyReportMacroSignalsCliTest(unittest.TestCase):
+    """Verify --macro-signals threads into run_company_report."""
+
+    def test_flag_passes_through_to_run_company_report(self) -> None:
+        from biotech_alpha.macro_signals_providers import (
+            hk_macro_signals_yahoo,
+        )
+
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            exit_code = main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--macro-signals",
+                    "yahoo-hk",
+                    "--no-save",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(run.call_count, 1)
+            provider = run.call_args.kwargs["macro_signals_provider"]
+            self.assertIs(provider, hk_macro_signals_yahoo)
+
+    def test_default_has_no_macro_provider(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--no-save",
+                ]
+            )
+            self.assertIsNone(
+                run.call_args.kwargs["macro_signals_provider"]
+            )
 
 
 if __name__ == "__main__":
