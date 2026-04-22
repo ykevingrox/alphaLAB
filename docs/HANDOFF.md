@@ -395,6 +395,15 @@ Use this shape:
     provider (`yahoo-hk+stooq-hk`) instead of Yahoo-only.
   - Offline tests now cover Stooq parsing, fallback selection order,
     and resolver behavior under cache/no-cache modes.
+- Macro signal breadth is expanded:
+  - `live_signals` now carries optional `hsbio` (Hang Seng Biotech
+    level snapshot) and `hibor` (overnight / 1M / 3M tenor snapshot
+    from HKMA public feed when reachable).
+  - `_build_macro_context` now tracks separate unknowns for
+    `HSI`, `HSBIO`, and `HIBOR`, then prunes each independently when
+    corresponding live signals are present.
+  - Yahoo and Stooq providers both attempt HKMA HIBOR snapshot so the
+    fallback chain still preserves the broader macro shape.
 
 ## Current Repo State
 
@@ -529,13 +538,14 @@ Latest smoke result:
 
 ### Current Task
 
-`--macro-signals yahoo-hk` now threads a source-tagged HSI + USD-HKD
-live feed into the `macro_context` fact via a multi-source chain:
+`--macro-signals yahoo-hk` now threads a broader source-tagged macro
+block into `macro_context`: HSI, HSBIO, USD/HKD, and HIBOR tenors
+(when reachable), through a multi-source chain
 `Yahoo -> Stooq -> stale cache`. The disk-backed TTL cache
 (`CachingMacroSignalsProvider`) keeps back-to-back HK biotech runs to
 one upstream fetch per TTL. Anthropic provider support is implemented
 through the same `LLMClient` protocol; remaining M4 work is live smoke
-validation and macro-signal breadth expansion (HIBOR / ^HSBIO / news).
+validation and sector-news enrichment.
 
 Two immediate tracks:
 
@@ -543,10 +553,10 @@ Two immediate tracks:
   supports both `openai-compatible` and `anthropic` providers; we
   still need one real Anthropic macro-context run to validate network
   behavior and trace fields against production responses.
-- Macro-signals live smoke + breadth expansion. With the fallback chain
-  now implemented, capture one successful four-agent run showing
-  non-`insufficient_data` macro regime and then extend signal breadth
-  (HIBOR tenors, ^HSBIO, source-tagged sector headlines).
+- Macro-signals live smoke + sector-news enrichment. With fallback +
+  breadth now implemented, capture one successful four-agent run
+  showing non-`insufficient_data` macro regime and then add a small
+  source-tagged sector-news block.
 
 ### Next Action
 
@@ -562,9 +572,8 @@ Two immediate tracks:
    `data/cache/macro_signals/HK_yahoo-hk+stooq-hk.json` and confirm
    that a subsequent run on a second HK ticker reuses it without
    hitting upstream.
-3. Extend macro signals to include HIBOR tenors, `^HSBIO`, and a
-   small source-tagged sector-news block while preserving existing
-   `live_signals` compatibility keys.
+3. Extend macro signals with a compact source-tagged sector-news
+   block while preserving existing `live_signals` compatibility keys.
 
 ### Acceptance Criteria
 
@@ -607,13 +616,12 @@ set -a; source .env; set +a
 ### Queue
 
 1. Anthropic live smoke + trace verification for `macro-context`.
-2. Extend macro signals to add HIBOR tenor levels, Hang Seng Biotech
-   sub-index (^HSBIO), and a small list of source-tagged sector news
-   headlines.
-3. Add a short exponential backoff on Yahoo 429/503 inside
+2. Add a short exponential backoff on Yahoo 429/503 inside
    `hk_macro_signals_yahoo` before surrendering to the stale-cache
    fallback, so the first cold run has a better chance of warming
    the cache.
+3. Extend macro signals with a compact source-tagged sector-news
+   block.
 4. Add auto competitor drafts once pipeline extraction is reliable.
 5. Keep broadening fixtures across representative HK biotech disclosure
    styles.

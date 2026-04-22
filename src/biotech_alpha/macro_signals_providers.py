@@ -33,6 +33,10 @@ import requests
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
 STOOQ_QUOTE_URL = "https://stooq.com/q/l/"
+HKMA_HIBOR_URL = (
+    "https://api.hkma.gov.hk/public/market-data-and-statistics/"
+    "daily-monetary-statistics/interbank-ir"
+)
 
 # Yahoo's public chart endpoint aggressively 429s low-volume /
 # bot-flavoured User-Agents. A browser-class string reduces the
@@ -80,9 +84,17 @@ def hk_macro_signals_yahoo(
         hsi_payload = _fetch_chart_payload(
             http, symbol="^HSI", interval="1d", range_="1mo", timeout=timeout
         )
+        hsbio_payload = _fetch_first_chart_payload(
+            http,
+            symbols=("^HSHKBIO", "^HSBI"),
+            interval="1d",
+            range_="1mo",
+            timeout=timeout,
+        )
         hkd_payload = _fetch_chart_payload(
             http, symbol="HKD=X", interval="1d", range_="5d", timeout=timeout
         )
+        hibor = _fetch_hkma_hibor_snapshot(http, timeout=timeout)
     finally:
         if owned:
             http.close()
@@ -97,7 +109,17 @@ def hk_macro_signals_yahoo(
     if hkd_usd is None:
         notes.append("hkd_usd: unavailable (chart fetch failed or empty)")
 
-    if hsi is None and hkd_usd is None:
+    hsbio = (
+        _parse_hsbio_trend(hsbio_payload)
+        if hsbio_payload is not None
+        else None
+    )
+    if hsbio is None:
+        notes.append("hsbio: unavailable (chart fetch failed or empty)")
+    if hibor is None:
+        notes.append("hibor: unavailable (hkma feed failed or empty)")
+
+    if hsi is None and hkd_usd is None and hsbio is None and hibor is None:
         return None
 
     as_of = (now or datetime.now(tz=timezone.utc)).isoformat()
@@ -105,7 +127,9 @@ def hk_macro_signals_yahoo(
         "fetched_at": as_of,
         "provider": "yahoo-hk",
         "hsi": hsi,
+        "hsbio": hsbio,
         "hkd_usd": hkd_usd,
+        "hibor": hibor,
         "notes": notes,
     }
 
@@ -132,6 +156,27 @@ def _fetch_chart_payload(
         return response.json()
     except ValueError:
         return None
+
+
+def _fetch_first_chart_payload(
+    session: requests.Session,
+    *,
+    symbols: tuple[str, ...],
+    interval: str,
+    range_: str,
+    timeout: float,
+) -> dict[str, Any] | None:
+    for symbol in symbols:
+        payload = _fetch_chart_payload(
+            session,
+            symbol=symbol,
+            interval=interval,
+            range_=range_,
+            timeout=timeout,
+        )
+        if payload is not None:
+            return payload
+    return None
 
 
 def _parse_hsi_trend(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -191,6 +236,16 @@ def _parse_spot_rate(payload: dict[str, Any]) -> dict[str, Any] | None:
         "quote_convention": "USD_to_HKD_when_symbol_is_HKD=X",
         "source": f"{YAHOO_CHART_URL}/{symbol}",
     }
+
+
+def _parse_hsbio_trend(payload: dict[str, Any]) -> dict[str, Any] | None:
+    parsed = _parse_hsi_trend(payload)
+    if parsed is None:
+        return None
+    symbol = str(parsed.get("symbol") or "").upper()
+    if "HSBI" not in symbol and "HKBIO" not in symbol:
+        parsed["symbol"] = "^HSBIO"
+    return parsed
 
 
 def _first_chart_result(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -383,10 +438,14 @@ def hk_macro_signals_stooq(
         hsi_latest = _fetch_stooq_latest_row(
             http, symbol="hsi", timeout=timeout
         )
+        hsbio_latest = _fetch_stooq_latest_row(
+            http, symbol="hsbi", timeout=timeout
+        )
         # USD/HKD spot proxy from Stooq FX symbol.
         hkd_latest = _fetch_stooq_latest_row(
             http, symbol="usdhkd", timeout=timeout
         )
+        hibor = _fetch_hkma_hibor_snapshot(http, timeout=timeout)
     finally:
         if owned:
             http.close()
@@ -397,8 +456,13 @@ def hk_macro_signals_stooq(
     hkd_usd = _stooq_hkd_payload(hkd_latest)
     if hkd_usd is None:
         notes.append("hkd_usd: unavailable (stooq fetch failed or empty)")
+    hsbio = _stooq_hsbio_payload(hsbio_latest)
+    if hsbio is None:
+        notes.append("hsbio: unavailable (stooq fetch failed or empty)")
+    if hibor is None:
+        notes.append("hibor: unavailable (hkma feed failed or empty)")
 
-    if hsi is None and hkd_usd is None:
+    if hsi is None and hkd_usd is None and hsbio is None and hibor is None:
         return None
 
     as_of = (now or datetime.now(tz=timezone.utc)).isoformat()
@@ -406,7 +470,9 @@ def hk_macro_signals_stooq(
         "fetched_at": as_of,
         "provider": "stooq-hk",
         "hsi": hsi,
+        "hsbio": hsbio,
         "hkd_usd": hkd_usd,
+        "hibor": hibor,
         "notes": notes,
     }
 
@@ -534,3 +600,89 @@ def _stooq_hkd_payload(row: dict[str, str] | None) -> dict[str, Any] | None:
         "quote_convention": "USD_to_HKD_stooq_usdhkd",
         "source": f"{STOOQ_QUOTE_URL}?s=usdhkd&i=d&e=csv",
     }
+
+
+def _stooq_hsbio_payload(row: dict[str, str] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    close = _as_float(row.get("close"))
+    if close is None:
+        return None
+    date_value = row.get("date")
+    return {
+        "symbol": "^HSBIO",
+        "currency": "HKD",
+        "level": close,
+        "trend_30d_pct": None,
+        "period_start": None,
+        "period_end": date_value,
+        "source": f"{STOOQ_QUOTE_URL}?s=hsbi&i=d&e=csv",
+    }
+
+
+def _fetch_hkma_hibor_snapshot(
+    session: requests.Session, *, timeout: float
+) -> dict[str, Any] | None:
+    try:
+        response = session.get(
+            HKMA_HIBOR_URL,
+            params={"format": "json"},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    return _parse_hkma_hibor_payload(payload)
+
+
+def _parse_hkma_hibor_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    records = result.get("records")
+    if not isinstance(records, list) or not records:
+        return None
+    record = records[0]
+    if not isinstance(record, dict):
+        return None
+    overnight = _as_float(
+        _pick_first(
+            record,
+            ("hibor_overnight", "ir_overnight", "overnight"),
+        )
+    )
+    one_month = _as_float(
+        _pick_first(
+            record,
+            ("hibor_1m", "hibor_1_month", "ir_1_month", "1_month"),
+        )
+    )
+    three_month = _as_float(
+        _pick_first(
+            record,
+            ("hibor_3m", "hibor_3_month", "ir_3_month", "3_month"),
+        )
+    )
+    if overnight is None and one_month is None and three_month is None:
+        return None
+    as_of_date = _pick_first(record, ("end_of_day", "date", "as_of_date"))
+    return {
+        "overnight_pct": overnight,
+        "one_month_pct": one_month,
+        "three_month_pct": three_month,
+        "as_of_date": str(as_of_date) if as_of_date is not None else None,
+        "source": f"{HKMA_HIBOR_URL}?format=json",
+    }
+
+
+def _pick_first(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in record and record.get(key) not in (None, "", "N/A"):
+            return record.get(key)
+    return None

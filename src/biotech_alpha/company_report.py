@@ -689,7 +689,9 @@ def _build_macro_context(
     )
 
     known_unknowns = [
-        "live HSI / HSBIO index trend",
+        "live HSI index trend",
+        "live HSBIO index trend",
+        "HIBOR tenor levels",
         "Hong Kong IPO sentiment for biotech",
         "US rate environment and USD/HKD peg status",
         "recent sector-relevant news titles",
@@ -702,13 +704,21 @@ def _build_macro_context(
             known_unknowns = [
                 item
                 for item in known_unknowns
-                if "HSI" not in item and "HSBIO" not in item
+                if "HSI index" not in item
+            ]
+        if live_block.get("hsbio"):
+            known_unknowns = [
+                item for item in known_unknowns if "HSBIO" not in item
             ]
         if live_block.get("hkd_usd"):
             known_unknowns = [
                 item
                 for item in known_unknowns
                 if "USD/HKD" not in item and "peg" not in item
+            ]
+        if live_block.get("hibor"):
+            known_unknowns = [
+                item for item in known_unknowns if "HIBOR" not in item
             ]
 
     return {
