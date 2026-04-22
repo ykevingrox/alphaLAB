@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from biotech_alpha.llm import (
+    AnthropicLLMClient,
     BudgetEnforcingLLMClient,
     FakeLLMClient,
     LLMBudgetError,
@@ -19,6 +20,7 @@ from biotech_alpha.llm import (
     StructuredPrompt,
     validate_json_schema,
 )
+from biotech_alpha.llm.client import LLMError
 from biotech_alpha.llm.trace import TraceEntry, hash_prompt
 
 
@@ -115,6 +117,40 @@ class LLMConfigFromEnvTest(unittest.TestCase):
                 config.enable_thinking,
                 f"expected falsy for {value!r}",
             )
+
+    def test_anthropic_provider_reads_anthropic_key(self) -> None:
+        config = LLMConfig.from_env(
+            {
+                "BIOTECH_ALPHA_LLM_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "sk-ant",
+            }
+        )
+        self.assertEqual(config.provider, "anthropic")
+        self.assertEqual(config.api_key, "sk-ant")
+        self.assertEqual(config.base_url, "https://api.anthropic.com")
+        self.assertEqual(config.model, "claude-3-5-sonnet-latest")
+
+    def test_anthropic_provider_requires_anthropic_key(self) -> None:
+        with self.assertRaises(LLMConfigError):
+            LLMConfig.from_env({"BIOTECH_ALPHA_LLM_PROVIDER": "anthropic"})
+
+    def test_rejects_unknown_provider(self) -> None:
+        with self.assertRaises(LLMConfigError):
+            LLMConfig.from_env(
+                {
+                    "BIOTECH_ALPHA_LLM_PROVIDER": "foo",
+                    "BIOTECH_ALPHA_LLM_API_KEY": "k",
+                }
+            )
+
+    def test_require_api_key_false_allows_empty_anthropic_key(self) -> None:
+        config = LLMConfig.from_env(
+            {"BIOTECH_ALPHA_LLM_PROVIDER": "anthropic"},
+            require_api_key=False,
+        )
+        self.assertEqual(config.provider, "anthropic")
+        self.assertEqual(config.api_key, "")
+        self.assertEqual(config.base_url, "https://api.anthropic.com")
 
 
 class JSONSchemaValidatorTest(unittest.TestCase):
@@ -366,6 +402,146 @@ class BudgetEnforcingLLMClientTest(unittest.TestCase):
         from biotech_alpha.llm import LLMError
 
         self.assertTrue(issubclass(LLMBudgetError, LLMError))
+
+
+class _FakeAnthropicContentBlock:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _FakeAnthropicUsage:
+    def __init__(self, input_tokens: int, output_tokens: int) -> None:
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class _FakeAnthropicResponse:
+    def __init__(
+        self,
+        *,
+        text: str,
+        input_tokens: int = 111,
+        output_tokens: int = 37,
+        stop_reason: str = "end_turn",
+    ) -> None:
+        self.content = [_FakeAnthropicContentBlock(text)]
+        self.usage = _FakeAnthropicUsage(input_tokens, output_tokens)
+        self.stop_reason = stop_reason
+
+    def model_dump(self) -> dict:
+        return {
+            "content": [{"text": self.content[0].text}],
+            "usage": {
+                "input_tokens": self.usage.input_tokens,
+                "output_tokens": self.usage.output_tokens,
+            },
+            "stop_reason": self.stop_reason,
+        }
+
+
+class _FakeAnthropicMessagesAPI:
+    def __init__(self, queue: list[object]) -> None:
+        self._queue = list(queue)
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):  # noqa: ANN003 - sdk-like surface
+        self.calls.append(kwargs)
+        if not self._queue:
+            raise RuntimeError("empty queue")
+        item = self._queue.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+class _FakeAnthropicClient:
+    def __init__(self, queue: list[object]) -> None:
+        self.messages = _FakeAnthropicMessagesAPI(queue)
+
+
+class _FakeAnthropicModule:
+    def __init__(self, queue: list[object]) -> None:
+        self._queue = queue
+
+    def Anthropic(self, **kwargs):  # noqa: ANN003 - sdk-like constructor
+        _ = kwargs
+        return _FakeAnthropicClient(self._queue)
+
+
+class AnthropicLLMClientTest(unittest.TestCase):
+    def _config(self) -> LLMConfig:
+        return LLMConfig.from_env(
+            {
+                "BIOTECH_ALPHA_LLM_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "sk-ant",
+                "BIOTECH_ALPHA_LLM_MODEL": "claude-test",
+            }
+        )
+
+    def test_complete_success_with_usage_and_trace(self) -> None:
+        queue = [_FakeAnthropicResponse(text='{"summary":"ok"}')]
+        client = AnthropicLLMClient(
+            self._config(),
+            _anthropic_module=_FakeAnthropicModule(queue),
+        )
+        call = client.complete(
+            system="s",
+            user="u",
+            agent_name="macro_context_llm_agent",
+            response_format_json=True,
+        )
+        self.assertTrue(call.ok)
+        self.assertEqual(call.model, "claude-test")
+        self.assertIn('"summary"', call.response_text)
+        self.assertEqual(call.prompt_tokens, 111)
+        self.assertEqual(call.completion_tokens, 37)
+        self.assertEqual(call.total_tokens, 148)
+        self.assertEqual(len(client.trace.entries), 1)
+        self.assertTrue(client.trace.entries[0].ok)
+
+    def test_complete_failure_records_trace_and_raises(self) -> None:
+        queue: list[object] = [RuntimeError("boom")]
+        client = AnthropicLLMClient(
+            self._config(),
+            _anthropic_module=_FakeAnthropicModule(queue),
+            max_retries=0,
+        )
+        with self.assertRaises(LLMError):
+            client.complete(system="s", user="u", agent_name="a")
+        self.assertEqual(len(client.trace.entries), 1)
+        self.assertFalse(client.trace.entries[0].ok)
+        self.assertIn("boom", client.trace.entries[0].error or "")
+
+    def test_constructor_rejects_empty_key(self) -> None:
+        bad = LLMConfig.from_env(
+            {"BIOTECH_ALPHA_LLM_PROVIDER": "anthropic"},
+            require_api_key=False,
+        )
+        with self.assertRaises(LLMError):
+            AnthropicLLMClient(
+                bad, _anthropic_module=_FakeAnthropicModule([])
+            )
+
+
+class BuildLLMClientRoutingTest(unittest.TestCase):
+    def test_build_llm_client_selects_anthropic(self) -> None:
+        from biotech_alpha import cli
+
+        with unittest.mock.patch.dict(
+            os.environ,
+            {
+                "BIOTECH_ALPHA_LLM_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "sk-ant",
+            },
+            clear=False,
+        ), unittest.mock.patch(
+            "biotech_alpha.llm.anthropic._load_anthropic_module",
+            return_value=_FakeAnthropicModule(
+                [_FakeAnthropicResponse(text='{"summary":"ok"}')]
+            ),
+        ):
+            client = cli._build_llm_client(("macro-context",))
+            self.assertIsInstance(client, AnthropicLLMClient)
 
 
 if __name__ == "__main__":

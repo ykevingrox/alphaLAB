@@ -370,6 +370,19 @@ Use this shape:
     default; `--macro-signals-cache-ttl-hours FLOAT` tunes the TTL;
     `--no-macro-signals-cache` bypasses the cache entirely.
   - `.gitignore` adds `data/cache/`.
+- Anthropic provider adapter is live:
+  - New `src/biotech_alpha/llm/anthropic.py` implements
+    `AnthropicLLMClient` over the Messages API and emits the same
+    `LLMCall` + `LLMTraceRecorder` fields used by existing agents.
+  - `LLMConfig` now supports
+    `BIOTECH_ALPHA_LLM_PROVIDER=openai-compatible|anthropic`,
+    provider-specific default base URL/model, and
+    `ANTHROPIC_API_KEY` env parsing.
+  - CLI `_build_llm_client` routes by `LLMConfig.provider`; existing
+    openai-compatible path remains default and unchanged.
+  - Added offline tests for Anthropic config parsing, client success /
+    failure behavior, CLI routing, and macro-context online self-skip
+    gate (`BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1` + key).
 
 ## Current Repo State
 
@@ -400,14 +413,12 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 218 unit tests ran, 212 passed, 6 skipped (online Yahoo / online
-  Tencent / four online Bailian Qwen integration tests including the
-  macro-context online self-skip; all guarded behind
-  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +28 from the previous
-  checkpoint cover the new macro-signals parser, fake-session
-  behaviour, graceful degradation, CLI flag threading, and the
-  disk-cache wrapper (miss-then-hit, TTL expiry, stale-if-error,
-  upstream exception swallowed, and per-(market, provider) keying).
+- 227 unit tests ran, 220 passed, 7 skipped (online Yahoo / online
+  Tencent / four online Bailian Qwen integration tests plus the new
+  Anthropic macro-context online self-skip; all guarded behind
+  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
+  checkpoint cover macro-signals parser + cache work and Anthropic
+  provider routing, config parsing, and client protocol tests.
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
@@ -511,18 +522,16 @@ live feed into the `macro_context` fact, with a disk-backed TTL cache
 (`CachingMacroSignalsProvider`) so back-to-back reports on several
 HK biotech names hit Yahoo exactly once per TTL. Transient 429s fall
 back to stale cache plus a cache note instead of erasing the live
-feed. The remaining M4 work is removing single-vendor LLM risk
-(Anthropic / Claude via the same `LLMClient` protocol) and a live
-smoke that captures a non-`insufficient_data` macro regime.
+feed. Anthropic provider support is now implemented through the same
+`LLMClient` protocol; remaining M4 work is live smoke validation and
+macro multi-source fallback implementation.
 
 Two immediate tracks:
 
-- `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`. Today
-  `OpenAICompatibleLLMClient` special-cases Bailian via
-  `_is_bailian_endpoint`; Claude's Messages API does not fit OpenAI
-  Chat Completions, so we need a parallel
-  `AnthropicLLMClient` exposed through the same `LLMClient` protocol
-  and routed by `LLMConfig.provider` (default "openai-compatible").
+- Anthropic live smoke + trace verification. Runtime routing now
+  supports both `openai-compatible` and `anthropic` providers; we
+  still need one real Anthropic macro-context run to validate network
+  behavior and trace fields against production responses.
 - Macro-signals live smoke + multi-source design. With the cache in
   place a single successful Yahoo fetch (from a fresh IP or after
   rate-limit reset) will service every HK company for the next 6
@@ -532,15 +541,11 @@ Two immediate tracks:
 
 ### Next Action
 
-1. Add `src/biotech_alpha/llm/anthropic.py` with an
-   `AnthropicLLMClient` implementing the `LLMClient` protocol against
-   the Anthropic Messages API. Extend `LLMConfig` with
-   `provider: Literal["openai-compatible", "anthropic"] =
-   "openai-compatible"` and an `ANTHROPIC_API_KEY` env read. Route in
-   `_build_llm_client`. Write a happy-path offline test that stubs
-   Anthropic's response shape for the `MacroContextLLMAgent`, and an
-   online smoke gated by `BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1`
-   plus `ANTHROPIC_API_KEY`.
+1. Run an Anthropic live smoke for `MacroContextLLMAgent`:
+   `BIOTECH_ALPHA_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` +
+   `--llm-agents macro-context` and confirm trace output fields
+   (`prompt_tokens`, `completion_tokens`, `finish_reason`) are
+   populated as expected.
 2. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
    once Yahoo rate-limits recover (or from a fresh IP) and confirm
    the macro agent returns a non-`insufficient_data` regime with
@@ -548,16 +553,10 @@ Two immediate tracks:
    `data/cache/macro_signals/HK_yahoo-hk.json` and confirm that a
    subsequent run on a second HK ticker reuses it without hitting
    Yahoo.
-3. Design-only checkpoint (no code yet): add a short section in
-   HANDOFF/ROADMAP that fixes the multi-source fallback plan and
-   sequencing:
-   - dependency: execute only after Anthropic adapter is merged;
-   - first implementation target: `FallbackMacroSignalsProvider`
-     chaining `Yahoo -> Stooq -> stale cache`;
-   - compatibility rule: keep the existing `live_signals` shape,
-     `source`, `fetched_at`, and `notes` keys stable;
-   - acceptance: one provider outage still yields non-empty
-     `live_signals` for HK runs when a secondary source is healthy.
+3. Implement multi-source macro fallback:
+   `FallbackMacroSignalsProvider` chaining
+   `Yahoo -> Stooq -> stale cache` while keeping `live_signals`,
+   `source`, `fetched_at`, and `notes` keys stable.
 
 ### Acceptance Criteria
 
@@ -572,10 +571,11 @@ Two immediate tracks:
   `insufficient_data` macro regime at least once (recorded in
   `data/memos/<run_id>_llm_findings.json`) and the second back-to-back
   run shows `cache: hit` in its `macro_context.live_signals.notes`.
-- Multi-source fallback plan is documented (without implementation)
-  in both `docs/HANDOFF.md` and `docs/ROADMAP.md`, with explicit
-  dependency ordering (`Anthropic` first, fallback implementation
-  second) and stable output contract requirements.
+- Anthropic live smoke succeeds and writes trace entries tagged with
+  the Anthropic model.
+- Multi-source fallback implementation preserves the existing
+  `macro_context.live_signals` contract and keeps one-command runs
+  resilient under single-provider outages.
 - No regression on the existing four-agent Qwen smoke or on the
   macro-signals offline tests.
 
@@ -598,10 +598,9 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
-   through `LLMConfig.provider`, so the runtime is not single-vendor.
-2. Multi-source macro-signals fallback implementation (after
-   Anthropic): add `FallbackMacroSignalsProvider` with
+1. Anthropic live smoke + trace verification for `macro-context`.
+2. Multi-source macro-signals fallback implementation: add
+   `FallbackMacroSignalsProvider` with
    `Yahoo -> Stooq -> stale cache`, preserving current
    `macro_context.live_signals` schema and audit fields.
 3. Extend macro signals to add HIBOR tenor levels, Hang Seng Biotech

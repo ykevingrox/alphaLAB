@@ -273,7 +273,7 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   on several HK biotech names hit Yahoo once per TTL and transient
   429s serve slightly-stale cache plus a note instead of losing the
   live feed. Gitignored under `data/cache/macro_signals/`.
-- **Planned (after Anthropic adapter)** — Multi-source macro-signals
+- **Planned (next after Anthropic live smoke)** — Multi-source macro-signals
   fallback chain so one vendor outage does not erase macro context.
   First target: `FallbackMacroSignalsProvider` with
   `Yahoo -> Stooq -> stale cache`, while keeping
@@ -291,8 +291,10 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
 - **Not started** — Orchestration fall-back: when an LLM agent fails schema
   validation three times, auto-downgrade to a shorter prompt variant or
   mark `needs_human_review=True` before giving up.
-- **Not started** — Multi-model support: Claude adapter routed by a new
-  `LLMConfig.provider` field so the runtime is not single-vendor.
+- **Done** — Multi-model support baseline: Anthropic adapter routed by
+  `LLMConfig.provider` (`openai-compatible` default,
+  `anthropic` opt-in), with provider-specific env key parsing and
+  offline protocol tests. Remaining work is live smoke validation.
 
 ## Next Execution Plan (Suggested)
 
@@ -437,8 +439,9 @@ adapter, and starting a technical / K-line agent.
   `--macro-signals yahoo-hk`. Same-market requests across different
   companies reuse one successful fetch; transient Yahoo 429s serve
   slightly-stale cache plus a note instead of losing the live feed.
-- **Not started** — Add a Claude adapter so the runtime is not single-vendor.
-- **Planned (after Claude adapter)** — Multi-source macro-signals
+- **Done** — Add a Claude/Anthropic adapter so the runtime is not
+  single-vendor (`AnthropicLLMClient` + `LLMConfig.provider` routing).
+- **Planned (after Anthropic live smoke)** — Multi-source macro-signals
   fallback implementation: `Yahoo -> Stooq -> stale cache`, preserving
   current `macro_context.live_signals` output contract and audit keys.
 - **Not started** — Short exponential backoff on Yahoo 429/503 inside

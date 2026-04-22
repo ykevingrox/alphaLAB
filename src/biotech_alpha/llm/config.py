@@ -5,10 +5,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, cast
 
 
+DEFAULT_PROVIDER: Literal["openai-compatible", "anthropic"] = (
+    "openai-compatible"
+)
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DEFAULT_MODEL = "qwen3.6-plus"
+DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
 DEFAULT_TRACE_DIR = Path("data/traces")
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
 
@@ -26,6 +32,7 @@ class LLMConfig:
     """
 
     api_key: str
+    provider: Literal["openai-compatible", "anthropic"] = DEFAULT_PROVIDER
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS
@@ -45,13 +52,21 @@ class LLMConfig:
 
         Environment variables consumed:
 
+        * ``BIOTECH_ALPHA_LLM_PROVIDER`` -- optional, one of
+          ``openai-compatible`` (default) or ``anthropic``.
         * ``BIOTECH_ALPHA_LLM_API_KEY`` -- primary. Falls back to
           ``DASHSCOPE_API_KEY`` so the same shell export works for both
-          this project and the upstream Bailian SDK examples.
+          this project and the upstream Bailian SDK examples when
+          ``provider=openai-compatible``.
+        * ``ANTHROPIC_API_KEY`` -- required when
+          ``provider=anthropic``.
         * ``BIOTECH_ALPHA_LLM_BASE_URL`` -- optional, defaults to the
-          Aliyun Bailian OpenAI-compatible endpoint.
+          Aliyun Bailian OpenAI-compatible endpoint for
+          ``provider=openai-compatible`` and to ``https://api.anthropic.com``
+          for ``provider=anthropic``.
         * ``BIOTECH_ALPHA_LLM_MODEL`` -- optional, defaults to
-          ``qwen3.6-plus`` (Bailian's current primary Qwen3 model).
+          ``qwen3.6-plus`` for ``provider=openai-compatible`` and
+          ``claude-3-5-sonnet-latest`` for ``provider=anthropic``.
         * ``BIOTECH_ALPHA_LLM_REQUEST_TIMEOUT`` -- optional float seconds.
         * ``BIOTECH_ALPHA_LLM_CALL_BUDGET`` -- optional positive integer.
           Hard ceiling on total LLM calls for one client lifetime.
@@ -69,19 +84,43 @@ class LLMConfig:
         """
 
         env = environ if environ is not None else os.environ
-        api_key = (
-            _clean(env.get("BIOTECH_ALPHA_LLM_API_KEY"))
-            or _clean(env.get("DASHSCOPE_API_KEY"))
+        provider = _parse_provider(
+            env.get("BIOTECH_ALPHA_LLM_PROVIDER"),
+            fallback=DEFAULT_PROVIDER,
         )
+        if provider == "anthropic":
+            api_key = _clean(env.get("ANTHROPIC_API_KEY"))
+        else:
+            api_key = (
+                _clean(env.get("BIOTECH_ALPHA_LLM_API_KEY"))
+                or _clean(env.get("DASHSCOPE_API_KEY"))
+            )
         if require_api_key and not api_key:
+            if provider == "anthropic":
+                raise LLMConfigError(
+                    "ANTHROPIC_API_KEY is not set while "
+                    "BIOTECH_ALPHA_LLM_PROVIDER=anthropic. Put the key "
+                    "in .env or export it in your shell; never commit "
+                    "the real value."
+                )
             raise LLMConfigError(
                 "Neither BIOTECH_ALPHA_LLM_API_KEY nor DASHSCOPE_API_KEY "
                 "is set. Put the key in .env or export it in your shell; "
                 "never commit the real value."
             )
 
-        base_url = _clean(env.get("BIOTECH_ALPHA_LLM_BASE_URL")) or DEFAULT_BASE_URL
-        model = _clean(env.get("BIOTECH_ALPHA_LLM_MODEL")) or DEFAULT_MODEL
+        default_base_url = (
+            DEFAULT_ANTHROPIC_BASE_URL
+            if provider == "anthropic"
+            else DEFAULT_BASE_URL
+        )
+        default_model = (
+            DEFAULT_ANTHROPIC_MODEL
+            if provider == "anthropic"
+            else DEFAULT_MODEL
+        )
+        base_url = _clean(env.get("BIOTECH_ALPHA_LLM_BASE_URL")) or default_base_url
+        model = _clean(env.get("BIOTECH_ALPHA_LLM_MODEL")) or default_model
         timeout = _parse_float(
             env.get("BIOTECH_ALPHA_LLM_REQUEST_TIMEOUT"),
             fallback=DEFAULT_REQUEST_TIMEOUT_SECONDS,
@@ -103,6 +142,7 @@ class LLMConfig:
         )
 
         return cls(
+            provider=provider,
             api_key=api_key or "",
             base_url=base_url,
             model=model,
@@ -161,3 +201,20 @@ def _parse_bool(value: str | None, *, fallback: bool) -> bool:
     if lowered in _FALSY:
         return False
     return fallback
+
+
+def _parse_provider(
+    value: str | None, *, fallback: Literal["openai-compatible", "anthropic"]
+) -> Literal["openai-compatible", "anthropic"]:
+    text = _clean(value)
+    if text is None:
+        return fallback
+    lowered = text.lower()
+    allowed = {"openai-compatible", "anthropic"}
+    if lowered not in allowed:
+        raise LLMConfigError(
+            "BIOTECH_ALPHA_LLM_PROVIDER must be one of "
+            "'openai-compatible' or 'anthropic', got "
+            f"{value!r}"
+        )
+    return cast(Literal["openai-compatible", "anthropic"], lowered)

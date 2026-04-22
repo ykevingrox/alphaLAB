@@ -354,5 +354,33 @@ class MacroContextOnlineTest(unittest.TestCase):
         self.assertGreaterEqual(len(recorder.entries), 1)
 
 
+@unittest.skipUnless(
+    os.getenv("BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS") == "1"
+    and bool(os.getenv("ANTHROPIC_API_KEY")),
+    "anthropic online tests disabled; set "
+    "BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1 and ANTHROPIC_API_KEY",
+)
+class MacroContextAnthropicOnlineTest(unittest.TestCase):
+    def test_live_macro_context_call_matches_schema(self) -> None:
+        from biotech_alpha.llm import (
+            AnthropicLLMClient,
+            LLMConfig,
+            LLMTraceRecorder,
+        )
+
+        env = dict(os.environ)
+        env["BIOTECH_ALPHA_LLM_PROVIDER"] = "anthropic"
+        config = LLMConfig.from_env(env)
+        recorder = LLMTraceRecorder()
+        client = AnthropicLLMClient(config, trace_recorder=recorder)
+        agent = MacroContextLLMAgent(llm_client=client)
+
+        step = agent.run(_ctx(), FactStore(_initial_facts()))
+
+        self.assertIsNone(step.error)
+        self.assertIsNotNone(step.finding)
+        self.assertGreaterEqual(len(recorder.entries), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

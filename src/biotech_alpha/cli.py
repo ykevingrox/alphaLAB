@@ -312,12 +312,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         help=(
             "Opt-in LLM agents to run after deterministic research. "
-            "Requires BIOTECH_ALPHA_LLM_API_KEY in env (see "
-            ".env.example). When triage agents are combined with the "
-            "skeptic, triage runs first and the skeptic consumes their "
-            "findings through the FactStore. Outputs are written to "
-            "data/memos/<run_id>_llm_findings.json and a trace JSONL to "
-            "data/traces/<run_id>.jsonl."
+            "Requires provider-specific env keys (see .env.example): "
+            "BIOTECH_ALPHA_LLM_API_KEY/DASHSCOPE_API_KEY for "
+            "openai-compatible, or ANTHROPIC_API_KEY when "
+            "BIOTECH_ALPHA_LLM_PROVIDER=anthropic. When triage agents are "
+            "combined with the skeptic, triage runs first and the skeptic "
+            "consumes their findings through the FactStore. Outputs are "
+            "written to data/memos/<run_id>_llm_findings.json and a trace "
+            "JSONL to data/traces/<run_id>.jsonl."
         ),
     )
     company_report_parser.add_argument(
@@ -1035,6 +1037,7 @@ def _build_llm_client(llm_agents: tuple[str, ...]):
     if not llm_agents:
         return None
     from biotech_alpha.llm import (
+        AnthropicLLMClient,
         LLMConfig,
         LLMTraceRecorder,
         OpenAICompatibleLLMClient,
@@ -1042,6 +1045,8 @@ def _build_llm_client(llm_agents: tuple[str, ...]):
 
     config = LLMConfig.from_env()
     recorder = LLMTraceRecorder()
+    if config.provider == "anthropic":
+        return AnthropicLLMClient(config, trace_recorder=recorder)
     return OpenAICompatibleLLMClient(config, trace_recorder=recorder)
 
 
