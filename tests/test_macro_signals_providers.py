@@ -22,9 +22,12 @@ from pathlib import Path
 
 from biotech_alpha.macro_signals_providers import (
     CachingMacroSignalsProvider,
+    FallbackMacroSignalsProvider,
+    STOOQ_QUOTE_URL,
     YAHOO_CHART_URL,
     _parse_hsi_trend,
     _parse_spot_rate,
+    hk_macro_signals_stooq,
     hk_macro_signals_yahoo,
 )
 
@@ -84,6 +87,12 @@ class _StubResponse:
             raise self._payload
         return self._payload
 
+    @property
+    def text(self) -> str:
+        if isinstance(self._payload, str):
+            return self._payload
+        return ""
+
 
 class _StubSession:
     """Minimal stand-in for requests.Session.
@@ -101,8 +110,11 @@ class _StubSession:
         self, url: str, *, params: dict | None = None, timeout: float
     ) -> _StubResponse:
         self.calls.append((url, params or {}))
+        symbol = str((params or {}).get("s", "")).lower()
         for suffix, response in self._responses.items():
             if url.endswith(suffix):
+                return response
+            if suffix.lower() == symbol:
                 return response
         raise AssertionError(f"unexpected URL: {url}")
 
@@ -254,6 +266,80 @@ class HkMacroSignalsYahooTest(unittest.TestCase):
             }
         )
         self.assertIsNone(hk_macro_signals_yahoo("HK", session=stub))
+
+
+class HkMacroSignalsStooqTest(unittest.TestCase):
+    def test_happy_path_returns_both_signals(self) -> None:
+        hsi_csv = (
+            "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+            "HSI,2026-04-22,17:35:00,25900,26200,25880,26163.24,0\n"
+        )
+        usdhkd_csv = (
+            "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+            "USDHKD,2026-04-22,17:35:00,7.83,7.84,7.82,7.8316,0\n"
+        )
+        stub = _StubSession(
+            {
+                "hsi": _StubResponse(hsi_csv),
+                "usdhkd": _StubResponse(usdhkd_csv),
+            }
+        )
+        out = hk_macro_signals_stooq("HK", session=stub)
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out["provider"], "stooq-hk")
+        self.assertAlmostEqual(out["hsi"]["level"], 26163.24, places=2)
+        self.assertAlmostEqual(out["hkd_usd"]["spot"], 7.8316, places=4)
+        self.assertEqual(out["notes"], [])
+        self.assertTrue(out["hsi"]["source"].startswith(STOOQ_QUOTE_URL))
+
+    def test_returns_none_when_every_feed_fails(self) -> None:
+        stub = _StubSession(
+            {
+                "hsi": _StubResponse(""),
+                "usdhkd": _StubResponse(""),
+            }
+        )
+        self.assertIsNone(hk_macro_signals_stooq("HK", session=stub))
+
+
+class FallbackMacroSignalsProviderTest(unittest.TestCase):
+    def test_uses_second_provider_after_first_fails(self) -> None:
+        calls: list[str] = []
+
+        def _none(market: str) -> dict[str, Any] | None:
+            calls.append(f"none:{market}")
+            return None
+
+        def _ok(market: str) -> dict[str, Any] | None:
+            calls.append(f"ok:{market}")
+            return {
+                "fetched_at": "2026-04-22T10:00:00+00:00",
+                "provider": "stooq-hk",
+                "hsi": {"symbol": "^HSI", "level": 26163.24},
+                "hkd_usd": {"symbol": "USDHKD", "spot": 7.8316},
+                "notes": [],
+            }
+
+        fallback = FallbackMacroSignalsProvider(
+            providers=[("yahoo-hk", _none), ("stooq-hk", _ok)]
+        )
+        out = fallback("HK")
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(calls, ["none:HK", "ok:HK"])
+        self.assertTrue(
+            any("fallback: selected stooq-hk" in n for n in out["notes"])
+        )
+
+    def test_returns_none_when_all_providers_fail(self) -> None:
+        fallback = FallbackMacroSignalsProvider(
+            providers=[
+                ("p1", lambda _m: None),
+                ("p2", lambda _m: None),
+            ]
+        )
+        self.assertIsNone(fallback("HK"))
 
 
 class MacroContextLiveSignalsIntegrationTest(unittest.TestCase):
@@ -474,12 +560,23 @@ class CliResolverCacheFlagsTest(unittest.TestCase):
 
     def test_defaults_return_caching_wrapper(self) -> None:
         from biotech_alpha.cli import _resolve_macro_signals_provider
+        from biotech_alpha.macro_signals_providers import (
+            hk_macro_signals_stooq,
+        )
 
         provider = _resolve_macro_signals_provider("yahoo-hk")
         self.assertIsInstance(provider, CachingMacroSignalsProvider)
         assert isinstance(provider, CachingMacroSignalsProvider)
-        self.assertIs(provider.inner, hk_macro_signals_yahoo)
-        self.assertEqual(provider.provider_label, "yahoo-hk")
+        self.assertIsInstance(provider.inner, FallbackMacroSignalsProvider)
+        fallback = provider.inner
+        assert isinstance(fallback, FallbackMacroSignalsProvider)
+        self.assertEqual(
+            [label for label, _fn in fallback.providers],
+            ["yahoo-hk", "stooq-hk"],
+        )
+        self.assertIs(fallback.providers[0][1], hk_macro_signals_yahoo)
+        self.assertIs(fallback.providers[1][1], hk_macro_signals_stooq)
+        self.assertEqual(provider.provider_label, "yahoo-hk+stooq-hk")
         self.assertEqual(provider.ttl, timedelta(hours=6.0))
 
     def test_disable_cache_returns_bare_callable(self) -> None:
@@ -488,7 +585,7 @@ class CliResolverCacheFlagsTest(unittest.TestCase):
         provider = _resolve_macro_signals_provider(
             "yahoo-hk", disable_cache=True
         )
-        self.assertIs(provider, hk_macro_signals_yahoo)
+        self.assertIsInstance(provider, FallbackMacroSignalsProvider)
 
     def test_zero_ttl_returns_bare_callable(self) -> None:
         from biotech_alpha.cli import _resolve_macro_signals_provider
@@ -496,7 +593,7 @@ class CliResolverCacheFlagsTest(unittest.TestCase):
         provider = _resolve_macro_signals_provider(
             "yahoo-hk", cache_ttl_hours=0
         )
-        self.assertIs(provider, hk_macro_signals_yahoo)
+        self.assertIsInstance(provider, FallbackMacroSignalsProvider)
 
     def test_custom_ttl_is_preserved(self) -> None:
         from biotech_alpha.cli import _resolve_macro_signals_provider

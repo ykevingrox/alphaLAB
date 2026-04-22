@@ -712,13 +712,13 @@ class ResolveMacroSignalsProviderTest(unittest.TestCase):
     def test_yahoo_hk_returns_cached_live_callable(self) -> None:
         from biotech_alpha.macro_signals_providers import (
             CachingMacroSignalsProvider,
-            hk_macro_signals_yahoo,
+            FallbackMacroSignalsProvider,
         )
 
         provider = _resolve_macro_signals_provider("yahoo-hk")
         self.assertIsInstance(provider, CachingMacroSignalsProvider)
         assert isinstance(provider, CachingMacroSignalsProvider)
-        self.assertIs(provider.inner, hk_macro_signals_yahoo)
+        self.assertIsInstance(provider.inner, FallbackMacroSignalsProvider)
 
 
 class CompanyReportMacroSignalsCliTest(unittest.TestCase):
@@ -729,7 +729,7 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
 
         from biotech_alpha.macro_signals_providers import (
             CachingMacroSignalsProvider,
-            hk_macro_signals_yahoo,
+            FallbackMacroSignalsProvider,
         )
 
         with patch(
@@ -756,12 +756,14 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
             provider = run.call_args.kwargs["macro_signals_provider"]
             self.assertIsInstance(provider, CachingMacroSignalsProvider)
             assert isinstance(provider, CachingMacroSignalsProvider)
-            self.assertIs(provider.inner, hk_macro_signals_yahoo)
+            self.assertIsInstance(
+                provider.inner, FallbackMacroSignalsProvider
+            )
             self.assertEqual(provider.ttl, timedelta(hours=6.0))
 
     def test_no_cache_flag_returns_bare_callable(self) -> None:
         from biotech_alpha.macro_signals_providers import (
-            hk_macro_signals_yahoo,
+            FallbackMacroSignalsProvider,
         )
 
         with patch(
@@ -785,7 +787,7 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
                 ]
             )
             provider = run.call_args.kwargs["macro_signals_provider"]
-            self.assertIs(provider, hk_macro_signals_yahoo)
+            self.assertIsInstance(provider, FallbackMacroSignalsProvider)
 
     def test_custom_ttl_flag_threads_through(self) -> None:
         from datetime import timedelta

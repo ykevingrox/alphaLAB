@@ -32,6 +32,7 @@ import requests
 
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+STOOQ_QUOTE_URL = "https://stooq.com/q/l/"
 
 # Yahoo's public chart endpoint aggressively 429s low-volume /
 # bot-flavoured User-Agents. A browser-class string reduces the
@@ -323,6 +324,93 @@ class CachingMacroSignalsProvider:
         return self.cache_dir / f"{safe_market}_{safe_provider}.json"
 
 
+@dataclass
+class FallbackMacroSignalsProvider:
+    """Try multiple providers in order until one returns usable payload.
+
+    Each provider is a ``(label, callable)`` pair. The first non-``None``
+    payload wins. Failures are treated as soft and summarized in ``notes``.
+    """
+
+    providers: list[tuple[str, MacroSignalsProvider]]
+
+    def __call__(self, market: str) -> dict[str, Any] | None:
+        failures: list[str] = []
+        for label, provider in self.providers:
+            try:
+                payload = provider(market)
+            except Exception:  # noqa: BLE001 - keep one-command resilient
+                payload = None
+            if payload is None:
+                failures.append(label)
+                continue
+            if failures:
+                failure_chain = " -> ".join(failures + [label])
+                return _attach_note(
+                    payload,
+                    (
+                        "fallback: selected "
+                        f"{label} after failures in {failure_chain}"
+                    ),
+                )
+            return payload
+        return None
+
+
+def hk_macro_signals_stooq(
+    market: str,
+    *,
+    session: requests.Session | None = None,
+    timeout: float = 10.0,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Stooq-backed fallback provider for HK macro signals.
+
+    Stooq acts as a public, no-key fallback when Yahoo is unavailable.
+    Returns the same shape keys (`hsi`, `hkd_usd`, `notes`) so downstream
+    prompt contracts remain unchanged.
+    """
+
+    if market != "HK":
+        return None
+
+    owned = session is None
+    http = session or requests.Session()
+    http.headers.setdefault("User-Agent", _DEFAULT_USER_AGENT)
+    notes: list[str] = []
+    try:
+        # Stooq symbols are lowercase and usually no caret in query.
+        hsi_latest = _fetch_stooq_latest_row(
+            http, symbol="hsi", timeout=timeout
+        )
+        # USD/HKD spot proxy from Stooq FX symbol.
+        hkd_latest = _fetch_stooq_latest_row(
+            http, symbol="usdhkd", timeout=timeout
+        )
+    finally:
+        if owned:
+            http.close()
+
+    hsi = _stooq_hsi_payload(hsi_latest)
+    if hsi is None:
+        notes.append("hsi: unavailable (stooq fetch failed or empty)")
+    hkd_usd = _stooq_hkd_payload(hkd_latest)
+    if hkd_usd is None:
+        notes.append("hkd_usd: unavailable (stooq fetch failed or empty)")
+
+    if hsi is None and hkd_usd is None:
+        return None
+
+    as_of = (now or datetime.now(tz=timezone.utc)).isoformat()
+    return {
+        "fetched_at": as_of,
+        "provider": "stooq-hk",
+        "hsi": hsi,
+        "hkd_usd": hkd_usd,
+        "notes": notes,
+    }
+
+
 def _read_cache_entry(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -378,3 +466,71 @@ def _attach_note(
     notes.append(note)
     cloned["notes"] = notes
     return cloned
+
+
+def _fetch_stooq_latest_row(
+    session: requests.Session,
+    *,
+    symbol: str,
+    timeout: float,
+) -> dict[str, str] | None:
+    try:
+        response = session.get(
+            STOOQ_QUOTE_URL,
+            params={
+                "s": symbol,
+                "i": "d",
+                "f": "sd2t2ohlcv",
+                "e": "csv",
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+    text = response.text.strip()
+    if not text:
+        return None
+    lines = text.splitlines()
+    if len(lines) < 2:
+        return None
+    headers = [h.strip().lower() for h in lines[0].split(",")]
+    values = [v.strip() for v in lines[1].split(",")]
+    if len(values) != len(headers):
+        return None
+    row = dict(zip(headers, values))
+    if row.get("close") in {None, "", "N/D"}:
+        return None
+    return row
+
+
+def _stooq_hsi_payload(row: dict[str, str] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    close = _as_float(row.get("close"))
+    if close is None:
+        return None
+    date_value = row.get("date")
+    return {
+        "symbol": "^HSI",
+        "currency": "HKD",
+        "level": close,
+        "trend_30d_pct": None,
+        "period_start": None,
+        "period_end": date_value,
+        "source": f"{STOOQ_QUOTE_URL}?s=hsi&i=d&e=csv",
+    }
+
+
+def _stooq_hkd_payload(row: dict[str, str] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    close = _as_float(row.get("close"))
+    if close is None:
+        return None
+    return {
+        "symbol": "USDHKD",
+        "spot": close,
+        "quote_convention": "USD_to_HKD_stooq_usdhkd",
+        "source": f"{STOOQ_QUOTE_URL}?s=usdhkd&i=d&e=csv",
+    }

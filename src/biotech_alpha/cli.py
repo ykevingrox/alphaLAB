@@ -1013,19 +1013,27 @@ def _resolve_macro_signals_provider(
     from biotech_alpha.macro_signals_providers import (
         CachingMacroSignalsProvider,
         DEFAULT_CACHE_DIR,
+        FallbackMacroSignalsProvider,
+        hk_macro_signals_stooq,
         hk_macro_signals_yahoo,
+    )
+    composite = FallbackMacroSignalsProvider(
+        providers=[
+            ("yahoo-hk", hk_macro_signals_yahoo),
+            ("stooq-hk", hk_macro_signals_stooq),
+        ]
     )
 
     if disable_cache:
-        return hk_macro_signals_yahoo
+        return composite
     if cache_ttl_hours is not None and cache_ttl_hours <= 0:
-        return hk_macro_signals_yahoo
+        return composite
     from datetime import timedelta
 
     ttl = timedelta(hours=cache_ttl_hours or 6.0)
     return CachingMacroSignalsProvider(
-        inner=hk_macro_signals_yahoo,
-        provider_label="yahoo-hk",
+        inner=composite,
+        provider_label="yahoo-hk+stooq-hk",
         cache_dir=DEFAULT_CACHE_DIR,
         ttl=ttl,
     )

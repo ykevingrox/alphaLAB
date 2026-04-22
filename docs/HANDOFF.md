@@ -383,6 +383,18 @@ Use this shape:
   - Added offline tests for Anthropic config parsing, client success /
     failure behavior, CLI routing, and macro-context online self-skip
     gate (`BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1` + key).
+- Multi-source macro fallback is live:
+  - New `FallbackMacroSignalsProvider` chains
+    `Yahoo -> Stooq -> stale cache` while preserving the
+    `macro_context.live_signals` shape (`provider`, `hsi`, `hkd_usd`,
+    `fetched_at`, `notes`).
+  - New fallback source `hk_macro_signals_stooq` provides a no-key
+    public backup for HSI level and USD/HKD spot when Yahoo is
+    unavailable.
+  - CLI `--macro-signals yahoo-hk` now resolves to a cached composite
+    provider (`yahoo-hk+stooq-hk`) instead of Yahoo-only.
+  - Offline tests now cover Stooq parsing, fallback selection order,
+    and resolver behavior under cache/no-cache modes.
 
 ## Current Repo State
 
@@ -413,12 +425,12 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 227 unit tests ran, 220 passed, 7 skipped (online Yahoo / online
+- 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
-  checkpoint cover macro-signals parser + cache work and Anthropic
-  provider routing, config parsing, and client protocol tests.
+  checkpoint cover macro-signals parser + cache + multi-source
+  fallback work and Anthropic provider routing/config/client tests.
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
@@ -518,13 +530,12 @@ Latest smoke result:
 ### Current Task
 
 `--macro-signals yahoo-hk` now threads a source-tagged HSI + USD-HKD
-live feed into the `macro_context` fact, with a disk-backed TTL cache
-(`CachingMacroSignalsProvider`) so back-to-back reports on several
-HK biotech names hit Yahoo exactly once per TTL. Transient 429s fall
-back to stale cache plus a cache note instead of erasing the live
-feed. Anthropic provider support is now implemented through the same
-`LLMClient` protocol; remaining M4 work is live smoke validation and
-macro multi-source fallback implementation.
+live feed into the `macro_context` fact via a multi-source chain:
+`Yahoo -> Stooq -> stale cache`. The disk-backed TTL cache
+(`CachingMacroSignalsProvider`) keeps back-to-back HK biotech runs to
+one upstream fetch per TTL. Anthropic provider support is implemented
+through the same `LLMClient` protocol; remaining M4 work is live smoke
+validation and macro-signal breadth expansion (HIBOR / ^HSBIO / news).
 
 Two immediate tracks:
 
@@ -532,12 +543,10 @@ Two immediate tracks:
   supports both `openai-compatible` and `anthropic` providers; we
   still need one real Anthropic macro-context run to validate network
   behavior and trace fields against production responses.
-- Macro-signals live smoke + multi-source design. With the cache in
-  place a single successful Yahoo fetch (from a fresh IP or after
-  rate-limit reset) will service every HK company for the next 6
-  hours; we want to capture that run end-to-end and then define a
-  source fallback chain (`Yahoo -> Stooq -> stale cache`) so one
-  vendor's outage no longer gates macro context quality.
+- Macro-signals live smoke + breadth expansion. With the fallback chain
+  now implemented, capture one successful four-agent run showing
+  non-`insufficient_data` macro regime and then extend signal breadth
+  (HIBOR tenors, ^HSBIO, source-tagged sector headlines).
 
 ### Next Action
 
@@ -550,13 +559,12 @@ Two immediate tracks:
    once Yahoo rate-limits recover (or from a fresh IP) and confirm
    the macro agent returns a non-`insufficient_data` regime with
    cited live values. Document the resulting
-   `data/cache/macro_signals/HK_yahoo-hk.json` and confirm that a
-   subsequent run on a second HK ticker reuses it without hitting
-   Yahoo.
-3. Implement multi-source macro fallback:
-   `FallbackMacroSignalsProvider` chaining
-   `Yahoo -> Stooq -> stale cache` while keeping `live_signals`,
-   `source`, `fetched_at`, and `notes` keys stable.
+   `data/cache/macro_signals/HK_yahoo-hk+stooq-hk.json` and confirm
+   that a subsequent run on a second HK ticker reuses it without
+   hitting upstream.
+3. Extend macro signals to include HIBOR tenors, `^HSBIO`, and a
+   small source-tagged sector-news block while preserving existing
+   `live_signals` compatibility keys.
 
 ### Acceptance Criteria
 
@@ -573,9 +581,9 @@ Two immediate tracks:
   run shows `cache: hit` in its `macro_context.live_signals.notes`.
 - Anthropic live smoke succeeds and writes trace entries tagged with
   the Anthropic model.
-- Multi-source fallback implementation preserves the existing
-  `macro_context.live_signals` contract and keeps one-command runs
-  resilient under single-provider outages.
+- Multi-source fallback path keeps one-command runs resilient under
+  single-provider outages and still writes stable
+  `macro_context.live_signals` keys.
 - No regression on the existing four-agent Qwen smoke or on the
   macro-signals offline tests.
 
@@ -599,28 +607,24 @@ set -a; source .env; set +a
 ### Queue
 
 1. Anthropic live smoke + trace verification for `macro-context`.
-2. Multi-source macro-signals fallback implementation: add
-   `FallbackMacroSignalsProvider` with
-   `Yahoo -> Stooq -> stale cache`, preserving current
-   `macro_context.live_signals` schema and audit fields.
-3. Extend macro signals to add HIBOR tenor levels, Hang Seng Biotech
+2. Extend macro signals to add HIBOR tenor levels, Hang Seng Biotech
    sub-index (^HSBIO), and a small list of source-tagged sector news
    headlines.
-4. Add a short exponential backoff on Yahoo 429/503 inside
+3. Add a short exponential backoff on Yahoo 429/503 inside
    `hk_macro_signals_yahoo` before surrendering to the stale-cache
    fallback, so the first cold run has a better chance of warming
    the cache.
-5. Add auto competitor drafts once pipeline extraction is reliable.
-6. Keep broadening fixtures across representative HK biotech disclosure
+4. Add auto competitor drafts once pipeline extraction is reliable.
+5. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-7. Tighten validator checks for stale placeholders and weak evidence
+6. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-8. Add a US-market sibling market-data provider, so the auto-draft path
+7. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-9. Consider a deterministic post-processor that turns LLM findings into
+8. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-10. Consider a `K-line technical agent` (name TBD) that reads a
+9. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.
