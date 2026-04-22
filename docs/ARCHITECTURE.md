@@ -54,6 +54,42 @@ Investment Committee Agent
 Research Memo + Watchlist Decision + Target Price Range
 ```
 
+## Online Runtime And Offline Fixtures
+
+The intended product path is online:
+
+- Resolve the company identity.
+- Fetch current source materials from official or licensed sources.
+- Parse and normalize those materials into structured research inputs.
+- Preserve source links, source dates, validation warnings, and generated
+  artifacts in the run manifest.
+
+Offline fixtures are not the normal product path and should not be treated as a
+fallback research mode. They are a regression harness. Their job is to make sure
+known parsing behavior does not silently drift when code, prompts, source
+formats, or extraction rules change.
+
+Use fixtures to lock in lessons from real source documents. For example, when a
+HKEX annual-results PDF teaches the system that `P1021` is a payload, `C9074`
+is a partial table artifact from `BG-C9074`, or `BNT116` is a combination
+partner asset, capture a small network-free sample and assert the expected
+output.
+
+The durable pattern is:
+
+```text
+online ingestion for fresh research
+offline fixtures for regression safety
+validators for schema and evidence quality
+manifests for auditability
+```
+
+AI extraction can improve coverage, but it does not remove the need for
+fixtures. LLM behavior, PDF text extraction, website layouts, disclosure
+language, and source availability can all drift. Representative fixtures should
+therefore be added whenever the project fixes an extraction bug, adds a source
+type, or supports a materially different company disclosure style.
+
 ## Data Layers
 
 ### Raw Data

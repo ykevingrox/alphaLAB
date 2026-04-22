@@ -28,6 +28,29 @@ Research-run input types preserve source references and validation warnings in
 the run manifest. Target-price assumptions feed deterministic event-impact and
 rNPV scenario outputs, and those artifacts can be attached to research memos.
 
+## Online Collection And Regression Fixtures
+
+The system is designed to run online for real research. A normal report should
+fetch or query current sources such as HKEXnews, ClinicalTrials.gov, company IR
+pages, conference disclosures, regulatory databases, and future market-data
+connectors.
+
+Network-free fixtures serve a different purpose. They are small, frozen samples
+used by tests to prevent parsing regressions. They are not a substitute for
+fresh source collection and should not be used as stale research inputs for live
+reports.
+
+Fixture guidance:
+
+- Add a fixture when a real source exposes an extraction edge case.
+- Keep fixture content as small as possible while preserving the bug or behavior
+  being tested.
+- Assert both positive and negative behavior: what should be extracted, and
+  what should not be extracted.
+- Prefer source-backed examples over synthetic-only examples when possible.
+- Keep generated runtime outputs out of git; commit only intentional fixtures
+  and tests.
+
 Target-price assumptions need curated inputs for:
 
 - Current share price and shares outstanding

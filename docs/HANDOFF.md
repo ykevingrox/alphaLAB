@@ -52,6 +52,9 @@ from getting the MVP stable.
   can fill phase or indication fields from earlier summary mentions.
 - HKEX source discovery and PDF download use lightweight retries for transient
   request failures.
+- Architecture and data-source docs now record that online ingestion is the
+  product path, while offline fixtures are regression guards rather than stale
+  fallback research inputs.
 
 ## Current Repo State
 
@@ -125,5 +128,7 @@ Latest smoke result:
   fails.
 - Saved reports should remain auditable through source links, manifests, and
   validation warnings.
+- Do not replace online source collection with fixture data in live reports;
+  fixtures are for regression tests.
 - Do not commit generated PDFs, processed report outputs, memos, virtualenvs, or
   cache files.
