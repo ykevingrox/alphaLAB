@@ -13,5 +13,7 @@ data/raw/
 data/input/generated/
 data/processed/
 data/memos/
+data/traces/
 .env
 .env.*
+!.env.example

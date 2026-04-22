@@ -14,6 +14,7 @@ from biotech_alpha.auto_inputs import (
     draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
+    draft_valuation_snapshot,
     generate_auto_inputs,
 )
 from biotech_alpha.company_report import CompanyIdentity
@@ -222,6 +223,200 @@ class AutoInputsTest(unittest.TestCase):
             self.assertEqual(financials["cash_and_equivalents"], 3324529000)
             self.assertEqual(conference["catalysts"][0]["category"], "conference")
             self.assertIn("pipeline_assets", manifest["generated_inputs"])
+
+    def test_draft_valuation_snapshot_from_market_data_payload(self) -> None:
+        market_data = {
+            "as_of_date": "2026-04-22",
+            "currency": "HKD",
+            "market_cap": 25_000_000_000,
+            "share_price": 35.2,
+            "shares_outstanding": 710_000_000,
+            "source": "https://example.com/09606-quote",
+            "source_date": "2026-04-22",
+            "financials": {
+                "cash_and_equivalents": 1_200_000_000,
+                "total_debt": 300_000_000,
+                "revenue_ttm": 1_500_000_000,
+            },
+        }
+        result = draft_valuation_snapshot(
+            identity=CompanyIdentity(company="DualityBio", ticker="09606.HK"),
+            market_data=market_data,
+        )
+
+        payload = result["payload"]
+        self.assertEqual(result["warnings"], [])
+        self.assertTrue(result["writeable"])
+        self.assertEqual(payload["company"], "DualityBio")
+        self.assertEqual(payload["market_cap"], 25_000_000_000)
+        self.assertEqual(payload["cash_and_equivalents"], 1_200_000_000)
+        self.assertEqual(payload["source"], "https://example.com/09606-quote")
+        self.assertEqual(
+            payload["generated_by"], "auto_inputs.market_data_provider"
+        )
+        self.assertTrue(payload["needs_human_review"])
+
+    def test_generate_auto_inputs_with_market_data_provider(self) -> None:
+        provider_calls: list[CompanyIdentity] = []
+
+        def provider(identity: CompanyIdentity) -> dict[str, object]:
+            provider_calls.append(identity)
+            return {
+                "as_of_date": "2026-04-22",
+                "currency": "HKD",
+                "market_cap": 25_000_000_000,
+                "source": "https://example.com/09606-quote",
+                "source_date": "2026-04-22",
+                "financials": {
+                    "cash_and_equivalents": 1_200_000_000,
+                    "total_debt": 300_000_000,
+                    "revenue_ttm": 1_500_000_000,
+                },
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_dir = root / "raw_fixture"
+            raw_dir.mkdir()
+            source = _source(
+                file_path=raw_dir / "results.pdf",
+                text_path=raw_dir / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
+
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ), patch(
+                "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                return_value={"NEWS_ID": "fixture"},
+            ), patch(
+                "biotech_alpha.auto_inputs._download_and_extract_document",
+                return_value=source,
+            ):
+                artifacts = generate_auto_inputs(
+                    identity=CompanyIdentity(
+                        company="DualityBio",
+                        ticker="09606.HK",
+                    ),
+                    input_dir=root / "generated",
+                    output_dir=root / "out",
+                    market_data_provider=provider,
+                )
+
+            self.assertEqual(len(provider_calls), 1)
+            self.assertIsNotNone(artifacts.valuation)
+            self.assertEqual(artifacts.warnings, ())
+
+            valuation_payload = _read_json(artifacts.valuation)
+            self.assertEqual(valuation_payload["market_cap"], 25_000_000_000)
+            self.assertEqual(valuation_payload["currency"], "HKD")
+            self.assertEqual(
+                valuation_payload["source"], "https://example.com/09606-quote"
+            )
+            manifest = _read_json(artifacts.source_manifest)
+            self.assertIn("valuation", manifest["generated_inputs"])
+            self.assertIn("valuation", manifest["validation"])
+
+    def test_generate_auto_inputs_bubbles_warnings_when_snapshot_unwriteable(
+        self,
+    ) -> None:
+        def provider(_identity: CompanyIdentity) -> dict[str, object]:
+            return {
+                "as_of_date": "2026-04-22",
+                "currency": "HKD",
+                "market_cap": None,
+                "share_price": 12.5,
+                "shares_outstanding": None,
+                "source": "https://example.com/halted-quote",
+                "source_date": "2026-04-22",
+                "warnings": [
+                    "halted or stale quote: no market cap or shares outstanding",
+                ],
+            }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_dir = root / "raw_fixture"
+            raw_dir.mkdir()
+            source = _source(
+                file_path=raw_dir / "results.pdf",
+                text_path=raw_dir / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
+
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ), patch(
+                "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                return_value={"NEWS_ID": "fixture"},
+            ), patch(
+                "biotech_alpha.auto_inputs._download_and_extract_document",
+                return_value=source,
+            ):
+                artifacts = generate_auto_inputs(
+                    identity=CompanyIdentity(
+                        company="DualityBio",
+                        ticker="09606.HK",
+                    ),
+                    input_dir=root / "generated",
+                    output_dir=root / "out",
+                    market_data_provider=provider,
+                )
+
+            self.assertIsNone(artifacts.valuation)
+            self.assertTrue(
+                any(
+                    "halted" in warning for warning in artifacts.warnings
+                ),
+                msg=f"expected halted warning, got {artifacts.warnings}",
+            )
+
+    def test_generate_auto_inputs_degrades_when_provider_fails(self) -> None:
+        def provider(_identity: CompanyIdentity) -> dict[str, object]:
+            raise RuntimeError("provider unreachable")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_dir = root / "raw_fixture"
+            raw_dir.mkdir()
+            source = _source(
+                file_path=raw_dir / "results.pdf",
+                text_path=raw_dir / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
+
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ), patch(
+                "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                return_value={"NEWS_ID": "fixture"},
+            ), patch(
+                "biotech_alpha.auto_inputs._download_and_extract_document",
+                return_value=source,
+            ):
+                artifacts = generate_auto_inputs(
+                    identity=CompanyIdentity(
+                        company="DualityBio",
+                        ticker="09606.HK",
+                    ),
+                    input_dir=root / "generated",
+                    output_dir=root / "out",
+                    market_data_provider=provider,
+                )
+
+            self.assertIsNone(artifacts.valuation)
+            self.assertIsNotNone(artifacts.pipeline_assets)
+            self.assertIsNotNone(artifacts.financials)
+            self.assertTrue(
+                any("provider" in warning for warning in artifacts.warnings),
+                msg=f"expected provider warning, got {artifacts.warnings}",
+            )
 
     def test_generate_auto_inputs_skips_non_hk_identity_without_network(self) -> None:
         with patch("requests.Session") as session:

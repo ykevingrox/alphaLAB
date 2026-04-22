@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urljoin
 
 import requests
@@ -24,10 +24,21 @@ from biotech_alpha.financials import (
     financial_validation_report_as_dict,
     validate_financial_snapshot_file,
 )
+from biotech_alpha.market_data import (
+    normalize_hk_market_data,
+    valuation_snapshot_payload_from_market_data,
+)
 from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
 )
+from biotech_alpha.valuation import (
+    valuation_validation_report_as_dict,
+    validate_valuation_snapshot_file,
+)
+
+
+MarketDataProvider = Callable[[CompanyIdentity], dict[str, Any] | None]
 
 
 HKEX_BASE_URL = "https://www1.hkexnews.hk"
@@ -59,6 +70,7 @@ class AutoInputArtifacts:
     pipeline_assets: Path | None = None
     financials: Path | None = None
     conference_catalysts: Path | None = None
+    valuation: Path | None = None
     validation: dict[str, Any] | None = None
     source_documents: tuple[SourceDocument, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -71,8 +83,15 @@ def generate_auto_inputs(
     output_dir: str | Path = "data",
     overwrite: bool = False,
     timeout: int = 30,
+    market_data_provider: MarketDataProvider | None = None,
 ) -> AutoInputArtifacts:
-    """Generate draft curated inputs for the current HK biotech MVP."""
+    """Generate draft curated inputs for the current HK biotech MVP.
+
+    When ``market_data_provider`` is supplied and returns a non-empty payload,
+    a source-backed valuation snapshot draft is written alongside the other
+    generated inputs. Provider failures or empty payloads degrade gracefully
+    into warnings so the one-command report keeps working.
+    """
 
     if identity.market != "HK" or not identity.ticker:
         return AutoInputArtifacts(
@@ -120,6 +139,7 @@ def generate_auto_inputs(
     pipeline_path = generated_input_dir / f"{slug}_pipeline_assets.json"
     financials_path = generated_input_dir / f"{slug}_financials.json"
     conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
+    valuation_path = generated_input_dir / f"{slug}_valuation.json"
 
     if overwrite or not pipeline_path.exists():
         _write_json(
@@ -149,6 +169,29 @@ def generate_auto_inputs(
             ),
         )
 
+    valuation_warnings: list[str] = []
+    valuation_written_path: Path | None = None
+    if market_data_provider is not None and (
+        overwrite or not valuation_path.exists()
+    ):
+        payload, provider_warnings = _safe_market_data_payload(
+            provider=market_data_provider,
+            identity=identity,
+        )
+        valuation_warnings.extend(provider_warnings)
+        if payload is not None:
+            draft = draft_valuation_snapshot(
+                identity=identity,
+                market_data=payload,
+            )
+            valuation_warnings.extend(draft["warnings"])
+            if draft.get("writeable"):
+                _write_json(valuation_path, draft["payload"])
+                valuation_written_path = valuation_path
+
+    if valuation_written_path is None and valuation_path.exists():
+        valuation_written_path = valuation_path
+
     validation = {
         "pipeline_assets": validation_report_as_dict(
             validate_pipeline_asset_file(pipeline_path)
@@ -160,19 +203,28 @@ def generate_auto_inputs(
             validate_conference_catalyst_file(conference_path)
         ),
     }
+    if valuation_written_path is not None:
+        validation["valuation"] = valuation_validation_report_as_dict(
+            validate_valuation_snapshot_file(valuation_written_path)
+        )
+
+    generated_inputs: dict[str, Path] = {
+        "pipeline_assets": pipeline_path,
+        "financials": financials_path,
+        "conference_catalysts": conference_path,
+    }
+    if valuation_written_path is not None:
+        generated_inputs["valuation"] = valuation_written_path
+
     manifest_path = processed_dir / f"{date.today().isoformat()}_source_manifest.json"
     _write_json(
         manifest_path,
         {
             "identity": asdict(identity),
             "source_documents": [asdict(document)],
-            "generated_inputs": {
-                "pipeline_assets": pipeline_path,
-                "financials": financials_path,
-                "conference_catalysts": conference_path,
-            },
+            "generated_inputs": generated_inputs,
             "validation": validation,
-            "warnings": [],
+            "warnings": list(valuation_warnings),
         },
     )
     return AutoInputArtifacts(
@@ -180,8 +232,10 @@ def generate_auto_inputs(
         pipeline_assets=pipeline_path,
         financials=financials_path,
         conference_catalysts=conference_path,
+        valuation=valuation_written_path,
         validation=validation,
         source_documents=(document,),
+        warnings=tuple(valuation_warnings),
     )
 
 
@@ -415,6 +469,86 @@ def draft_financial_snapshot(
         "generated_by": "auto_inputs.hkex_annual_results",
         "needs_human_review": True,
     }
+
+
+def draft_valuation_snapshot(
+    *,
+    identity: CompanyIdentity,
+    market_data: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a draft valuation snapshot payload from a market-data provider.
+
+    Returns a dict with keys ``payload`` (JSON-serializable valuation snapshot)
+    and ``warnings`` (list of normalization warnings for auditability).
+    """
+
+    normalized = normalize_hk_market_data(market_data)
+    financials = market_data.get("financials") if isinstance(
+        market_data.get("financials"), dict
+    ) else {}
+    cash = _optional_float(financials.get("cash_and_equivalents")) or 0.0
+    debt = _optional_float(financials.get("total_debt")) or 0.0
+    revenue = _optional_float(financials.get("revenue_ttm"))
+
+    payload = valuation_snapshot_payload_from_market_data(
+        company=identity.company,
+        ticker=identity.ticker,
+        normalized=normalized,
+        cash_and_equivalents=cash,
+        total_debt=debt,
+        revenue_ttm=revenue,
+    )
+    payload["generated_by"] = "auto_inputs.market_data_provider"
+    payload["needs_human_review"] = True
+
+    writeable = normalized.market_cap is not None or (
+        normalized.share_price is not None
+        and normalized.shares_outstanding is not None
+    )
+
+    return {
+        "payload": payload,
+        "writeable": writeable,
+        "warnings": [
+            f"valuation draft: {warning}" for warning in normalized.warnings
+        ],
+    }
+
+
+def _safe_market_data_payload(
+    *,
+    provider: MarketDataProvider,
+    identity: CompanyIdentity,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Invoke a market-data provider without breaking the report flow."""
+
+    try:
+        payload = provider(identity)
+    except Exception as exc:  # noqa: BLE001 - keep one-command flow resilient.
+        return None, [f"market data provider failed: {exc}"]
+    if payload is None:
+        return None, ["market data provider returned no payload"]
+    if not isinstance(payload, dict):
+        return None, ["market data provider returned non-dict payload"]
+    return payload, []
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        compact = value.replace(",", "").strip()
+        if not compact:
+            return None
+        try:
+            return float(compact)
+        except ValueError:
+            return None
+    return None
 
 
 def draft_conference_catalysts(

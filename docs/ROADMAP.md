@@ -1,10 +1,23 @@
 # Roadmap
 
+## Product Thesis
+
+Build an AI-assisted research system for long-term investing in innovative
+drug companies, where multiple LLM agents collaborate with deterministic
+pipelines to produce auditable investment analysis.
+
+The design target is a graph of agents with clearly separated responsibilities
+— data collection, cleansing, pipeline triage, clinical trials, financial
+triage, competitive landscape, valuation, K-line / technical timing, macro
+context, and scientific skeptic — all writing into a shared, traceable fact
+store and producing `AgentFinding` outputs with source, severity, and
+confidence. HK biotech is the first vertical we harden, not the endgame.
+
 ## MVP Strategy
 
-The near-term priority remains a working Hong Kong biotech MVP. Future expansion
-to other Hong Kong sectors, US stocks, and A-shares should influence module
-boundaries, but it should not distract the current implementation.
+The near-term priority remains a working Hong Kong biotech MVP. Future
+expansion to other HK sectors, US stocks, and A-shares should influence
+module boundaries, but it should not distract the current implementation.
 
 Design rules for new work:
 
@@ -13,8 +26,11 @@ Design rules for new work:
 - Put HKEX-specific discovery and filing logic behind market boundaries.
 - Preserve curated JSON contracts because future auto-extraction can populate
   the same contracts.
-- Prefer one-command workflows for users, while keeping lower-level commands for
-  debugging and reproducibility.
+- Prefer one-command workflows for users, while keeping lower-level commands
+  for debugging and reproducibility.
+- Every LLM call is audited via `LLMTraceRecorder` and budget-capped.
+- LLM agents must always be opt-in; deterministic path must continue to
+  produce a useful first-pass report with zero network-LLM traffic.
 
 ## Milestone A: One-Command HK Biotech Report
 
@@ -128,17 +144,20 @@ analysis are pending.
 Status: partially implemented. The current memo combines clinical trials,
 curated pipeline assets, deterministic asset-trial matches, derived catalysts,
 cash runway, curated competitive landscape findings, valuation context, key
-risks, evidence, and follow-up questions. A deterministic data-quality finding
-flags missing inputs and validation warnings. A deterministic skeptical review
-finding now produces counter-thesis risks from current structured inputs.
-When target-price assumptions are supplied, the memo includes a
-`Catalyst-Adjusted Valuation` section. Deeper LLM scientific critique is
-pending.
+risks, evidence, and follow-up questions. A deterministic data-quality
+finding flags missing inputs and validation warnings. A deterministic
+skeptical review finding produces counter-thesis risks from current
+structured inputs. An LLM-backed `ScientificSkepticLLMAgent` now augments
+this via the new AgentGraph runtime (opt-in through `--llm-agents
+scientific-skeptic`) and produces a structured counter-thesis with
+per-risk severity. Deeper multi-agent critique is tracked in Phase 10.
 
 - Combine pipeline, trial, catalyst, competition, cash runway, and valuation
   outputs.
 - Generate a memo with bull case, bear case, evidence table, and watchlist
   decision.
+- Surface LLM findings alongside deterministic ones when they are produced,
+  without changing the default LLM-free behaviour.
 
 ## Phase 7: Portfolio Layer
 
@@ -185,6 +204,40 @@ Status: not started.
 - Backtest watchlist entry rules.
 - Backtest historical catalyst-event reactions and target-range calibration.
 - Avoid look-ahead bias by using historical source snapshots.
+
+## Phase 10: Multi-LLM Agent Runtime
+
+Status: partially implemented. A custom lightweight `AgentGraph` runtime is
+in place (`src/biotech_alpha/agent_runtime.py`) with a thread-safe
+`FactStore`, topological layer scheduling, same-layer parallelism, and
+per-agent error isolation. An OpenAI-compatible LLM adapter targets
+Alibaba Bailian's `/compatible-mode/v1` endpoint with `qwen3.6-plus` as the
+default model. A first LLM agent, `ScientificSkepticLLMAgent`, is wired
+behind `company-report --llm-agents scientific-skeptic`. All LLM calls are
+JSONL-traced with token counts, latency, and a run-level cost summary.
+
+- **Done** — LLM adapter layer (config, client, trace, prompt templating,
+  lightweight JSON-schema validation). Supports `DASHSCOPE_API_KEY` fallback
+  and explicit `enable_thinking` control for Qwen3 models.
+- **Done** — `AgentGraph` + `FactStore` + `Agent` + `DeterministicAgent`.
+- **Done** — First LLM agent (`ScientificSkepticLLMAgent`) with strict
+  top-level JSON shape, per-risk severity enum, and asset/evidence refs.
+- **In progress** — Second LLM agent (`PipelineTriageAgent`): structured
+  per-asset triage against the deterministic pipeline and source-text
+  excerpts.
+- **Not started** — Financial triage agent (burn-rate + runway cross-check).
+- **Not started** — Macro context agent (sector / policy / rate-sensitivity
+  narrative; feeds the skeptic via `FactStore`).
+- **Not started** — Technical / K-line agent (long-horizon trend read on top
+  of a future market-data pipeline).
+- **Not started** — Orchestration fall-back: when an LLM agent fails schema
+  validation three times, auto-downgrade to a shorter prompt variant or
+  mark `needs_human_review=True` before giving up.
+- **Not started** — Multi-model support: Claude adapter reusing
+  `LLMConfig` / `OpenAICompatibleLLMClient` abstractions with provider
+  routing by `model` prefix.
+- **Not started** — Per-agent budget caps inside `LLMTraceRecorder` so a
+  single runaway agent cannot exhaust the run budget.
 
 ## Next Execution Plan (Suggested)
 
@@ -262,6 +315,27 @@ and web ingestion out).
   target/indication matching toward better data-maturity and differentiation
   checks.
 
-- **Not started** — Keep memo outputs deterministic-first while introducing a
-  bounded, auditable scientific critique layer (LLM-backed critique still out of
-  scope for the current deterministic memo).
+- **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
+  a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`
+  runs only when `--llm-agents scientific-skeptic` is passed, uses a strict
+  JSON schema, writes `data/memos/<run_id>_llm_findings.json` alongside a
+  JSONL trace, and participates in the run-level cost summary. See Phase 10.
+
+### Sprint 4: Multi-LLM Agent Collaboration
+
+**Sprint status:** started. LLM adapter + AgentGraph + first LLM agent landed
+on 2026-04-22 with a live Bailian Qwen3.6 smoke. Sprint continues with the
+second LLM agent and the `discover_company_inputs` fix that the smoke
+surfaced.
+
+- **Done** — LLM + Agent runtime skeleton (config, client, trace, prompt,
+  schema, FactStore, AgentGraph, opt-in CLI flag).
+- **Done** — First LLM agent: `ScientificSkepticLLMAgent`.
+- **In progress** — Fix `discover_company_inputs` cross-ticker mis-match
+  uncovered by the smoke (blocker for clean multi-ticker LLM runs).
+- **Not started** — `PipelineTriageAgent`: per-asset structured triage.
+- **Not started** — `BIOTECH_ALPHA_LLM_DEBUG_PROMPT` env flag to dump
+  rendered prompts to `data/traces/<run>_<agent>_prompt.txt` for offline
+  prompt debugging.
+- **Not started** — Add a Claude adapter so the runtime is not single-vendor.
+- **Not started** — Per-agent LLM call budget cap.

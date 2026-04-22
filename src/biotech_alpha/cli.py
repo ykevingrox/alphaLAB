@@ -222,6 +222,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Overwrite generated draft inputs if they already exist.",
     )
     company_report_parser.add_argument(
+        "--market-data",
+        choices=("none", "hk-public"),
+        default="none",
+        help=(
+            "Optional source-backed market-data provider for the valuation "
+            "auto-draft. 'hk-public' queries Tencent's public HK feed first "
+            "(qt.gtimg.cn) and falls back to Yahoo Finance; failures degrade "
+            "to warnings and do not break the report."
+        ),
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -242,6 +253,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--no-save",
         action="store_true",
         help="Run without writing artifacts to disk.",
+    )
+    company_report_parser.add_argument(
+        "--llm-agents",
+        nargs="*",
+        default=(),
+        choices=("scientific-skeptic",),
+        help=(
+            "Opt-in LLM agents to run after deterministic research. Requires "
+            "BIOTECH_ALPHA_LLM_API_KEY in env (see .env.example). Outputs are "
+            "written to data/memos/<run_id>_llm_findings.json and a trace JSONL "
+            "to data/traces/<run_id>.jsonl."
+        ),
+    )
+    company_report_parser.add_argument(
+        "--llm-trace-path",
+        help=(
+            "Optional override for the LLM trace JSONL path. Defaults to "
+            "data/traces/<run_id>.jsonl."
+        ),
     )
 
     template_parser = subparsers.add_parser(
@@ -562,6 +592,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "company-report":
+        market_data_provider = _resolve_market_data_provider(args.market_data)
+        llm_agents = tuple(getattr(args, "llm_agents", ()) or ())
+        llm_client = _build_llm_client(llm_agents)
         result = run_company_report(
             company=args.company,
             ticker=args.ticker,
@@ -574,11 +607,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             auto_inputs=args.auto_inputs,
             generated_input_dir=args.generated_input_dir,
             overwrite_auto_inputs=args.overwrite_auto_inputs,
+            market_data_provider=market_data_provider,
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
             limit=args.limit,
             save=not args.no_save,
             client=client,
+            llm_agents=llm_agents,
+            llm_client=llm_client,
+            llm_trace_path=getattr(args, "llm_trace_path", None),
         )
         print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
         return 0
@@ -846,6 +883,32 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unknown command: {args.command}")
     return 2
+
+
+def _resolve_market_data_provider(choice: str):
+    """Return a market-data provider callable for a CLI choice, or None."""
+
+    if choice == "hk-public":
+        from biotech_alpha.market_data_providers import hk_public_quote_provider
+
+        return hk_public_quote_provider
+    return None
+
+
+def _build_llm_client(llm_agents: tuple[str, ...]):
+    """Build an LLM client from env when any LLM agent is requested."""
+
+    if not llm_agents:
+        return None
+    from biotech_alpha.llm import (
+        LLMConfig,
+        LLMTraceRecorder,
+        OpenAICompatibleLLMClient,
+    )
+
+    config = LLMConfig.from_env()
+    recorder = LLMTraceRecorder()
+    return OpenAICompatibleLLMClient(config, trace_recorder=recorder)
 
 
 if __name__ == "__main__":

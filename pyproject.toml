@@ -13,6 +13,7 @@ authors = [
 ]
 dependencies = [
   "beautifulsoup4>=4.12",
+  "openai>=1.40",
   "pypdf>=4.0",
   "requests>=2.31",
 ]

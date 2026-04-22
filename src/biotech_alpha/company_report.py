@@ -7,7 +7,7 @@ import re
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from biotech_alpha.research import (
     ClinicalTrialsSource,
@@ -64,6 +64,8 @@ class CompanyReportResult:
     missing_inputs_report: Path | None
     research_result: SingleCompanyResearchResult
     auto_input_artifacts: Any | None = None
+    llm_agent_result: Any | None = None
+    llm_trace_path: Path | None = None
 
 
 INPUT_SUFFIXES = {
@@ -109,9 +111,10 @@ MISSING_INPUT_SPECS = {
         "severity": "medium",
         "reason": "Valuation snapshot is needed for market context.",
         "next_action": (
-            "Until a source-backed market-data connector exists, create the "
-            "valuation template and fill market cap or share price, shares "
-            "outstanding, cash, debt, revenue if available, and source."
+            "Auto-draft with `company-report --auto-inputs --market-data "
+            "hk-public` when a live HK quote is available, or create the "
+            "valuation template manually and fill market cap or share price, "
+            "shares outstanding, cash, debt, revenue if available, and source."
         ),
         "template_command": "valuation-template",
     },
@@ -150,12 +153,17 @@ def run_company_report(
     auto_inputs: bool = False,
     generated_input_dir: str | Path = "data/input/generated",
     overwrite_auto_inputs: bool = False,
+    market_data_provider: Callable[[CompanyIdentity], dict[str, Any] | None]
+    | None = None,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
     limit: int = 20,
     save: bool = True,
     client: ClinicalTrialsSource | None = None,
     now: datetime | None = None,
+    llm_agents: tuple[str, ...] = (),
+    llm_client: Any | None = None,
+    llm_trace_path: str | Path | None = None,
 ) -> CompanyReportResult:
     """Run a company report from a company name or ticker.
 
@@ -184,6 +192,7 @@ def run_company_report(
                 input_dir=generated_input_dir,
                 output_dir=output_dir,
                 overwrite=overwrite_auto_inputs,
+                market_data_provider=market_data_provider,
             )
         except Exception as exc:  # noqa: BLE001 - keep one-command flow resilient.
             auto_input_artifacts = AutoInputArtifacts(
@@ -238,6 +247,25 @@ def run_company_report(
             auto_inputs=auto_inputs,
         )
 
+    llm_agent_result = None
+    resolved_llm_trace_path: Path | None = None
+    if llm_agents:
+        if llm_client is None:
+            raise ValueError(
+                "llm_agents was requested but no llm_client was provided; the "
+                "CLI layer is responsible for constructing an LLMClient from "
+                "environment configuration."
+            )
+        llm_agent_result, resolved_llm_trace_path = _run_llm_agent_pipeline(
+            research_result=research_result,
+            identity=identity,
+            llm_agents=llm_agents,
+            llm_client=llm_client,
+            output_dir=output_dir,
+            save=save,
+            llm_trace_path=llm_trace_path,
+        )
+
     return CompanyReportResult(
         identity=identity,
         input_paths=input_paths,
@@ -245,7 +273,223 @@ def run_company_report(
         missing_inputs_report=missing_report_path,
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
+        llm_agent_result=llm_agent_result,
+        llm_trace_path=resolved_llm_trace_path,
     )
+
+
+SUPPORTED_LLM_AGENTS = ("scientific-skeptic",)
+
+
+def _run_llm_agent_pipeline(
+    *,
+    research_result: SingleCompanyResearchResult,
+    identity: CompanyIdentity,
+    llm_agents: tuple[str, ...],
+    llm_client: Any,
+    output_dir: str | Path,
+    save: bool,
+    llm_trace_path: str | Path | None,
+) -> tuple[Any, Path | None]:
+    """Run the opt-in LLM agent graph over a finished research result."""
+
+    from biotech_alpha.agent_runtime import (
+        AgentGraph,
+        DeterministicAgent,
+    )
+    from biotech_alpha.agents import AgentContext
+    from biotech_alpha.agents_llm import ScientificSkepticLLMAgent
+
+    unknown = [name for name in llm_agents if name not in SUPPORTED_LLM_AGENTS]
+    if unknown:
+        raise ValueError(
+            f"unknown llm_agents: {unknown}. "
+            f"supported: {list(SUPPORTED_LLM_AGENTS)}"
+        )
+
+    facts = build_llm_agent_facts(research_result=research_result)
+    context = AgentContext(
+        company=identity.company,
+        ticker=identity.ticker,
+        market=identity.market,
+    )
+
+    trace_recorder = getattr(llm_client, "trace", None)
+    graph = AgentGraph(trace_recorder=trace_recorder)
+
+    def _publish(ctx, store):  # noqa: ANN001 - runtime adapter
+        for key, value in facts.items():
+            store.put(key, value)
+        return None
+
+    graph.add(DeterministicAgent("publish_research_facts", _publish))
+    if "scientific-skeptic" in llm_agents:
+        graph.add(
+            ScientificSkepticLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
+
+    result = graph.run(context)
+
+    resolved_trace_path: Path | None = None
+    if save and trace_recorder is not None:
+        if llm_trace_path is not None:
+            resolved_trace_path = Path(llm_trace_path)
+        else:
+            resolved_trace_path = (
+                Path(output_dir) / "traces" / f"{research_result.run_id}.jsonl"
+            )
+        trace_recorder.path = resolved_trace_path
+        trace_recorder.flush()
+
+    if save:
+        findings_path = (
+            Path(output_dir)
+            / "memos"
+            / f"{research_result.run_id}_llm_findings.json"
+        )
+        findings_path.parent.mkdir(parents=True, exist_ok=True)
+        findings_path.write_text(
+            json.dumps(
+                _llm_agent_result_payload(result),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    return result, resolved_trace_path
+
+
+def build_llm_agent_facts(
+    *,
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any]:
+    """Serialize a research result into the fact-store shape LLM agents expect.
+
+    The LLM adapter layer deliberately accepts only plain dicts/lists/strings
+    (and numbers). This keeps prompts reproducible: the same research result
+    always renders to the same prompt body regardless of dataclass identity.
+    """
+
+    memo = research_result.memo
+    skeptic_risks: list[str] = []
+    for finding in memo.findings:
+        if finding.agent_name == "scientific_skeptic_agent":
+            skeptic_risks.extend(finding.risks)
+
+    pipeline_snapshot = {
+        "assets": [
+            {
+                "name": asset.name,
+                "target": asset.target,
+                "modality": asset.modality,
+                "indication": asset.indication,
+                "phase": asset.phase,
+                "partner": asset.partner,
+                "next_milestone": asset.next_milestone,
+            }
+            for asset in research_result.pipeline_assets
+        ],
+    }
+    trial_summary = {
+        "total": len(research_result.trials),
+        "late_stage": sum(
+            1
+            for trial in research_result.trials
+            if trial.phase and ("PHASE3" in trial.phase or "PHASE2" in trial.phase)
+        ),
+        "active": sum(
+            1
+            for trial in research_result.trials
+            if trial.status
+            in {"RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"}
+        ),
+        "asset_trial_matches": len(research_result.asset_trial_matches),
+    }
+    valuation_snapshot: dict[str, Any] = {}
+    if research_result.valuation_snapshot is not None:
+        snap = research_result.valuation_snapshot
+        valuation_snapshot.update(
+            {
+                "market_cap": getattr(snap, "market_cap", None),
+                "share_price": getattr(snap, "share_price", None),
+                "shares_outstanding": getattr(snap, "shares_outstanding", None),
+                "cash": getattr(snap, "cash", None),
+                "debt": getattr(snap, "debt", None),
+                "revenue_ttm": getattr(snap, "revenue_ttm", None),
+                "currency": getattr(snap, "currency", None),
+            }
+        )
+    if research_result.valuation_metrics is not None:
+        metrics = research_result.valuation_metrics
+        valuation_snapshot["enterprise_value"] = getattr(
+            metrics, "enterprise_value", None
+        )
+        valuation_snapshot["ev_to_revenue"] = getattr(
+            metrics, "ev_to_revenue", None
+        )
+    if research_result.cash_runway_estimate is not None:
+        runway = research_result.cash_runway_estimate
+        valuation_snapshot["cash_runway_months"] = getattr(
+            runway, "runway_months", None
+        )
+
+    input_warnings: list[str] = []
+    for report in research_result.input_validation.values():
+        if isinstance(report, dict):
+            for warning in report.get("warnings", []) or []:
+                input_warnings.append(str(warning))
+
+    return {
+        "skeptic_risks": skeptic_risks,
+        "pipeline_snapshot": pipeline_snapshot,
+        "trial_summary": trial_summary,
+        "valuation_snapshot": valuation_snapshot or None,
+        "input_warnings": input_warnings,
+    }
+
+
+def _llm_agent_result_payload(result: Any) -> dict[str, Any]:
+    """Serialize an AgentRunResult to a JSON-friendly dict."""
+
+    return {
+        "findings": [
+            {
+                "agent_name": f.agent_name,
+                "summary": f.summary,
+                "risks": list(f.risks),
+                "confidence": f.confidence,
+                "needs_human_review": f.needs_human_review,
+                "evidence": [
+                    {
+                        "claim": ev.claim,
+                        "source": ev.source,
+                        "confidence": ev.confidence,
+                        "is_inferred": ev.is_inferred,
+                    }
+                    for ev in f.evidence
+                ],
+            }
+            for f in getattr(result, "findings", ())
+        ],
+        "steps": [
+            {
+                "agent_name": s.agent_name,
+                "ok": s.ok,
+                "skipped": s.skipped,
+                "error": s.error,
+                "latency_ms": s.latency_ms,
+                "warnings": list(s.warnings),
+            }
+            for s in getattr(result, "steps", ())
+        ],
+        "warnings": list(getattr(result, "warnings", ())),
+        "cost_summary": dict(getattr(result, "cost_summary", {}) or {}),
+    }
 
 
 def resolve_company_identity(
@@ -499,6 +743,14 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.missing_inputs_report)
             if result.missing_inputs_report
             else None
+        ),
+        "llm_agents": (
+            _llm_agent_result_payload(result.llm_agent_result)
+            if result.llm_agent_result is not None
+            else None
+        ),
+        "llm_trace_path": (
+            str(result.llm_trace_path) if result.llm_trace_path else None
         ),
     }
 
