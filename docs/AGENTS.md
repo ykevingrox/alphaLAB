@@ -16,11 +16,14 @@ Before editing:
 During work:
 
 - Keep edits scoped to the current task.
+- State the current task and exact next action before starting a substantive
+  change.
 - Prefer existing repo patterns over new abstractions.
 - Preserve manual curated inputs as higher priority than generated drafts.
 - Keep generated data under ignored paths such as `data/raw/`,
   `data/input/generated/`, `data/processed/`, and `data/memos/`.
 - Update tests and docs when behavior changes.
+- If the plan changes, update `docs/HANDOFF.md` in the same checkpoint.
 
 Before handing off:
 
@@ -28,6 +31,10 @@ Before handing off:
 - Update `docs/HANDOFF.md` with current status and next best action.
 - Leave a concise summary of changed files, validation results, and known
   blockers.
+- Make the handoff plan concrete: one current task, one next action, acceptance
+  criteria, and a short ordered queue. Avoid vague next steps such as
+  "continue" or stale steps such as "commit current changes" when the working
+  tree is already clean.
 - If committing, make a small commit with a message that describes the completed
   behavior, not just the edited files.
 

@@ -207,9 +207,9 @@ section stays aligned with the repo. Update statuses when scope changes.
   **Where:** `tests/test_company_report.py`, `tests/test_cli.py` (watchlist
   filter), `tests/test_research.py` (manifest quality gate).
 
-- **Not started** — Add fixture-based regression tests for representative HK
-  biotech tickers to catch schema or parsing drift early (network-free fixtures
-  preferred).
+- **Partially done** — Add fixture-based regression tests for representative HK
+  biotech tickers to catch schema or parsing drift early. One auto-input
+  orchestration fixture exists; representative ticker fixtures remain open.
 
 - **Done** — Standardize run-level quality gates in summaries and manifests so
   users can quickly see whether output is decision-ready; optional watchlist
@@ -223,8 +223,9 @@ section stays aligned with the repo. Update statuses when scope changes.
 **Sprint status:** partially started (HKEX annual-results extraction exists;
 resilience and validator tightening remain).
 
-- **Not started** — Improve HKEX source discovery robustness and retry behavior
-  for annual-results fetch and extraction.
+- **Partially done** — Improve HKEX source discovery robustness and retry
+  behavior for annual-results fetch and extraction. Lightweight request retries
+  exist; broader fallback source selection remains open.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

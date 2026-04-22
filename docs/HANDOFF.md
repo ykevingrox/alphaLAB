@@ -24,6 +24,19 @@ The near-term priority is still HK biotech. Future compatibility with other
 markets and sectors should influence design choices, but should not distract
 from getting the MVP stable.
 
+## Planning Discipline
+
+Every handoff must name one concrete next action. Do not leave the next step as
+"continue" or as a stale housekeeping item when the working tree is clean.
+
+Use this shape:
+
+- Current task: the narrow objective for the next checkpoint.
+- Next action: the single first action the next agent should take.
+- Acceptance criteria: how to know the checkpoint is complete.
+- Validation: commands or smoke tests required before handoff.
+- Queue: short ordered list of follow-on tasks.
+
 ## Last Completed
 
 - `company-report --auto-inputs` can resolve HKEX annual-results sources,
@@ -109,14 +122,45 @@ Latest smoke result:
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
 
-## Next Best Action
+## Execution Plan
 
-1. Commit the current validated local changes as a small checkpoint.
-2. Continue tightening generated pipeline extraction for remaining source-backed
-   missing indication cases such as `DB-1312`.
-3. Add auto valuation drafts once source-backed market data is available.
-4. Add auto competitor drafts only after pipeline extraction is more reliable.
-5. Keep broadening network-free fixtures across representative HK biotech names.
+### Current Task
+
+Broaden regression coverage for HK biotech auto-input extraction while keeping
+online ingestion as the live research path.
+
+### Next Action
+
+Add a second representative HK biotech network-free fixture test. Use a minimal
+HKEX disclosure excerpt for 和铂医药 / Harbour BioMed (`02142.HK`) if an
+accessible source-backed excerpt is available; otherwise choose another HK
+biotech disclosure with a clear pipeline and financial section.
+
+### Acceptance Criteria
+
+- Fixture content is small and committed only as intentional test data.
+- Tests assert expected positive extraction and at least one negative case.
+- The fixture does not replace online source collection in live reports.
+- `docs/HANDOFF.md` is updated with the completed checkpoint and next action.
+
+### Validation
+
+```bash
+.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m compileall -q src tests
+git diff --check
+awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
+  $(rg --files -g '*.py' -g '*.md' -g '*.toml')
+```
+
+### Queue
+
+1. Add the second HK biotech fixture test.
+2. Decide whether `DB-1312` indication can be filled from source-backed text; if
+   not, keep the warning.
+3. Design a source-backed market-data connector before auto valuation drafts.
+4. Add auto competitor drafts only after pipeline extraction is reliable.
+5. Keep broadening fixtures across representative HK biotech disclosure styles.
 
 ## Do Not Break
 
