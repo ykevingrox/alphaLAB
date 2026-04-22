@@ -458,6 +458,11 @@ def _asset_mentions(text: str) -> list[dict[str, str]]:
             index=index,
             current=name,
         )
+        if _payload_only_context(
+            name=name,
+            context=_nearby_text(text, match.start(), match.end()),
+        ):
+            continue
         context = _context_window(
             text,
             match.start(),
@@ -512,15 +517,21 @@ def _target_from_context(context: str) -> str | None:
     targets = (
         "HER2",
         "B7-H3",
+        "B7-H4",
         "HER3",
+        "EGFR",
         "TROP2",
         "BCMA",
         "CD3",
         "PD-1",
+        "PD-L1",
         "VEGF",
         "CTLA-4",
         "FcRn",
         "TSLP",
+        "BDCA2",
+        "ADAM9",
+        "CDH17",
     )
     parenthetical = re.search(r"\(([^)]{1,80})\)", context)
     if parenthetical:
@@ -534,17 +545,22 @@ def _target_from_context(context: str) -> str | None:
 
 
 def _modality_from_context(context: str) -> str | None:
-    if "adc" in context.lower():
+    lowered = context.lower()
+    if "bsadc" in lowered:
+        return "bispecific ADC"
+    if "adc" in lowered:
         return "ADC"
-    if "bispecific" in context.lower():
+    if "vaccine" in lowered:
+        return "vaccine"
+    if "bispecific" in lowered:
         return "bispecific antibody"
-    if "antibody" in context.lower():
+    if "antibody" in lowered:
         return "antibody"
     return None
 
 
 def _phase_from_context(context: str) -> str | None:
-    match = re.search(r"Phase\s+([123I/]+)", context, flags=re.IGNORECASE)
+    match = re.search(r"Phase\s+([123I/abAB]+)", context, flags=re.IGNORECASE)
     if match:
         return f"Phase {match.group(1)}"
     if "clinical-stage" in context.lower():
@@ -561,6 +577,11 @@ def _indication_from_context(context: str) -> str | None:
         "mCRPC",
         "cervical cancer",
         "ovarian cancer",
+        "gastrointestinal tumors",
+        "gastric cancer",
+        "colorectal cancer",
+        "pancreatic cancer",
+        "systemic lupus erythematosus",
         "solid tumors",
         "asthma",
         "COPD",
@@ -570,6 +591,11 @@ def _indication_from_context(context: str) -> str | None:
     found = [term for term in terms if term.lower() in lowered]
     if "breast cancer" not in found and re.search(r"\bBC\b", context):
         found.append("breast cancer")
+    if (
+        "systemic lupus erythematosus" not in found
+        and re.search(r"\bSLE\b", context)
+    ):
+        found.append("systemic lupus erythematosus")
     return "; ".join(dict.fromkeys(found)) if found else None
 
 
@@ -633,6 +659,21 @@ def _biotech_context(context: str) -> bool:
     )
     lowered = context.lower()
     return any(keyword in lowered for keyword in keywords)
+
+
+def _payload_only_context(*, name: str, context: str) -> bool:
+    if re.search(
+        rf"\bpayloads?\b.{{0,80}}\b{re.escape(name)}\b"
+        rf"|\b{name}\s+exposures\b",
+        context,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
+def _nearby_text(text: str, start: int, end: int, size: int = 120) -> str:
+    return text[max(0, start - size): min(len(text), end + size)]
 
 
 def _looks_like_non_asset_code(value: str) -> bool:

@@ -44,6 +44,8 @@ from getting the MVP stable.
   aliases, so Chinese company input can still search English registry terms.
 - Network-free fixture tests cover the `generate_auto_inputs` orchestration
   path.
+- Generated pipeline extraction recognizes more oncology/immunology targets,
+  richer phase strings, and filters payload-only mentions such as `P1021`.
 
 ## Current Repo State
 
@@ -92,6 +94,7 @@ Latest smoke result:
   generated.
 - Report ran successfully.
 - Suggested rerun command preserved `--auto-inputs`.
+- Generated pipeline validation warnings fell to 7 in the latest smoke run.
 - Quality gate was `research_ready_with_review`.
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
@@ -99,8 +102,8 @@ Latest smoke result:
 ## Next Best Action
 
 1. Commit the current validated local changes as a small checkpoint.
-2. Tighten generated pipeline extraction quality and warnings before expanding
-   into valuation or competitor auto-drafting.
+2. Continue tightening generated pipeline extraction, especially table-derived
+   partial codes such as `C9074` and collaborator assets such as `BNT116`.
 3. Improve HKEX source discovery robustness and retry behavior.
 4. Add auto valuation drafts once source-backed market data is available.
 5. Add auto competitor drafts only after pipeline extraction is more reliable.

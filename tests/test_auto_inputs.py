@@ -36,6 +36,11 @@ The first global Phase 3 trial evaluating DB-1311/BNT324 compared with
 docetaxel in patients with taxane-naive mCRPC is planned to start in 2026.
 DB-1310 (HER3 ADC) Clinical Readouts in NSCLC and breast cancer.
 The company plans to present updated data at ASCO 2026.
+DB-2304 (BDCA2 ADC): A global Phase 1/2a clinical trial in SLE patients.
+DB-1317 (ADAM9 ADC): A global Phase 1a/1b clinical trial in solid tumors.
+DB-1324 (CDH17 ADC): A global Phase 1/2 trial in gastrointestinal tumors.
+DB-2304 payload P2025 exposures increased dose-proportionally.
+Proprietary payloads P1003 and P1021 improved systemic stability.
 """
 
 
@@ -52,12 +57,24 @@ class AutoInputsTest(unittest.TestCase):
         self.assertIn("DB-1303", names)
         self.assertIn("DB-1311", names)
         self.assertIn("DB-1310", names)
+        self.assertIn("DB-2304", names)
+        self.assertIn("DB-1317", names)
+        self.assertIn("DB-1324", names)
+        self.assertNotIn("P2025", names)
+        self.assertNotIn("P1003", names)
+        self.assertNotIn("P1021", names)
         first = payload["assets"][0]
         self.assertEqual(first["aliases"], ["BNT323"])
         self.assertEqual(first["target"], "HER2")
         self.assertEqual(first["phase"], "Phase 3")
         self.assertIn("breast cancer", first["indication"])
         self.assertTrue(first["evidence"][0]["is_inferred"])
+        db2304 = _asset_by_name(payload, "DB-2304")
+        self.assertEqual(db2304["target"], "BDCA2")
+        self.assertEqual(db2304["phase"], "Phase 1/2a")
+        self.assertIn("systemic lupus erythematosus", db2304["indication"])
+        self.assertEqual(_asset_by_name(payload, "DB-1317")["target"], "ADAM9")
+        self.assertEqual(_asset_by_name(payload, "DB-1324")["target"], "CDH17")
 
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
@@ -171,6 +188,13 @@ def _read_json(path: Path | None) -> dict:
     if path is None:
         raise AssertionError("expected a generated path")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _asset_by_name(payload: dict, name: str) -> dict:
+    for asset in payload["assets"]:
+        if asset["name"] == name:
+            return asset
+    raise AssertionError(f"missing asset {name}")
 
 
 if __name__ == "__main__":
