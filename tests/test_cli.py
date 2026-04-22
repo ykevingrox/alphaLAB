@@ -857,6 +857,37 @@ class QuickReportCliTest(unittest.TestCase):
         self.assertIsNone(ticker)
 
     def test_report_command_uses_smart_defaults(self) -> None:
+        fake_summary = {
+            "identity": {"company": "DualityBio", "ticker": "09606.HK"},
+            "research": {
+                "run_id": "dualitybio_20260422",
+                "decision": "watchlist",
+                "watchlist_bucket": "starter",
+                "watchlist_score": 42,
+                "pipeline_asset_count": 3,
+                "trial_count": 2,
+                "competitor_asset_count": 1,
+                "catalyst_count": 4,
+                "input_warning_count": 0,
+                "artifacts": {
+                    "memo_markdown": "data/memos/dualitybio/memo.md",
+                    "manifest_json": "data/processed/manifest.json",
+                },
+            },
+            "quality_gate": {
+                "level": "research_ready_with_review",
+                "rationale": "report generated but requires manual review",
+            },
+            "missing_input_count": 0,
+            "next_actions": ["Review the memo."],
+            "llm_agents": {
+                "steps": [
+                    {"agent_name": "pipeline", "ok": True, "skipped": False},
+                ],
+                "cost_summary": {"total_tokens": 123},
+            },
+            "llm_trace_path": "data/traces/dualitybio_20260422.jsonl",
+        }
         with patch(
             "biotech_alpha.cli.run_company_report"
         ) as run, patch(
@@ -864,17 +895,44 @@ class QuickReportCliTest(unittest.TestCase):
             return_value=object(),
         ), patch(
             "biotech_alpha.cli.company_report_summary",
-            return_value={"identity": {}, "status": "ok"},
+            return_value=fake_summary,
         ):
             run.return_value = object()
-            exit_code = main(["report", "09606.HK", "--no-save"])
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["report", "09606.HK", "--no-save"])
 
             self.assertEqual(exit_code, 0)
+            terminal = output.getvalue()
+            self.assertIn("[1/4] Resolve query: 09606.HK", terminal)
+            self.assertIn("[4/4] Report complete", terminal)
+            self.assertIn("Company: DualityBio (09606.HK)", terminal)
+            self.assertIn("Artifacts", terminal)
+            self.assertIn("- Not saved (--no-save)", terminal)
             kwargs = run.call_args.kwargs
             self.assertTrue(kwargs["auto_inputs"])
             self.assertEqual(kwargs["llm_agents"][0], "pipeline-triage")
             self.assertIsNotNone(kwargs["market_data_provider"])
             self.assertIsNotNone(kwargs["macro_signals_provider"])
+
+    def test_report_command_json_keeps_machine_readable_summary(self) -> None:
+        fake_summary = {"identity": {"ticker": "09606.HK"}, "status": "ok"}
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client",
+            return_value=object(),
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value=fake_summary,
+        ):
+            run.return_value = object()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["report", "09606.HK", "--json", "--no-save"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(output.getvalue()), fake_summary)
 
     def test_report_command_errors_when_llm_client_missing_by_default(self) -> None:
         with patch(
@@ -885,7 +943,9 @@ class QuickReportCliTest(unittest.TestCase):
             return_value={"identity": {}, "status": "ok"},
         ):
             with self.assertRaises(RuntimeError):
-                main(["report", "DualityBio", "--no-save"])
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    main(["report", "DualityBio", "--no-save"])
 
     def test_report_command_can_degrade_when_allow_no_llm_set(self) -> None:
         with patch(
@@ -898,11 +958,16 @@ class QuickReportCliTest(unittest.TestCase):
             return_value={"identity": {}, "status": "ok"},
         ):
             run.return_value = object()
-            exit_code = main(
-                ["report", "DualityBio", "--allow-no-llm", "--no-save"]
-            )
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    ["report", "DualityBio", "--allow-no-llm", "--no-save"]
+                )
 
             self.assertEqual(exit_code, 0)
+            self.assertIn(
+                "unavailable; continuing without LLM", output.getvalue()
+            )
             kwargs = run.call_args.kwargs
             self.assertEqual(kwargs["llm_agents"], ())
             self.assertIsNone(kwargs["llm_client"])

@@ -120,6 +120,8 @@ PYTHONPATH=src python3 -m biotech_alpha.cli report "DualityBio"
 
 Quick-mode defaults:
 
+- Prints progress stages, a compact result summary, and the main artifact paths.
+  Use `--json` when you need the compact machine-readable summary instead.
 - Enables `--auto-inputs`.
 - Enables `hk-public` market data auto-draft.
 - Enables macro live-signals (`yahoo-hk`) with cache.

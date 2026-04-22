@@ -374,6 +374,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Run without writing artifacts to disk.",
     )
+    quick_report_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the compact machine-readable JSON summary.",
+    )
 
     template_parser = subparsers.add_parser(
         "pipeline-template",
@@ -734,6 +739,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "report":
         company, ticker = _split_company_or_ticker(args.query)
+        if not args.json:
+            _print_quick_report_stage(
+                1,
+                4,
+                "Resolve query",
+                _format_quick_report_identity(company=company, ticker=ticker),
+            )
         llm_agents: tuple[str, ...] = ()
         llm_client = None
         if not args.no_llm:
@@ -744,16 +756,41 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "macro-context",
                 "scientific-skeptic",
             )
+            if not args.json:
+                _print_quick_report_stage(
+                    2,
+                    4,
+                    "Prepare LLM agents",
+                    ", ".join(llm_agents),
+                )
             try:
                 llm_client = _build_llm_client(llm_agents)
-            except Exception:
+            except Exception as exc:
                 if not args.allow_no_llm:
                     raise
                 llm_agents = ()
                 llm_client = None
+                if not args.json:
+                    _print_quick_report_note(
+                        f"unavailable; continuing without LLM ({exc})",
+                    )
+        elif not args.json:
+            _print_quick_report_stage(
+                2,
+                4,
+                "Prepare LLM agents",
+                "disabled by --no-llm",
+            )
 
         market_data_provider = _resolve_market_data_provider("hk-public")
         macro_signals_provider = _resolve_macro_signals_provider("yahoo-hk")
+        if not args.json:
+            _print_quick_report_stage(
+                3,
+                4,
+                "Run research graph",
+                "auto-inputs, HK market data, macro signals enabled",
+            )
         result = run_company_report(
             company=company,
             ticker=ticker,
@@ -777,7 +814,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_trace_path=None,
             macro_signals_provider=macro_signals_provider,
         )
-        print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
+        summary = company_report_summary(result)
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            _print_quick_report_stage(
+                4,
+                4,
+                "Report complete",
+                f"run_id={_quick_report_run_id(summary)}",
+            )
+            _print_quick_report_summary(
+                summary,
+                save=not args.no_save,
+                output_dir=args.output_dir,
+            )
         return 0
 
     if args.command == "pipeline-template":
@@ -1149,6 +1200,173 @@ def _build_llm_client(llm_agents: tuple[str, ...]):
     if config.provider == "anthropic":
         return AnthropicLLMClient(config, trace_recorder=recorder)
     return OpenAICompatibleLLMClient(config, trace_recorder=recorder)
+
+
+def _print_quick_report_stage(
+    step: int,
+    total: int,
+    title: str,
+    detail: str,
+) -> None:
+    """Print one human-readable progress stage for the quick report."""
+
+    print(f"[{step}/{total}] {title}: {detail}")
+
+
+def _print_quick_report_note(detail: str) -> None:
+    print(f"      {detail}")
+
+
+def _format_quick_report_identity(
+    *,
+    company: str | None,
+    ticker: str | None,
+) -> str:
+    if ticker:
+        return ticker
+    return company or "unknown company"
+
+
+def _print_quick_report_summary(
+    summary: dict[str, object],
+    *,
+    save: bool,
+    output_dir: str | Path = "data",
+) -> None:
+    """Print a compact operator-facing summary for ``report``."""
+
+    identity = _dict_value(summary, "identity")
+    research = _dict_value(summary, "research")
+    quality_gate = _dict_value(summary, "quality_gate")
+    artifacts = _dict_value(research, "artifacts")
+
+    company = (
+        _string_value(identity, "company")
+        or _string_value(research, "company")
+        or "Unknown company"
+    )
+    ticker = _string_value(identity, "ticker") or _string_value(
+        research, "ticker"
+    )
+    ticker_text = f" ({ticker})" if ticker else ""
+    quality_level = _string_value(quality_gate, "level") or "unknown"
+    quality_reason = _string_value(quality_gate, "rationale") or "no rationale"
+    decision = _string_value(research, "decision") or "unknown"
+    bucket = _string_value(research, "watchlist_bucket") or "unknown"
+    score = research.get("watchlist_score", "n/a")
+
+    print()
+    print("Result")
+    print(f"Company: {company}{ticker_text}")
+    print(f"Quality gate: {quality_level} ({quality_reason})")
+    print(f"Decision: {decision}")
+    print(f"Watchlist: {bucket} (score {score})")
+    print(
+        "Coverage: "
+        f"{research.get('pipeline_asset_count', 0)} assets, "
+        f"{research.get('trial_count', 0)} trials, "
+        f"{research.get('competitor_asset_count', 0)} competitors, "
+        f"{research.get('catalyst_count', 0)} catalysts"
+    )
+
+    missing_count = summary.get("missing_input_count", 0)
+    warning_count = research.get("input_warning_count", 0)
+    print(f"Review load: {missing_count} missing inputs, {warning_count} warnings")
+    _print_quick_report_llm_summary(summary)
+    _print_quick_report_artifacts(
+        summary=summary,
+        research=research,
+        artifacts=artifacts,
+        save=save,
+        output_dir=output_dir,
+    )
+    _print_quick_report_next_action(summary)
+
+
+def _print_quick_report_llm_summary(summary: dict[str, object]) -> None:
+    llm_agents = _dict_value(summary, "llm_agents")
+    if not llm_agents:
+        print("LLM agents: not run")
+        return
+
+    steps = llm_agents.get("steps", ())
+    if not isinstance(steps, list):
+        steps = []
+    ok_count = sum(1 for step in steps if isinstance(step, dict) and step.get("ok"))
+    skipped_count = sum(
+        1 for step in steps if isinstance(step, dict) and step.get("skipped")
+    )
+    failed_count = len(steps) - ok_count - skipped_count
+    cost = llm_agents.get("cost_summary", {})
+    total_tokens = None
+    if isinstance(cost, dict):
+        total_tokens = cost.get("total_tokens")
+    token_text = f", {total_tokens} tokens" if total_tokens is not None else ""
+    print(
+        "LLM agents: "
+        f"{ok_count}/{len(steps)} ok, {failed_count} failed, "
+        f"{skipped_count} skipped{token_text}"
+    )
+
+
+def _print_quick_report_artifacts(
+    *,
+    summary: dict[str, object],
+    research: dict[str, object],
+    artifacts: dict[str, object],
+    save: bool,
+    output_dir: str | Path,
+) -> None:
+    print()
+    print("Artifacts")
+    if not save:
+        print("- Not saved (--no-save)")
+        return
+
+    _print_path_line("Memo", artifacts.get("memo_markdown"))
+    _print_path_line("Manifest", artifacts.get("manifest_json"))
+    _print_path_line("Scorecard", artifacts.get("scorecard"))
+    _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
+    _print_path_line("Missing-input report", summary.get("missing_inputs_report"))
+    _print_path_line("LLM trace", summary.get("llm_trace_path"))
+
+    llm_agents = _dict_value(summary, "llm_agents")
+    run_id = _string_value(research, "run_id")
+    if llm_agents and run_id:
+        findings_path = Path(output_dir) / "memos" / f"{run_id}_llm_findings.json"
+        _print_path_line("LLM findings", findings_path)
+
+
+def _print_quick_report_next_action(summary: dict[str, object]) -> None:
+    next_actions = summary.get("next_actions", ())
+    if not isinstance(next_actions, list) or not next_actions:
+        return
+    print()
+    print("Next action")
+    print(f"- {next_actions[0]}")
+
+
+def _quick_report_run_id(summary: dict[str, object]) -> str:
+    return _string_value(_dict_value(summary, "research"), "run_id") or "unknown"
+
+
+def _print_path_line(label: str, path: object) -> None:
+    if path:
+        print(f"- {label}: {path}")
+
+
+def _dict_value(mapping: dict[str, object], key: str) -> dict[str, object]:
+    value = mapping.get(key)
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _string_value(mapping: dict[str, object], key: str) -> str | None:
+    value = mapping.get(key)
+    if isinstance(value, str) and value:
+        return value
+    return None
 
 
 def _split_company_or_ticker(query: str) -> tuple[str | None, str | None]:

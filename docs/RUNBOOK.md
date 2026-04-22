@@ -62,6 +62,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli report "DualityBio"
 
 Quick-mode behavior:
 
+- Prints progress stages, then a compact terminal summary with quality gate,
+  decision, coverage counts, LLM status, and artifact paths. Use `--json` to
+  print the compact machine-readable summary instead.
 - Auto-enables draft input generation (`auto_inputs`).
 - Auto-enables market data (`hk-public`) and macro live signals (`yahoo-hk`).
 - Auto-enables all current LLM agents including `competition-triage`.
