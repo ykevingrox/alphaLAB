@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -191,6 +191,10 @@ def run_company_report(
                     f"inputs only: {exc}",
                 )
             )
+        identity = enrich_identity_from_auto_input_artifacts(
+            identity=identity,
+            auto_input_artifacts=auto_input_artifacts,
+        )
     input_paths = discover_company_inputs(identity, input_dir=input_dir)
     if auto_inputs:
         generated_paths = discover_company_inputs(
@@ -230,6 +234,7 @@ def run_company_report(
             identity=identity,
             input_paths=input_paths,
             missing_inputs=missing_inputs,
+            auto_inputs=auto_inputs,
         )
 
     return CompanyReportResult(
@@ -318,6 +323,36 @@ def discover_company_inputs(
     return CompanyReportInputPaths(**discovered)
 
 
+def enrich_identity_from_auto_input_artifacts(
+    *,
+    identity: CompanyIdentity,
+    auto_input_artifacts: Any | None,
+) -> CompanyIdentity:
+    """Use discovered source metadata to improve aliases and search terms."""
+
+    source_documents = getattr(auto_input_artifacts, "source_documents", ()) or ()
+    aliases = list(identity.aliases)
+    for document in source_documents:
+        stock_name = getattr(document, "stock_name", None)
+        for alias in _hkex_stock_name_aliases(stock_name):
+            if alias not in aliases and alias != identity.company:
+                aliases.append(alias)
+
+    search_term = identity.search_term
+    if not _has_ascii_letter(search_term or ""):
+        search_term = next(
+            (alias for alias in aliases if _has_ascii_letter(alias)),
+            search_term,
+        )
+    if tuple(aliases) == identity.aliases and search_term == identity.search_term:
+        return identity
+    return replace(
+        identity,
+        aliases=tuple(aliases),
+        search_term=search_term,
+    )
+
+
 def build_missing_inputs(
     *,
     identity: CompanyIdentity,
@@ -357,6 +392,7 @@ def write_missing_inputs_report(
     identity: CompanyIdentity,
     input_paths: CompanyReportInputPaths,
     missing_inputs: tuple[MissingInput, ...],
+    auto_inputs: bool = False,
 ) -> Path:
     """Write a report describing missing inputs for the one-command run."""
 
@@ -381,6 +417,7 @@ def write_missing_inputs_report(
                 identity=identity,
                 input_paths=input_paths,
                 missing_inputs=missing_inputs,
+                auto_inputs=auto_inputs,
             ),
             ensure_ascii=False,
             indent=2,
@@ -397,6 +434,7 @@ def missing_inputs_payload(
     identity: CompanyIdentity,
     input_paths: CompanyReportInputPaths,
     missing_inputs: tuple[MissingInput, ...],
+    auto_inputs: bool = False,
 ) -> dict[str, Any]:
     """Return JSON payload for missing-input reports."""
 
@@ -408,12 +446,16 @@ def missing_inputs_payload(
         "next_actions": next_actions(
             identity=identity,
             missing_inputs=missing_inputs,
+            auto_inputs=auto_inputs,
         ),
         "quality_gate": report_quality_gate(
             result=result,
             missing_inputs=missing_inputs,
         ),
-        "rerun_command": company_report_rerun_command(identity),
+        "rerun_command": company_report_rerun_command(
+            identity,
+            auto_inputs=auto_inputs,
+        ),
         "notes": (
             "The report was generated with available inputs.",
             "Missing high-severity inputs should be filled before relying on "
@@ -427,6 +469,7 @@ def missing_inputs_payload(
 def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
     """Return compact JSON summary for CLI output."""
 
+    auto_inputs = result.auto_input_artifacts is not None
     return {
         "identity": _jsonable(asdict(result.identity)),
         "research": result_summary(result.research_result),
@@ -441,12 +484,16 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         "next_actions": next_actions(
             identity=result.identity,
             missing_inputs=result.missing_inputs,
+            auto_inputs=auto_inputs,
         ),
         "quality_gate": report_quality_gate(
             result=result.research_result,
             missing_inputs=result.missing_inputs,
         ),
-        "rerun_command": company_report_rerun_command(result.identity),
+        "rerun_command": company_report_rerun_command(
+            result.identity,
+            auto_inputs=auto_inputs,
+        ),
         "missing_inputs_report": (
             str(result.missing_inputs_report)
             if result.missing_inputs_report
@@ -515,6 +562,7 @@ def next_actions(
     *,
     identity: CompanyIdentity,
     missing_inputs: tuple[MissingInput, ...],
+    auto_inputs: bool = False,
 ) -> tuple[str, ...]:
     """Return human-oriented next steps for the current report."""
 
@@ -547,11 +595,17 @@ def next_actions(
         "Run each generated template through its validate command before "
         "rerunning company-report."
     )
-    actions.append(f"Rerun: {company_report_rerun_command(identity)}")
+    actions.append(
+        f"Rerun: {company_report_rerun_command(identity, auto_inputs=auto_inputs)}"
+    )
     return tuple(actions)
 
 
-def company_report_rerun_command(identity: CompanyIdentity) -> str:
+def company_report_rerun_command(
+    identity: CompanyIdentity,
+    *,
+    auto_inputs: bool = False,
+) -> str:
     """Return the one-command rerun command for an identity."""
 
     parts = [
@@ -567,6 +621,8 @@ def company_report_rerun_command(identity: CompanyIdentity) -> str:
         parts.extend(("--ticker", _quote(identity.ticker)))
     if identity.market:
         parts.extend(("--market", _quote(identity.market)))
+    if auto_inputs:
+        parts.append("--auto-inputs")
     return " ".join(parts)
 
 
@@ -648,9 +704,25 @@ def _identity_slug(identity: CompanyIdentity) -> str:
 
 def _best_search_term(company: str, aliases: tuple[str, ...]) -> str:
     for value in (company, *aliases):
-        if any("a" <= character.lower() <= "z" for character in value):
+        if _has_ascii_letter(value):
             return value
     return company
+
+
+def _hkex_stock_name_aliases(value: Any) -> tuple[str, ...]:
+    stock_name = _clean_text(value)
+    if not stock_name:
+        return ()
+    normalized = re.sub(r"-(?:B|W|SW|S)$", "", stock_name, flags=re.IGNORECASE)
+    aliases = []
+    if normalized and normalized != stock_name:
+        aliases.append(normalized)
+    aliases.append(stock_name)
+    return tuple(dict.fromkeys(aliases))
+
+
+def _has_ascii_letter(value: str) -> bool:
+    return any("a" <= character.lower() <= "z" for character in value)
 
 
 def _market_from_ticker(ticker: str | None) -> str | None:

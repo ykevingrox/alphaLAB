@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from biotech_alpha.auto_inputs import AutoInputArtifacts
+from biotech_alpha.auto_inputs import AutoInputArtifacts, SourceDocument
 from biotech_alpha.company_report import (
+    company_report_summary,
     discover_company_inputs,
     resolve_company_identity,
     run_company_report,
@@ -133,6 +134,7 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("First create", payload["next_actions"][0])
             self.assertEqual(payload["quality_gate"]["level"], "incomplete")
             self.assertIn("company-report", payload["rerun_command"])
+            self.assertNotIn("--auto-inputs", payload["rerun_command"])
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -181,22 +183,47 @@ class CompanyReportTest(unittest.TestCase):
                 generate.return_value = AutoInputArtifacts(
                     pipeline_assets=pipeline,
                     financials=financials,
+                    source_documents=(
+                        SourceDocument(
+                            source_type="hkex_annual_results",
+                            title="Annual Results",
+                            url="https://example.com/results.pdf",
+                            publication_date="2026-03-23",
+                            file_path=root / "results.pdf",
+                            text_path=root / "results.txt",
+                            stock_code="09606",
+                            stock_name="DUALITYBIO-B",
+                        ),
+                    ),
                 )
+                client = FakeClinicalTrialsClient()
                 result = run_company_report(
-                    company="DualityBio",
+                    company="映恩生物",
                     ticker="09606.HK",
                     input_dir=root / "manual",
                     generated_input_dir=generated,
                     output_dir=root / "out",
                     auto_inputs=True,
                     limit=1,
-                    client=FakeClinicalTrialsClient(),
+                    client=client,
                     now=datetime(2026, 4, 21, tzinfo=UTC),
                 )
 
+            self.assertEqual(result.identity.search_term, "DUALITYBIO")
+            self.assertIn("DUALITYBIO-B", result.identity.aliases)
+            self.assertIn("DUALITYBIO", result.identity.aliases)
+            self.assertEqual(client.search_terms[0], "DUALITYBIO")
             self.assertEqual(result.input_paths.pipeline_assets, pipeline)
             self.assertEqual(result.input_paths.financials, financials)
             self.assertEqual(len(result.research_result.pipeline_assets), 1)
+            self.assertIsNotNone(result.missing_inputs_report)
+            payload = json.loads(Path(result.missing_inputs_report).read_text())
+            summary = company_report_summary(result)
+            self.assertIn("--auto-inputs", payload["rerun_command"])
+            self.assertIn("--auto-inputs", summary["rerun_command"])
+            self.assertTrue(
+                any("--auto-inputs" in action for action in summary["next_actions"])
+            )
 
     def test_company_report_prefers_manual_inputs_over_generated_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -38,14 +38,20 @@ from getting the MVP stable.
 - Manual curated inputs still override generated inputs.
 - Auto-input generation is resilient: one-command reporting should continue
   even if auto input generation fails.
+- Suggested rerun commands preserve `--auto-inputs` when the current run used
+  automatic input generation.
+- Auto-input source metadata can enrich company identity with HKEX stock-name
+  aliases, so Chinese company input can still search English registry terms.
+- Network-free fixture tests cover the `generate_auto_inputs` orchestration
+  path.
 
 ## Current Repo State
 
 - Branch: `main`
 - Remote: `origin https://github.com/ykevingrox/alphaLAB.git`
-- Last known committed baseline: `c5f1779 Add HKEX auto input generation`
-- There are local uncommitted changes for conference catalysts, quality gates,
-  watchlist filtering, docs, and tests.
+- Check `git log --oneline -1` for the latest committed baseline.
+- Expected steady state after a handoff checkpoint is a clean working tree
+  except for ignored generated runtime outputs.
 - Generated runtime outputs are intentionally ignored by git:
   `data/raw/`, `data/input/generated/`, `data/processed/`, and `data/memos/`.
 
@@ -63,7 +69,7 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 78 unit tests passed.
+- 80 unit tests passed.
 - Compile check passed.
 - `git diff --check` passed.
 - 88-character scan passed.
@@ -81,9 +87,11 @@ Latest smoke command:
 Latest smoke result:
 
 - HKEX annual-results source was found.
+- `identity.search_term` was enriched to `DUALITYBIO`.
 - Draft `pipeline_assets`, `financials`, and `conference_catalysts` were
   generated.
 - Report ran successfully.
+- Suggested rerun command preserved `--auto-inputs`.
 - Quality gate was `research_ready_with_review`.
 - Remaining missing inputs were `competitors`, `valuation`, and
   `target_price_assumptions`.
@@ -91,14 +99,11 @@ Latest smoke result:
 ## Next Best Action
 
 1. Commit the current validated local changes as a small checkpoint.
-2. Add network-free HK biotech fixture tests for auto input generation so HKEX
-   parsing drift is caught without relying on live network calls.
-3. Improve company identity resolution so HKEX stock names, English names, and
-   Chinese names become aliases/search terms automatically.
-4. Preserve `--auto-inputs` in the suggested rerun command when the current run
-   used auto inputs.
-5. Tighten generated pipeline extraction quality and warnings before expanding
+2. Tighten generated pipeline extraction quality and warnings before expanding
    into valuation or competitor auto-drafting.
+3. Improve HKEX source discovery robustness and retry behavior.
+4. Add auto valuation drafts once source-backed market data is available.
+5. Add auto competitor drafts only after pipeline extraction is more reliable.
 
 ## Do Not Break
 

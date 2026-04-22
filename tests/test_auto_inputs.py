@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from biotech_alpha.auto_inputs import (
     SourceDocument,
     draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
+    generate_auto_inputs,
 )
 from biotech_alpha.company_report import CompanyIdentity
 
@@ -80,18 +84,93 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(payload["catalysts"][0]["category"], "conference")
         self.assertIn("ASCO", payload["catalysts"][0]["title"])
 
+    def test_generate_auto_inputs_with_fixture_source_document(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_dir = root / "raw_fixture"
+            raw_dir.mkdir()
+            source = _source(
+                file_path=raw_dir / "results.pdf",
+                text_path=raw_dir / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
 
-def _source() -> SourceDocument:
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ) as resolve:
+                with patch(
+                    "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                    return_value={"NEWS_ID": "fixture"},
+                ) as latest:
+                    with patch(
+                        "biotech_alpha.auto_inputs._download_and_extract_document",
+                        return_value=source,
+                    ) as download:
+                        artifacts = generate_auto_inputs(
+                            identity=CompanyIdentity(
+                                company="DualityBio",
+                                ticker="09606.HK",
+                            ),
+                            input_dir=root / "generated",
+                            output_dir=root / "out",
+                        )
+
+            resolve.assert_called_once()
+            latest.assert_called_once()
+            download.assert_called_once()
+            self.assertEqual(artifacts.warnings, ())
+            self.assertIsNotNone(artifacts.pipeline_assets)
+            self.assertIsNotNone(artifacts.financials)
+            self.assertIsNotNone(artifacts.conference_catalysts)
+            self.assertIsNotNone(artifacts.source_manifest)
+
+            pipeline = _read_json(artifacts.pipeline_assets)
+            financials = _read_json(artifacts.financials)
+            conference = _read_json(artifacts.conference_catalysts)
+            manifest = _read_json(artifacts.source_manifest)
+
+            self.assertEqual(pipeline["assets"][0]["name"], "DB-1303")
+            self.assertEqual(financials["cash_and_equivalents"], 3324529000)
+            self.assertEqual(conference["catalysts"][0]["category"], "conference")
+            self.assertIn("pipeline_assets", manifest["generated_inputs"])
+
+    def test_generate_auto_inputs_skips_non_hk_identity_without_network(self) -> None:
+        with patch("requests.Session") as session:
+            artifacts = generate_auto_inputs(
+                identity=CompanyIdentity(
+                    company="Example Bio",
+                    ticker="EXM",
+                    market="US",
+                ),
+            )
+
+        session.assert_not_called()
+        self.assertTrue(artifacts.warnings)
+
+
+def _source(
+    *,
+    file_path: Path = Path("results.pdf"),
+    text_path: Path = Path("results.txt"),
+) -> SourceDocument:
     return SourceDocument(
         source_type="hkex_annual_results",
         title="Annual Results",
         url="https://example.com/results.pdf",
         publication_date="2026-03-23",
-        file_path=Path("results.pdf"),
-        text_path=Path("results.txt"),
+        file_path=file_path,
+        text_path=text_path,
         stock_code="09606",
         stock_name="DUALITYBIO-B",
     )
+
+
+def _read_json(path: Path | None) -> dict:
+    if path is None:
+        raise AssertionError("expected a generated path")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
