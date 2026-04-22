@@ -408,6 +408,15 @@ Use this shape:
     RSS fetch succeeds (Google News query: "Hong Kong biotech"), and
     `_build_macro_context` removes the "recent sector-relevant news
     titles" unknown when news payload is present.
+- Extraction quality hardening landed for milestone leakage:
+  - `auto_inputs._draft_asset_from_context` now derives
+    `next_milestone` from `local_context` (asset-local window)
+    instead of broad context, reducing cross-asset contamination.
+  - `_milestone_from_context` now requires milestone-like trigger
+    terms and filters stale years against source publication year
+    (e.g. prevents spurious `in 2017` leakage into 2026 reports).
+  - Regression test now asserts `DB-1312.next_milestone is None`
+    while preserving valid `DB-1311 = planned to start in 2026`.
 
 ## Current Repo State
 
@@ -439,11 +448,15 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 Latest result:
 
 - 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
+ - 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
   checkpoint cover macro-signals parser + cache + multi-source
   fallback work and Anthropic provider routing/config/client tests.
+ - Extraction hardening patch (milestone leakage guard) is now covered
+   by `tests/test_auto_inputs.py` and included in the same 231-test
+   baseline.
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
@@ -572,8 +585,8 @@ Two immediate tracks:
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Validate that Stooq + stale-cache still
    produce non-empty `live_signals` in degraded runs.
-3. Tighten deterministic extraction around malformed milestone strings
-   (e.g. legacy-year leakage) to improve upstream context quality for
+3. Continue tightening deterministic extraction around malformed
+   placeholder strings so upstream context quality stays high for
    triage/skeptic agents.
 
 ### Acceptance Criteria

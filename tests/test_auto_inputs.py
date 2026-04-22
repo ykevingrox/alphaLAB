@@ -116,6 +116,12 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(_asset_by_name(payload, "DB-1317")["target"], "ADAM9")
         self.assertEqual(_asset_by_name(payload, "DB-1324")["target"], "CDH17")
         self.assertIn("solid tumors", _asset_by_name(payload, "DB-1312")["indication"])
+        self.assertEqual(
+            _asset_by_name(payload, "DB-1311")["next_milestone"],
+            "planned to start in 2026",
+        )
+        # Guard against stale legacy-year leakage from broad context windows.
+        self.assertIsNone(_asset_by_name(payload, "DB-1312")["next_milestone"])
 
     def test_drafts_pipeline_assets_enriches_repeated_asset_mentions(self) -> None:
         text = """

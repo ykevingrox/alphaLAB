@@ -344,6 +344,9 @@ resilience and validator tightening remain).
   USD/HKD/RMB thousand-unit statements. Remaining phase or undisclosed-target
   warnings are intentionally left for human review unless the source text
   clearly resolves them.
+  Milestone extraction now also guards against stale legacy-year leakage
+  (e.g. spurious `in 2017` values from broad context windows) by using
+  asset-local context plus source-year sanity checks.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from

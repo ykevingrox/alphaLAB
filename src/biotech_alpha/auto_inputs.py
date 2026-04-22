@@ -300,6 +300,7 @@ def _draft_asset_from_context(
         target = _target_from_context(packed_context)
         modality = _modality_from_context(packed_context)
         indication = _indication_from_context(packed_context) or indication
+    source_year = _year_from_source_date(source.publication_date)
     return {
         "name": primary,
         "aliases": aliases,
@@ -314,7 +315,10 @@ def _draft_asset_from_context(
         "geography": _geography_from_context(context),
         "rights": None,
         "partner": _partner_from_context(context),
-        "next_milestone": _milestone_from_context(context),
+        "next_milestone": _milestone_from_context(
+            local_context,
+            as_of_year=source_year,
+        ),
         "evidence": [
             {
                 "claim": _clean_claim(context),
@@ -940,13 +944,47 @@ def _partner_from_context(context: str) -> str | None:
     return "; ".join(dict.fromkeys(found)) if found else None
 
 
-def _milestone_from_context(context: str) -> str | None:
+def _milestone_from_context(
+    context: str, *, as_of_year: int | None = None
+) -> str | None:
     if "planned to start in 2026" in context:
         return "planned to start in 2026"
+    normalized = re.sub(r"\s+", " ", context).lower()
+    if not any(
+        token in normalized
+        for token in (
+            "planned",
+            "start",
+            "initiat",
+            "present",
+            "readout",
+            "submit",
+            "approval",
+            "expected",
+            "milestone",
+            "data",
+        )
+    ):
+        return None
     match = re.search(r"(?:in|during)\s+(20\d{2})", context)
     if match:
+        year = int(match.group(1))
+        # Reject obviously stale legacy years that leak from historical
+        # narrative sections (e.g. "in 2017") into current asset rows.
+        if as_of_year is not None and year < as_of_year - 1:
+            return None
         return match.group(0)
     return None
+
+
+def _year_from_source_date(value: Any) -> int | None:
+    if value is None:
+        return None
+    text = str(value)
+    match = re.match(r"^(\d{4})", text)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _clean_claim(context: str) -> str:
