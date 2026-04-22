@@ -351,6 +351,25 @@ Use this shape:
     keeps the old stub-only macro answer; when Yahoo becomes
     reachable again the agent will produce a concrete regime with
     no further code changes.
+- Macro-signals disk cache is live:
+  - New `CachingMacroSignalsProvider` wraps any `MacroSignalsProvider`
+    and keys the cache on `(market, provider_label)`. Same-market
+    requests from different companies reuse one successful fetch
+    (end-to-end dry run: 3 back-to-back HK requests → 1 upstream
+    call). Default TTL 6 hours, default location
+    `data/cache/macro_signals/` (gitignored).
+  - Stale-if-error: upstream failure with an expired cache on disk
+    returns the stale cache with a
+    `cache: stale (served on upstream failure...)` note, converting
+    a transient Yahoo 429 into slightly-stale regime read instead of
+    losing the live feed. Upstream with no cache falls back to
+    `None` as before.
+  - Writes are atomic (tempfile + rename); disk write failures are
+    swallowed so caller never sees a cache-layer error.
+  - CLI: `--macro-signals yahoo-hk` returns the caching wrapper by
+    default; `--macro-signals-cache-ttl-hours FLOAT` tunes the TTL;
+    `--no-macro-signals-cache` bypasses the cache entirely.
+  - `.gitignore` adds `data/cache/`.
 
 ## Current Repo State
 
@@ -364,10 +383,12 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-22 after M4c macro-signals rollout
-(`--macro-signals yahoo-hk` attaches HSI / USD-HKD live data to the
-`macro_context` fact; M4 four-agent runtime, per-agent LLM budget
-caps, and `--market-data-freshness-days` unchanged):
+Last validated on 2026-04-22 after M4c macro-signals + disk-cache
+rollout (`--macro-signals yahoo-hk` attaches HSI / USD-HKD live data
+to the `macro_context` fact and now reuses a single fetch across
+every company in the same market via a TTL disk cache; M4 four-agent
+runtime, per-agent LLM budget caps, and `--market-data-freshness-days`
+unchanged):
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -379,12 +400,14 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 205 unit tests ran, 199 passed, 6 skipped (online Yahoo / online
+- 218 unit tests ran, 212 passed, 6 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests including the
   macro-context online self-skip; all guarded behind
-  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +15 from the previous
+  `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +28 from the previous
   checkpoint cover the new macro-signals parser, fake-session
-  behaviour, graceful degradation, and CLI flag threading.
+  behaviour, graceful degradation, CLI flag threading, and the
+  disk-cache wrapper (miss-then-hit, TTL expiry, stale-if-error,
+  upstream exception swallowed, and per-(market, provider) keying).
 - Compile check passed on both `src` and `tests`.
 - `git diff --check` passed.
 - 88-character scan passed across `git ls-files '*.py' '*.md' '*.toml'`
@@ -470,26 +493,27 @@ Latest smoke result:
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
-- `--macro-signals yahoo-hk` is wired end-to-end. When Yahoo's public
-  chart endpoint returns 200, the `macro_context` fact carries a
-  `live_signals` block (HSI level + 30-day trend, USD/HKD spot, all
-  source-tagged) and `known_unknowns` drops the HSI / USD-HKD items.
-  When Yahoo returns 429 (observed from this IP during validation),
-  each sub-feed degrades to `None` with a note, the provider returns
-  `None`, the macro agent sees the unchanged stub, and behaviour
-  matches the pre-macro-signals run. No exception propagates.
+- `--macro-signals yahoo-hk` is wired end-to-end and now shares a
+  single fetch across every company in the same market through
+  `CachingMacroSignalsProvider`. Because macro signals (HSI,
+  USD/HKD) are per-market, not per-ticker, the analyst running
+  back-to-back reports on several HK biotech names in the same
+  session hits Yahoo exactly once per TTL (default 6h). Stale-if-
+  error semantics turn a transient Yahoo 429 into a slightly-stale
+  regime read plus a cache note, instead of losing the live feed.
 
 ## Execution Plan
 
 ### Current Task
 
 `--macro-signals yahoo-hk` now threads a source-tagged HSI + USD-HKD
-live feed into the `macro_context` fact, so the macro agent can form
-a concrete regime read when Yahoo is reachable and still degrade
-cleanly to the old `insufficient_data` answer when it is not. The
-remaining M4 work is removing single-vendor LLM risk (Anthropic /
-Claude via the same `LLMClient` protocol) and hardening the macro
-feed so transient 429s do not hide a real regime from the agent.
+live feed into the `macro_context` fact, with a disk-backed TTL cache
+(`CachingMacroSignalsProvider`) so back-to-back reports on several
+HK biotech names hit Yahoo exactly once per TTL. Transient 429s fall
+back to stale cache plus a cache note instead of erasing the live
+feed. The remaining M4 work is removing single-vendor LLM risk
+(Anthropic / Claude via the same `LLMClient` protocol) and a live
+smoke that captures a non-`insufficient_data` macro regime.
 
 Two immediate tracks:
 
@@ -499,12 +523,11 @@ Two immediate tracks:
   Chat Completions, so we need a parallel
   `AnthropicLLMClient` exposed through the same `LLMClient` protocol
   and routed by `LLMConfig.provider` (default "openai-compatible").
-- Macro-signals resilience. The Yahoo chart endpoint 429s on repeat
-  fetches from the same IP. Add a tiny on-disk cache (TTL ~6 h,
-  scoped to the generated inputs directory) plus a short exponential
-  backoff on 429/503 so the macro agent sees a live regime on the
-  common case. When all retries fail, keep the current
-  graceful-`None` behaviour.
+- Macro-signals live smoke. With the cache in place a single
+  successful Yahoo fetch (from a fresh IP or after rate-limit
+  reset) will service every HK company for the next 6 hours; we
+  want to capture that run end-to-end and record the resulting
+  non-`insufficient_data` macro regime in the validation log.
 
 ### Next Action
 
@@ -517,15 +540,15 @@ Two immediate tracks:
    Anthropic's response shape for the `MacroContextLLMAgent`, and an
    online smoke gated by `BIOTECH_ALPHA_ONLINE_ANTHROPIC_TESTS=1`
    plus `ANTHROPIC_API_KEY`.
-2. Add a JSON on-disk cache for `hk_macro_signals_yahoo` keyed by
-   `(symbol, interval, range)` with a 6-hour TTL. Cache location
-   defaults to `data/input/generated/.cache/macro_signals/`. On
-   cache hit, emit a note in `notes` indicating the cached
-   `fetched_at`. On 429, sleep 1 s then retry once before giving up.
-3. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
+2. Re-run the four-agent live smoke with `--macro-signals yahoo-hk`
    once Yahoo rate-limits recover (or from a fresh IP) and confirm
    the macro agent returns a non-`insufficient_data` regime with
-   cited live values.
+   cited live values. Document the resulting
+   `data/cache/macro_signals/HK_yahoo-hk.json` and confirm that a
+   subsequent run on a second HK ticker reuses it without hitting
+   Yahoo.
+3. Later: extend `hk_macro_signals_yahoo` to add HIBOR tenor levels,
+   `^HSBIO` sub-index, and source-tagged sector news headlines.
 
 ### Acceptance Criteria
 
@@ -536,11 +559,10 @@ Two immediate tracks:
 - `LLMConfig.provider="anthropic"` plus `ANTHROPIC_API_KEY=...` runs
   `company-report --llm-agents macro-context` end-to-end and writes
   a trace entry tagged with the Anthropic model.
-- `hk_macro_signals_yahoo` cache round-trips through disk and TTL
-  expiry is exercised by a unit test (no network hits).
 - `--macro-signals yahoo-hk` live smoke produces a non-
   `insufficient_data` macro regime at least once (recorded in
-  `data/memos/<run_id>_llm_findings.json`).
+  `data/memos/<run_id>_llm_findings.json`) and the second back-to-back
+  run shows `cache: hit` in its `macro_context.live_signals.notes`.
 - No regression on the existing four-agent Qwen smoke or on the
   macro-signals offline tests.
 
@@ -565,12 +587,13 @@ set -a; source .env; set +a
 
 1. `AnthropicLLMClient` alongside `OpenAICompatibleLLMClient`, routed
    through `LLMConfig.provider`, so the runtime is not single-vendor.
-2. Macro-signals resilience (6-hour disk cache + one short retry on
-   Yahoo 429) so the live regime read is the common path, not the
-   rare path.
-3. Extend `hk_macro_signals_yahoo` to add HIBOR tenor levels, Hang
+2. Extend `hk_macro_signals_yahoo` to add HIBOR tenor levels, Hang
    Seng Biotech sub-index (^HSBIO), and a small list of source-tagged
    sector news headlines.
+3. Add a short exponential backoff on Yahoo 429/503 inside
+   `hk_macro_signals_yahoo` before surrendering to the stale-cache
+   fallback, so the first cold run has a better chance of warming
+   the cache.
 4. Add auto competitor drafts once pipeline extraction is reliable.
 4. Keep broadening fixtures across representative HK biotech disclosure
    styles.
