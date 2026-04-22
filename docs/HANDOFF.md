@@ -454,13 +454,13 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 231 unit tests ran, 224 passed, 7 skipped (online Yahoo / online
-- 233 unit tests ran, 226 passed, 7 skipped (online Yahoo / online
+- 243 unit tests ran, 236 passed, 7 skipped (online Yahoo / online
   Tencent / four online Bailian Qwen integration tests plus the new
   Anthropic macro-context online self-skip; all guarded behind
   `BIOTECH_ALPHA_ONLINE_*_TESTS=1`). The +37 from the previous
   checkpoint cover macro-signals parser + cache + multi-source
-  fallback work and Anthropic provider routing/config/client tests.
+  fallback work, Anthropic provider routing/config/client tests, and
+  the new `competition-triage` LLM agent coverage.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same 233-test baseline.
@@ -595,6 +595,10 @@ Two immediate tracks:
 3. Continue tightening deterministic extraction around malformed
    placeholder strings so upstream context quality stays high for
    triage/skeptic agents.
+4. Expand competitor seed dictionaries + fixture coverage so
+   auto-drafted competitors cover more HK biotech target families.
+5. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
+   one-command with default LLM-on behavior and explicit opt-out only.
 
 ### Acceptance Criteria
 
@@ -631,17 +635,16 @@ set -a; source .env; set +a
 
 1. Four-agent live smoke with `--macro-signals yahoo-hk` capturing a
    non-`insufficient_data` macro regime plus cache reuse on second run.
-2. Add auto competitor drafts once pipeline extraction is reliable.
-3. Keep broadening fixtures across representative HK biotech disclosure
+2. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-4. Tighten validator checks for stale placeholders and weak evidence
+3. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-5. Add a US-market sibling market-data provider, so the auto-draft path
+4. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-6. Consider a deterministic post-processor that turns LLM findings into
+5. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-7. Consider a `K-line technical agent` (name TBD) that reads a
+6. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.

@@ -11,6 +11,7 @@ import requests
 from biotech_alpha.auto_inputs import (
     SourceDocument,
     _resolve_hkex_stock_id,
+    draft_competitor_assets,
     draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
@@ -139,6 +140,30 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(names.count("DB-9999"), 1)
         self.assertEqual(_asset_by_name(payload, "DB-9999")["phase"], "Phase 2")
 
+    def test_drafts_competitor_assets_from_pipeline_targets(self) -> None:
+        identity = CompanyIdentity(company="DualityBio", ticker="09606.HK")
+        source = _source()
+        pipeline_payload = draft_pipeline_assets(
+            identity=identity,
+            text=SAMPLE_TEXT,
+            source=source,
+        )
+        payload = draft_competitor_assets(
+            identity=identity,
+            pipeline_assets_payload=pipeline_payload,
+            source=source,
+        )
+
+        self.assertEqual(payload["company"], "DualityBio")
+        self.assertEqual(payload["generated_by"], "auto_inputs.target_overlap_seed")
+        self.assertTrue(payload["needs_human_review"])
+        self.assertGreaterEqual(len(payload["competitors"]), 1)
+        first = payload["competitors"][0]
+        self.assertIn("company", first)
+        self.assertIn("asset_name", first)
+        self.assertIn("target", first)
+        self.assertTrue(first["evidence"][0]["is_inferred"])
+
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
             identity=CompanyIdentity(company="DualityBio", ticker="09606.HK"),
@@ -216,19 +241,24 @@ class AutoInputsTest(unittest.TestCase):
             download.assert_called_once()
             self.assertEqual(artifacts.warnings, ())
             self.assertIsNotNone(artifacts.pipeline_assets)
+            self.assertIsNotNone(artifacts.competitors)
             self.assertIsNotNone(artifacts.financials)
             self.assertIsNotNone(artifacts.conference_catalysts)
             self.assertIsNotNone(artifacts.source_manifest)
 
             pipeline = _read_json(artifacts.pipeline_assets)
+            competitors = _read_json(artifacts.competitors)
             financials = _read_json(artifacts.financials)
             conference = _read_json(artifacts.conference_catalysts)
             manifest = _read_json(artifacts.source_manifest)
 
             self.assertEqual(pipeline["assets"][0]["name"], "DB-1303")
+            self.assertGreaterEqual(len(competitors["competitors"]), 1)
             self.assertEqual(financials["cash_and_equivalents"], 3324529000)
             self.assertEqual(conference["catalysts"][0]["category"], "conference")
             self.assertIn("pipeline_assets", manifest["generated_inputs"])
+            self.assertIn("competitors", manifest["generated_inputs"])
+            self.assertIn("competitors", manifest["validation"])
 
     def test_draft_valuation_snapshot_from_market_data_payload(self) -> None:
         market_data = {
@@ -418,6 +448,7 @@ class AutoInputsTest(unittest.TestCase):
 
             self.assertIsNone(artifacts.valuation)
             self.assertIsNotNone(artifacts.pipeline_assets)
+            self.assertIsNotNone(artifacts.competitors)
             self.assertIsNotNone(artifacts.financials)
             self.assertTrue(
                 any("provider" in warning for warning in artifacts.warnings),

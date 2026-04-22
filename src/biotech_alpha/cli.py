@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Sequence
 
@@ -308,6 +309,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "scientific-skeptic",
             "pipeline-triage",
             "financial-triage",
+            "competition-triage",
             "macro-context",
         ),
         help=(
@@ -328,6 +330,49 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Optional override for the LLM trace JSONL path. Defaults to "
             "data/traces/<run_id>.jsonl."
         ),
+    )
+    quick_report_parser = subparsers.add_parser(
+        "report",
+        help=(
+            "Ultra-simple one-command entry: one company/ticker in, report out."
+        ),
+    )
+    quick_report_parser.add_argument(
+        "query",
+        help="Company name or ticker (e.g. DualityBio or 09606.HK).",
+    )
+    quick_report_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory for report artifacts. Defaults to data.",
+    )
+    quick_report_parser.add_argument(
+        "--input-dir",
+        default="data/input",
+        help="Directory to scan for curated input files. Defaults to data/input.",
+    )
+    quick_report_parser.add_argument(
+        "--registry",
+        default="data/input/company_registry.json",
+        help="Optional company registry JSON for aliases and tickers.",
+    )
+    quick_report_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Force deterministic-only mode (skip all LLM agents).",
+    )
+    quick_report_parser.add_argument(
+        "--allow-no-llm",
+        action="store_true",
+        help=(
+            "If LLM client init fails (e.g. missing API key), continue in "
+            "deterministic-only mode instead of exiting with error."
+        ),
+    )
+    quick_report_parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Run without writing artifacts to disk.",
     )
 
     template_parser = subparsers.add_parser(
@@ -682,6 +727,54 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_agents=llm_agents,
             llm_client=llm_client,
             llm_trace_path=getattr(args, "llm_trace_path", None),
+            macro_signals_provider=macro_signals_provider,
+        )
+        print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "report":
+        company, ticker = _split_company_or_ticker(args.query)
+        llm_agents: tuple[str, ...] = ()
+        llm_client = None
+        if not args.no_llm:
+            llm_agents = (
+                "pipeline-triage",
+                "financial-triage",
+                "competition-triage",
+                "macro-context",
+                "scientific-skeptic",
+            )
+            try:
+                llm_client = _build_llm_client(llm_agents)
+            except Exception:
+                if not args.allow_no_llm:
+                    raise
+                llm_agents = ()
+                llm_client = None
+
+        market_data_provider = _resolve_market_data_provider("hk-public")
+        macro_signals_provider = _resolve_macro_signals_provider("yahoo-hk")
+        result = run_company_report(
+            company=company,
+            ticker=ticker,
+            market=None,
+            sector="biotech",
+            search_term=None,
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
+            registry_path=args.registry,
+            auto_inputs=True,
+            generated_input_dir="data/input/generated",
+            overwrite_auto_inputs=False,
+            market_data_provider=market_data_provider,
+            include_asset_queries=True,
+            max_asset_query_terms=20,
+            limit=20,
+            save=not args.no_save,
+            client=client,
+            llm_agents=llm_agents,
+            llm_client=llm_client,
+            llm_trace_path=None,
             macro_signals_provider=macro_signals_provider,
         )
         print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
@@ -1056,6 +1149,18 @@ def _build_llm_client(llm_agents: tuple[str, ...]):
     if config.provider == "anthropic":
         return AnthropicLLMClient(config, trace_recorder=recorder)
     return OpenAICompatibleLLMClient(config, trace_recorder=recorder)
+
+
+def _split_company_or_ticker(query: str) -> tuple[str | None, str | None]:
+    """Return (company, ticker) for a quick-mode query string."""
+
+    value = query.strip()
+    if not value:
+        raise ValueError("query must not be empty")
+    normalized = value.upper().replace(" ", "")
+    if re.fullmatch(r"\d{4,5}\.HK", normalized):
+        return None, normalized
+    return value, None
 
 
 if __name__ == "__main__":

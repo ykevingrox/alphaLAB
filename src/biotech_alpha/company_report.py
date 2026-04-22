@@ -286,6 +286,7 @@ SUPPORTED_LLM_AGENTS = (
     "scientific-skeptic",
     "pipeline-triage",
     "financial-triage",
+    "competition-triage",
     "macro-context",
 )
 
@@ -310,6 +311,7 @@ def _run_llm_agent_pipeline(
     )
     from biotech_alpha.agents import AgentContext
     from biotech_alpha.agents_llm import (
+        CompetitionTriageLLMAgent,
         FinancialTriageLLMAgent,
         MacroContextLLMAgent,
         PipelineTriageLLMAgent,
@@ -379,6 +381,13 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "competition-triage" in llm_agents:
+        graph.add(
+            CompetitionTriageLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "macro-context" in llm_agents:
         graph.add(
             MacroContextLLMAgent(
@@ -398,6 +407,8 @@ def _run_llm_agent_pipeline(
             skeptic_deps = skeptic_deps + ("pipeline_triage_llm_agent",)
         if "financial-triage" in llm_agents:
             skeptic_deps = skeptic_deps + ("financial_triage_llm_agent",)
+        if "competition-triage" in llm_agents:
+            skeptic_deps = skeptic_deps + ("competition_triage_llm_agent",)
         if "macro-context" in llm_agents:
             skeptic_deps = skeptic_deps + ("macro_context_llm_agent",)
         graph.add(
@@ -550,6 +561,9 @@ def build_llm_agent_facts(
         auto_input_artifacts=auto_input_artifacts,
         live_signals=macro_signals,
     )
+    competition_snapshot = _build_competition_snapshot(
+        research_result=research_result
+    )
 
     return {
         "skeptic_risks": skeptic_risks,
@@ -559,7 +573,45 @@ def build_llm_agent_facts(
         "input_warnings": input_warnings,
         "source_text_excerpt": source_text_excerpt,
         "financials_snapshot": financials_snapshot,
+        "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
+    }
+
+
+def _build_competition_snapshot(
+    *, research_result: SingleCompanyResearchResult
+) -> dict[str, Any] | None:
+    """Serialize competitor assets and deterministic matches for LLM review."""
+
+    competitors = getattr(research_result, "competitor_assets", ()) or ()
+    matches = getattr(research_result, "competitive_matches", ()) or ()
+    if not competitors and not matches:
+        return None
+
+    return {
+        "competitor_assets": [
+            {
+                "company": item.company,
+                "asset_name": item.asset_name,
+                "target": item.target,
+                "mechanism": item.mechanism,
+                "indication": item.indication,
+                "phase": item.phase,
+                "geography": item.geography,
+                "differentiation": item.differentiation,
+            }
+            for item in competitors
+        ],
+        "competitive_matches": [
+            {
+                "asset_name": item.asset_name,
+                "competitor_company": item.competitor_company,
+                "competitor_asset": item.competitor_asset,
+                "match_scope": item.match_scope,
+                "confidence": item.confidence,
+            }
+            for item in matches
+        ],
     }
 
 

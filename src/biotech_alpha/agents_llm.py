@@ -60,6 +60,8 @@ SCIENTIFIC_SKEPTIC_PROMPT = StructuredPrompt(
         "if present):\n${financial_triage}\n\n"
         "Macro context findings (from the macro-context LLM agent, if "
         "present):\n${macro_context}\n\n"
+        "Competition triage findings (from the competition-triage LLM "
+        "agent, if present):\n${competition_triage}\n\n"
         "Trial coverage summary:\n${trial_summary}\n\n"
         "Valuation + cash snapshot:\n${valuation_snapshot}\n\n"
         "Input warnings:\n${input_warnings}\n\n"
@@ -233,6 +235,9 @@ class ScientificSkepticLLMAgent(Agent):
             ),
             "macro_context": _json_block(
                 store.get("macro_context_payload")
+            ),
+            "competition_triage": _json_block(
+                store.get("competition_triage_payload")
             ),
             "trial_summary": _json_block(store.get("trial_summary")),
             "valuation_snapshot": _json_block(
@@ -791,6 +796,272 @@ def _financial_triage_finding_from_payload(
         has_high_severity
         or runway_sanity in {"inconsistent", "insufficient_data"}
     )
+
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=True if needs_review else True,
+    )
+
+
+COMPETITION_TRIAGE_PROMPT = StructuredPrompt(
+    name="competition_triage",
+    tags=("competition", "triage", "llm"),
+    system=(
+        "You are a biotech competitive-landscape reviewer. Your job is to "
+        "stress-test deterministic competitor matching output and highlight "
+        "where the current competitor set may be crowded, sparse, stale, or "
+        "internally inconsistent. Work only from provided facts. Do not "
+        "invent competitors, readouts, or market-share claims.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required top-level keys: crowding_signal, summary, findings.\n"
+        "- Optional top-level key: confidence.\n"
+        "- `crowding_signal` is exactly one of \"crowded\", \"balanced\", "
+        "\"unclear\", \"insufficient_data\".\n"
+        "- `findings` is a list of objects, each with required keys "
+        "`severity` (one of \"low\", \"medium\", \"high\") and "
+        "`description`. Optional keys: `asset_name`, `match_scope`, "
+        "`suggested_action`.\n"
+        "- Never wrap output in `competition_triage`, `analysis`, `result`, "
+        "or any other outer key."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Competition snapshot (deterministic):\n${competition_snapshot}\n\n"
+        "Pipeline snapshot context:\n${pipeline_snapshot}\n\n"
+        "Input warnings:\n${input_warnings}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"crowding_signal\": \"crowded|balanced|unclear|insufficient_data\",\n"
+        "  \"summary\": \"<1-3 sentence competition read>\",\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"findings\": [\n"
+        "    {\"severity\": \"low|medium|high\", "
+        "\"description\": \"<specific issue or observation>\", "
+        "\"asset_name\": \"<asset or null>\", "
+        "\"match_scope\": \"<target|indication|target+indication|null>\", "
+        "\"suggested_action\": \"<string or null>\"}\n"
+        "  ]\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": ["crowding_signal", "summary", "findings"],
+        "properties": {
+            "crowding_signal": {
+                "type": "string",
+                "enum": [
+                    "crowded",
+                    "balanced",
+                    "unclear",
+                    "insufficient_data",
+                ],
+            },
+            "summary": {"type": "string", "min_length": 1},
+            "confidence": {"type": ["number", "null"]},
+            "findings": {
+                "type": "array",
+                "max_items": 20,
+                "items": {
+                    "type": "object",
+                    "required": ["severity", "description"],
+                    "properties": {
+                        "severity": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                        },
+                        "description": {
+                            "type": "string",
+                            "min_length": 3,
+                        },
+                        "asset_name": {"type": ["string", "null"]},
+                        "match_scope": {"type": ["string", "null"]},
+                        "suggested_action": {"type": ["string", "null"]},
+                    },
+                },
+            },
+        },
+    },
+)
+
+
+@dataclass
+class CompetitionTriageLLMAgent(Agent):
+    """LLM agent that critiques deterministic competitor matching outputs."""
+
+    llm_client: LLMClient
+    name: str = "competition_triage_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "competition_triage_llm_finding",
+        "competition_triage_payload",
+    )
+    max_tokens: int | None = 1100
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("CompetitionTriageLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        snapshot = store.get("competition_snapshot")
+        if not isinstance(snapshot, dict) or not snapshot:
+            return AgentStepResult(
+                agent_name=self.name,
+                skipped=True,
+                error=(
+                    "no competition_snapshot available for triage; "
+                    "competitor inputs are required"
+                ),
+            )
+        competitor_assets = snapshot.get("competitor_assets")
+        if not competitor_assets:
+            return AgentStepResult(
+                agent_name=self.name,
+                skipped=True,
+                error=(
+                    "competition_snapshot has no competitor_assets; "
+                    "skip competition triage"
+                ),
+            )
+
+        variables = self._collect_variables(context, store)
+        system, user = COMPETITION_TRIAGE_PROMPT.render(variables)
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = COMPETITION_TRIAGE_PROMPT.parse_response(
+                call.response_text
+            )
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _competition_triage_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "competition_triage_llm_finding": finding,
+                "competition_triage_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "competition_snapshot": _json_block(
+                store.get("competition_snapshot")
+            ),
+            "pipeline_snapshot": _json_block(store.get("pipeline_snapshot")),
+            "input_warnings": _format_lines(store.get("input_warnings") or []),
+        }
+
+
+def _competition_triage_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "Competition triage completed."
+
+    crowding_signal = str(payload.get("crowding_signal") or "").strip().lower()
+    risks: list[str] = []
+    if crowding_signal in {"crowded", "insufficient_data"}:
+        risks.append(f"[crowding_signal] {crowding_signal}")
+
+    has_high = False
+    for entry in payload.get("findings") or []:
+        severity = str(entry.get("severity", "")).strip().lower()
+        description = str(entry.get("description", "")).strip()
+        asset_name = str(entry.get("asset_name") or "").strip()
+        match_scope = str(entry.get("match_scope") or "").strip()
+        if not description or severity not in {"low", "medium", "high"}:
+            continue
+        prefix = f"[{severity}]"
+        if asset_name:
+            prefix = f"{prefix}[{asset_name}]"
+        if match_scope:
+            prefix = f"{prefix}[{match_scope}]"
+        risks.append(f"{prefix} {description}")
+        if severity == "high":
+            has_high = True
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Competition triage produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+
+    needs_review = has_high or crowding_signal == "insufficient_data"
 
     return AgentFinding(
         agent_name=agent_name,

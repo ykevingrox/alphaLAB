@@ -16,6 +16,10 @@ import requests
 from pypdf import PdfReader
 
 from biotech_alpha.company_report import CompanyIdentity
+from biotech_alpha.competition import (
+    competition_validation_report_as_dict,
+    validate_competitor_file,
+)
 from biotech_alpha.conference import (
     conference_validation_report_as_dict,
     validate_conference_catalyst_file,
@@ -68,6 +72,7 @@ class AutoInputArtifacts:
 
     source_manifest: Path | None = None
     pipeline_assets: Path | None = None
+    competitors: Path | None = None
     financials: Path | None = None
     conference_catalysts: Path | None = None
     valuation: Path | None = None
@@ -137,16 +142,26 @@ def generate_auto_inputs(
     )
     text = document.text_path.read_text(encoding="utf-8")
     pipeline_path = generated_input_dir / f"{slug}_pipeline_assets.json"
+    competitors_path = generated_input_dir / f"{slug}_competitors.json"
     financials_path = generated_input_dir / f"{slug}_financials.json"
     conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
     valuation_path = generated_input_dir / f"{slug}_valuation.json"
 
     if overwrite or not pipeline_path.exists():
+        pipeline_payload = draft_pipeline_assets(
+            identity=identity,
+            text=text,
+            source=document,
+        )
+        _write_json(pipeline_path, pipeline_payload)
+    else:
+        pipeline_payload = _read_json(pipeline_path)
+    if overwrite or not competitors_path.exists():
         _write_json(
-            pipeline_path,
-            draft_pipeline_assets(
+            competitors_path,
+            draft_competitor_assets(
                 identity=identity,
-                text=text,
+                pipeline_assets_payload=pipeline_payload,
                 source=document,
             ),
         )
@@ -196,6 +211,9 @@ def generate_auto_inputs(
         "pipeline_assets": validation_report_as_dict(
             validate_pipeline_asset_file(pipeline_path)
         ),
+        "competitors": competition_validation_report_as_dict(
+            validate_competitor_file(competitors_path)
+        ),
         "financials": financial_validation_report_as_dict(
             validate_financial_snapshot_file(financials_path)
         ),
@@ -210,6 +228,7 @@ def generate_auto_inputs(
 
     generated_inputs: dict[str, Path] = {
         "pipeline_assets": pipeline_path,
+        "competitors": competitors_path,
         "financials": financials_path,
         "conference_catalysts": conference_path,
     }
@@ -230,6 +249,7 @@ def generate_auto_inputs(
     return AutoInputArtifacts(
         source_manifest=manifest_path,
         pipeline_assets=pipeline_path,
+        competitors=competitors_path,
         financials=financials_path,
         conference_catalysts=conference_path,
         valuation=valuation_written_path,
@@ -281,6 +301,99 @@ def draft_pipeline_assets(
         "generated_by": "auto_inputs.hkex_annual_results",
         "needs_human_review": True,
         "assets": assets,
+    }
+
+
+_COMPETITOR_SEEDS_BY_TARGET: dict[str, list[dict[str, str]]] = {
+    "HER2": [
+        {"company": "AstraZeneca", "asset_name": "Trastuzumab deruxtecan"},
+        {"company": "RemeGen", "asset_name": "Disitamab vedotin"},
+    ],
+    "B7-H3": [
+        {"company": "Merck", "asset_name": "Ifinatamab deruxtecan"},
+        {"company": "MediLink", "asset_name": "YL201"},
+    ],
+    "HER3": [
+        {"company": "Daiichi Sankyo", "asset_name": "Patritumab deruxtecan"},
+    ],
+    "ADAM9": [
+        {"company": "Amgen", "asset_name": "AMG 193 program"},
+    ],
+    "CDH17": [
+        {"company": "Minghui Pharma", "asset_name": "CDH17 ADC program"},
+    ],
+    "B7-H4": [
+        {"company": "Nuvation Bio", "asset_name": "B7-H4 ADC program"},
+    ],
+}
+
+
+def draft_competitor_assets(
+    *,
+    identity: CompanyIdentity,
+    pipeline_assets_payload: dict[str, Any],
+    source: SourceDocument,
+) -> dict[str, Any]:
+    """Draft a conservative competitor seed set from extracted targets.
+
+    This is intentionally heuristic and human-review-first. The goal is
+    to reduce zero-competitor runs by pre-populating plausible same-target
+    peers for major disclosed targets, while keeping every row clearly
+    source-tagged as inferred.
+    """
+
+    competitors: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    rows = pipeline_assets_payload.get("assets", [])
+    if not isinstance(rows, list):
+        rows = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        target = str(row.get("target") or "").strip()
+        if not target:
+            continue
+        indication = str(row.get("indication") or "").strip() or None
+        for seed in _COMPETITOR_SEEDS_BY_TARGET.get(target, []):
+            key = (seed["company"], seed["asset_name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            competitors.append(
+                {
+                    "company": seed["company"],
+                    "asset_name": seed["asset_name"],
+                    "aliases": [],
+                    "target": target,
+                    "mechanism": None,
+                    "indication": indication,
+                    "phase": "to_verify",
+                    "geography": "global",
+                    "differentiation": None,
+                    "evidence": [
+                        {
+                            "claim": (
+                                "Auto-generated competitor seed from "
+                                f"target-overlap heuristic for {target}; "
+                                "requires manual verification."
+                            ),
+                            "source": source.url,
+                            "source_date": source.publication_date,
+                            "confidence": 0.3,
+                            "is_inferred": True,
+                        }
+                    ],
+                }
+            )
+        if len(competitors) >= 16:
+            break
+
+    return {
+        "company": identity.company,
+        "ticker": identity.ticker,
+        "generated_by": "auto_inputs.target_overlap_seed",
+        "needs_human_review": True,
+        "competitors": competitors,
     }
 
 

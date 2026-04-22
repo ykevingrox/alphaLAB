@@ -131,8 +131,10 @@ parsing and scenario variants are pending.
 
 Status: partially implemented. Curated competitor asset JSON inputs,
 validation, deterministic matching by target and indication, competitive
-landscape findings, risks, and artifacts exist. Automatic competitor discovery,
-data maturity comparison, efficacy/safety comparisons, and commercialization
+landscape findings, risks, and artifacts exist. Auto-input now emits
+heuristic competitor seed drafts from extracted target overlap to reduce
+zero-competitor runs, while keeping all rows human-review flagged.
+Data maturity comparison, efficacy/safety comparisons, and commercialization
 analysis are pending.
 
 - Group assets by target, mechanism, indication, and geography.
@@ -373,9 +375,10 @@ and web ingestion out).
   **Where:** `src/biotech_alpha/conference.py`, `src/biotech_alpha/research.py`,
   `src/biotech_alpha/auto_inputs.py`, `tests/test_conference.py`.
 
-- **Not started** — Improve competitor intelligence from deterministic
+- **Partially done** — Improve competitor intelligence from deterministic
   target/indication matching toward better data-maturity and differentiation
-  checks.
+  checks. Auto competitor seed drafting from extracted pipeline targets is
+  now in place as a conservative bootstrap.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`
@@ -446,6 +449,14 @@ adapter, and starting a technical / K-line agent.
   slightly-stale cache plus a note instead of losing the live feed.
 - **Done** — Add a Claude/Anthropic adapter so the runtime is not
   single-vendor (`AnthropicLLMClient` + `LLMConfig.provider` routing).
+- **Done** — `CompetitionTriageLLMAgent` (opt-in via
+  `--llm-agents competition-triage`) audits deterministic competitor
+  matching outputs and feeds structured findings into the skeptic when
+  chained in the same AgentGraph run.
+- **Done** — Ultra-simple CLI entry `report "<company|ticker>"` for
+  operator UX. It auto-enables auto-inputs, market-data, macro-signals,
+  and the full LLM stack by default; missing LLM env now fails fast unless
+  `--allow-no-llm` is passed explicitly.
 - **Done** — Multi-source macro-signals fallback implementation:
   `Yahoo -> Stooq -> stale cache`, preserving current
   `macro_context.live_signals` output contract and audit keys.

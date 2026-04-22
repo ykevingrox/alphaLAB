@@ -24,6 +24,7 @@ Check the CLI surface:
 
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli --help
+PYTHONPATH=src python3 -m biotech_alpha.cli report --help
 PYTHONPATH=src python3 -m biotech_alpha.cli company-report --help
 PYTHONPATH=src python3 -m biotech_alpha.cli research --help
 PYTHONPATH=src python3 -m biotech_alpha.cli watchlist-rank --help
@@ -52,6 +53,20 @@ PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --ticker "9926.HK" \
   --limit 3
 ```
+
+For one-command operator UX (company/ticker in, report out), use:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli report "DualityBio"
+```
+
+Quick-mode behavior:
+
+- Auto-enables draft input generation (`auto_inputs`).
+- Auto-enables market data (`hk-public`) and macro live signals (`yahoo-hk`).
+- Auto-enables all current LLM agents including `competition-triage`.
+- Fails fast when LLM env is missing or invalid (default). To override:
+  `--allow-no-llm`.
 
 Expected behavior:
 

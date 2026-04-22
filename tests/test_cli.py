@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from biotech_alpha.cli import (
+    _split_company_or_ticker,
     _resolve_macro_signals_provider,
     _resolve_market_data_provider,
     main,
@@ -842,6 +843,69 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
             self.assertIsNone(
                 run.call_args.kwargs["macro_signals_provider"]
             )
+
+
+class QuickReportCliTest(unittest.TestCase):
+    def test_split_company_or_ticker_detects_hk_ticker(self) -> None:
+        company, ticker = _split_company_or_ticker("09606.hk")
+        self.assertIsNone(company)
+        self.assertEqual(ticker, "09606.HK")
+
+    def test_split_company_or_ticker_keeps_company_name(self) -> None:
+        company, ticker = _split_company_or_ticker("DualityBio")
+        self.assertEqual(company, "DualityBio")
+        self.assertIsNone(ticker)
+
+    def test_report_command_uses_smart_defaults(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client",
+            return_value=object(),
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            exit_code = main(["report", "09606.HK", "--no-save"])
+
+            self.assertEqual(exit_code, 0)
+            kwargs = run.call_args.kwargs
+            self.assertTrue(kwargs["auto_inputs"])
+            self.assertEqual(kwargs["llm_agents"][0], "pipeline-triage")
+            self.assertIsNotNone(kwargs["market_data_provider"])
+            self.assertIsNotNone(kwargs["macro_signals_provider"])
+
+    def test_report_command_errors_when_llm_client_missing_by_default(self) -> None:
+        with patch(
+            "biotech_alpha.cli._build_llm_client",
+            side_effect=RuntimeError("missing key"),
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            with self.assertRaises(RuntimeError):
+                main(["report", "DualityBio", "--no-save"])
+
+    def test_report_command_can_degrade_when_allow_no_llm_set(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client",
+            side_effect=RuntimeError("missing key"),
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            exit_code = main(
+                ["report", "DualityBio", "--allow-no-llm", "--no-save"]
+            )
+
+            self.assertEqual(exit_code, 0)
+            kwargs = run.call_args.kwargs
+            self.assertEqual(kwargs["llm_agents"], ())
+            self.assertIsNone(kwargs["llm_client"])
 
 
 if __name__ == "__main__":

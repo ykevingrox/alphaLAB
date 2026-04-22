@@ -112,6 +112,24 @@ PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --limit 20
 ```
 
+For the fastest UX ("company name in, report out"), use the new quick command:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli report "DualityBio"
+```
+
+Quick-mode defaults:
+
+- Enables `--auto-inputs`.
+- Enables `hk-public` market data auto-draft.
+- Enables macro live-signals (`yahoo-hk`) with cache.
+- Enables the full LLM stack by default:
+  `pipeline-triage`, `financial-triage`, `competition-triage`,
+  `macro-context`, `scientific-skeptic`.
+- If LLM client initialization fails (for example missing API key), the command
+  fails fast by default. Use `--allow-no-llm` only when you explicitly want to
+  continue in deterministic-only mode.
+
 For the HK biotech MVP, add `--auto-inputs` to let the system discover the
 latest HKEX annual results announcement, download the source PDF, extract text,
 generate draft pipeline, financial, and conference-catalyst input files,
