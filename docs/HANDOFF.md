@@ -485,6 +485,38 @@ Use this shape:
     indication, and phase; ignores generic pipeline table phase ladders; treats
     `known as ... outside of China` as an alias relation; and parses BLA/PCC
     milestone phrases from source text.
+- Fourth representative HK disclosure-style fixture coverage is now added in
+  offline tests for Innovent Biologics (`01801.HK` style text) under
+  `tests/test_auto_inputs.py`: HKD thousand-unit financial parsing, mixed
+  Phase 3 / Phase 1b / IND-enabling extraction, anti-target parsing
+  (`anti-LAG-3`), and milestone phrase normalization (`planned to start in
+  2027`). Existing behavior is unchanged; this is regression coverage only.
+- Documentation drift pass on 2026-04-23: `README.md`, `docs/RUNBOOK.md`,
+  `docs/DATA_SOURCES.md`, `docs/ARCHITECTURE.md`, `docs/PRD.md`, and
+  `docs/ROADMAP.md` were reconciled with the current codebase.
+  - `README.md` Repository Layout now lists `agent_runtime.py`,
+    `agents_llm.py`, `llm/`, `market_data.py`, `market_data_providers.py`,
+    `macro_signals_providers.py`, and every current test file. Quick Start
+    adds the install step, runtime dependency list, and `.env` guidance.
+  - `RUNBOOK.md` drops the stale "no third-party runtime dependencies"
+    claim, documents the runtime deps, adds an LLM Setup section covering
+    provider switching / call budgets / trace dir / `--allow-no-llm`, and
+    lists `_extraction_audit.json`, `_llm_findings.json`, `data/traces/`,
+    and `data/cache/` under Outputs.
+  - `DATA_SOURCES.md` removes the empty `Official And Public Sources`
+    heading and adds dedicated `Market Data Providers`, `Macro Signal
+    Providers`, and `LLM Providers` subsections.
+  - `ARCHITECTURE.md` documents `AgentGraph` / `FactStore` / opt-in LLM
+    agent layering, lists `data/input/generated/`, `data/traces/`, and
+    `data/cache/` under Suggested Storage, and adds `report` to the MVP
+    Runtime CLI list.
+  - `PRD.md` moves the LLM agent runtime, market-data providers, macro
+    signals, ClinicalTrials.gov competitor discovery, and the quick
+    `report` entry into Implemented, and rewrites the Pending list around
+    US-market coverage, broader document ingestion, and technical / K-line
+    timing.
+  - `ROADMAP.md` bumps the last status-pass stamp to 2026-04-23 and folds
+    the Innovent Biologics (`01801.HK`) fixture into Sprint 1 status.
 
 ## Current Repo State
 
@@ -818,8 +850,11 @@ access recovers.
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
    working.
-2. Broaden fixture coverage across another representative HK biotech
-   disclosure style before adding more target seeds.
+2. Innovent Biologics (`01801.HK`) fixture landed. Next, add one more
+   representative HK biotech disclosure-style fixture (distinct from
+   DualityBio, Harbour BioMed, Leads Biolabs, and Innovent) before adding
+   more target seeds, then update `PIPELINE_EXTRACTOR_VERSION` if the
+   extractor changes with it.
 3. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
    one-command with default LLM-on behavior and explicit opt-out only.
 

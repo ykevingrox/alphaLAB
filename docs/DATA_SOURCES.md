@@ -1,7 +1,5 @@
 # Data Sources
 
-## Official And Public Sources
-
 ## Current Local Input Contracts
 
 The current CLI supports six curated local JSON inputs. The HK biotech MVP also
@@ -165,6 +163,43 @@ Useful sources:
 - EMA
 
 Use for approval status, special designations, labels, and review milestones.
+
+### Market Data Providers
+
+For Hong Kong tickers the quick-report path can attach a live market snapshot
+(share price, market cap, shares outstanding) without curated valuation input.
+
+- Tencent public HK quote endpoint, wrapped behind
+  `hk_public_quote_provider` with a `--market-data-freshness-days` staleness
+  guard (default 3 days).
+- Yahoo Finance public quote endpoints for cross-checks and fallback.
+- All providers degrade gracefully: any failure becomes a validation warning,
+  never an exception that aborts the report.
+
+### Macro Signal Providers
+
+The `MacroContextLLMAgent` can be fed optional live macro signals:
+
+- Yahoo chart endpoint for HSI level / 30-day return and USD/HKD spot.
+- Stooq fallback when Yahoo is rate-limited.
+- Optional HKMA HIBOR curve and lightweight regulatory RSS news feeds where
+  available.
+
+All macro feeds are wrapped by `CachingMacroSignalsProvider` (disk cache under
+`data/cache/`, 6-hour default TTL, stale-if-error fallback). Sub-feed failures
+degrade to `None` with a note so no exception propagates into the run.
+
+### LLM Providers
+
+- Default: Aliyun Bailian / DashScope OpenAI-compatible endpoint. Configure
+  with `BIOTECH_ALPHA_LLM_BASE_URL` and `BIOTECH_ALPHA_LLM_API_KEY`
+  (or `DASHSCOPE_API_KEY`).
+- Anthropic: set `BIOTECH_ALPHA_LLM_PROVIDER=anthropic` plus
+  `ANTHROPIC_API_KEY`.
+- All calls go through `OpenAICompatibleLLMClient` or `AnthropicLLMClient`,
+  wrapped by `BudgetEnforcingLLMClient` when per-agent or total call budgets
+  are configured.
+- Traces are appended as JSONL under `data/traces/` for audit.
 
 ### Scientific Literature And Conferences
 

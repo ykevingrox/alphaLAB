@@ -136,10 +136,13 @@ Derived metrics:
 
 MVP can begin with local files:
 
-- `data/input/`
-- `data/raw/`
-- `data/processed/`
-- `data/memos/`
+- `data/input/` (curated inputs; committed when small and non-secret)
+- `data/input/generated/` (auto-drafted inputs; gitignored)
+- `data/raw/` (gitignored)
+- `data/processed/` (gitignored)
+- `data/memos/` (gitignored)
+- `data/traces/` (LLM JSONL traces; gitignored)
+- `data/cache/` (macro-signals disk cache; gitignored)
 
 Current CLI runs write:
 
@@ -176,6 +179,23 @@ Later versions can use:
 Agents should receive structured input and return JSON-like output. They should
 not freely browse and decide on their own without preserving sources.
 
+The runtime is a small in-process orchestrator, not a distributed framework:
+
+- `AgentGraph` resolves a topological order over agent nodes, runs each layer
+  with bounded parallelism, and isolates per-agent errors so one failure does
+  not abort the rest of the graph.
+- `FactStore` holds structured inputs and upstream agent outputs keyed by fact
+  name. Downstream agents declare their dependencies, and the FactStore
+  renders them into each prompt.
+- Deterministic agents (pipeline, competition, financials, skeptic, scorecard,
+  ...) still run first. Opt-in LLM agents
+  (`pipeline-triage`, `financial-triage`, `competition-triage`,
+  `macro-context`, `scientific-skeptic`) consume the deterministic outputs
+  and return structured findings validated against JSON schema.
+- Per-run total and per-agent call budgets are enforced pre-dispatch by
+  `BudgetEnforcingLLMClient`, and every LLM call is appended as JSONL under
+  `data/traces/` for audit.
+
 Recommended agents:
 
 - Research Collector Agent
@@ -197,6 +217,8 @@ Recommended agents:
 The first implementation can run as a CLI:
 
 ```bash
+biotech-alpha report "DualityBio"
+
 biotech-alpha company-report \
   --company "Akeso" \
   --ticker "9926.HK"
@@ -213,6 +235,7 @@ biotech-alpha research \
 
 Current helper commands:
 
+- `report` (quick one-command operator entry)
 - `clinical-trials`
 - `clinical-trials-version`
 - `company-report`

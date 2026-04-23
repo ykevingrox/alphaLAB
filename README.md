@@ -50,13 +50,23 @@ docs/
   TARGET_PRICE_MODEL.md
                       Catalyst-adjusted target price design
 src/biotech_alpha/
-  alerts.py          Local catalyst-calendar change alerts across saved runs
-  auto_inputs.py     HKEX source discovery and draft input generation
+  agent_runtime.py    AgentGraph, FactStore, and deterministic agent base
+  agents.py           Agent interface sketches
+  agents_llm.py       LLM agent implementations (triage, skeptic, macro, ...)
+  alerts.py           Local catalyst-calendar change alerts across saved runs
+  auto_inputs.py      HKEX source discovery and draft input generation
+  cli.py              Command-line entry point (`report`, `company-report`, ...)
   clinicaltrials.py   Minimal ClinicalTrials.gov API client
   company_report.py   One-command report orchestration
   competition.py      Competitive landscape inputs and deterministic matching
   conference.py       Conference catalyst inputs and validation
   financials.py       Financial snapshot loading and cash runway estimation
+  llm/                LLM runtime: config, clients, prompts, schema, traces
+  macro_signals_providers.py
+                      Macro live feeds (Yahoo/Stooq/HKMA) plus disk cache
+  market_data.py      Market data normalization and valuation snapshot helpers
+  market_data_providers.py
+                      HK public market data connectors (Tencent, Yahoo)
   models.py           Domain models for trials, pipeline assets, and memos
   pipeline.py         Pipeline asset loading and deterministic trial matching
   research.py         Single-company research pipeline orchestration
@@ -65,19 +75,27 @@ src/biotech_alpha/
   target_price.py     Target-price assumptions, rNPV, and scenarios
   valuation.py        Valuation snapshot loading and context metrics
   watchlist.py        Local ranking over saved single-company research runs
-  agents.py           Agent interface sketches
-  cli.py              Small command-line entry point
 tests/
+  test_agent_runtime.py
   test_alerts.py
   test_auto_inputs.py
   test_cli.py
   test_clinicaltrials.py
   test_company_report.py
   test_competition.py
+  test_competition_triage_agent.py
   test_conference.py
+  test_financial_triage_agent.py
   test_financials.py
+  test_llm_client.py
+  test_macro_context_agent.py
+  test_macro_signals_providers.py
+  test_market_data.py
+  test_market_data_providers.py
   test_pipeline.py
+  test_pipeline_triage_agent.py
   test_research.py
+  test_scientific_skeptic_agent.py
   test_scorecard.py
   test_skeptic.py
   test_target_price.py
@@ -88,6 +106,20 @@ tests/
 ## Quick Start
 
 For the full operating guide, see [docs/RUNBOOK.md](docs/RUNBOOK.md).
+
+Install runtime dependencies (declared in `pyproject.toml`):
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+The runtime depends on `anthropic`, `beautifulsoup4`, `openai`, `pypdf`, and
+`requests`. LLM-enabled runs also need API credentials. Copy `.env.example` to
+`.env` and fill in `BIOTECH_ALPHA_LLM_API_KEY` (Bailian OpenAI-compatible, the
+default provider) or `ANTHROPIC_API_KEY` (set `BIOTECH_ALPHA_LLM_PROVIDER=anthropic`).
+Runs degrade to deterministic-only mode when LLM env is missing and
+`--allow-no-llm` is passed.
 
 Run the test suite:
 

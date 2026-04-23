@@ -325,7 +325,7 @@ daily use with minimal manual prep.
 **Doc discipline:** Each sprint below lists **implementation status** so this
 section stays aligned with the repo. Update statuses when scope changes.
 
-**Last status pass:** 2026-04-22 (match to `git` history for this file when in doubt).
+**Last status pass:** 2026-04-23 (match to `git` history for this file when in doubt).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -341,10 +341,14 @@ section stays aligned with the repo. Update statuses when scope changes.
 - **Partially done** — Add fixture-based regression tests for representative HK
   biotech tickers to catch schema or parsing drift early. DualityBio covers the
   orchestration path; Harbour BioMed covers USD financials and packed-table
-  pipeline aliases; Leads Biolabs (`09887.HK`) now covers TCE/ADC-heavy
+  pipeline aliases; Leads Biolabs (`09887.HK`) covers TCE/ADC-heavy
   annual-results text, `known as ... outside of China` aliases, table-header
   phase-ladder leakage, BLA/PCC milestones, and abbreviation/listing-warning
-  noise. Broader representative ticker coverage remains open.
+  noise; Innovent Biologics (`01801.HK`) now covers HKD thousand-unit
+  financial parsing, mixed Phase 3 / Phase 1b / IND-enabling extraction,
+  `anti-LAG-3` anti-target parsing, and `planned to start in 2027` milestone
+  normalization. Broader representative ticker coverage (next distinct HK
+  disclosure style) remains open.
 
 - **Done** — Standardize run-level quality gates in summaries and manifests so
   users can quickly see whether output is decision-ready; optional watchlist

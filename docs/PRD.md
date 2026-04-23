@@ -67,9 +67,25 @@ Current implementation status:
   integration.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
-- Pending: broader company document ingestion, more robust financial statement
-  parsing, automatic competitor discovery, calibrated historical
-  catalyst-reaction backtests, and deeper LLM scientific critique.
+- Implemented: in-process `AgentGraph` + `FactStore` runtime with five opt-in
+  LLM agents — `pipeline-triage`, `financial-triage`, `competition-triage`,
+  `macro-context`, `scientific-skeptic` — with JSON schema validation, per-run
+  and per-agent call budgets, and JSONL traces under `data/traces/`.
+- Implemented: HK public market-data providers (Tencent / Yahoo) and macro
+  live-signal providers (Yahoo / Stooq / HKMA) with disk cache and
+  stale-if-error fallback.
+- Implemented: ClinicalTrials.gov competitor discovery that feeds generated
+  competitor candidate packs (review-gated, not treated as curated truth).
+- Implemented: quick one-command `report "<company|ticker>"` entry that
+  auto-enables auto-inputs, market data, macro signals, and the full LLM stack
+  by default, and fails fast on missing LLM env unless `--allow-no-llm` is
+  passed.
+- Pending: broader company document ingestion beyond HKEX annual results, more
+  robust financial statement parsing across interim/prospectus styles, US-
+  market sibling market-data provider so auto-draft is not HK-only, automatic
+  competitor discovery beyond ClinicalTrials.gov (company pages, filings),
+  calibrated historical catalyst-reaction backtests, and a technical / K-line
+  timing agent.
 
 ## Non-Goals For MVP
 

@@ -7,10 +7,42 @@ guide.
 ## Prerequisites
 
 - Python 3.11 or newer.
-- Network access for ClinicalTrials.gov calls.
+- Network access for ClinicalTrials.gov calls, HKEX filings download, market
+  data feeds (Tencent/Yahoo), and macro feeds (Yahoo/Stooq) when those options
+  are enabled.
 - Commands are run from the repository root.
 
-The package currently has no third-party runtime dependencies.
+Install runtime dependencies declared in `pyproject.toml`:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e .
+```
+
+Runtime dependencies: `anthropic`, `beautifulsoup4`, `openai`, `pypdf`,
+`requests`. No other third-party runtime dependencies are required.
+
+## LLM Setup
+
+Quick-report (`report ...`) and full LLM agents require API credentials.
+
+- Copy `.env.example` to `.env` and fill in the real values; `.env` is
+  gitignored.
+- Default provider is `openai-compatible` (Aliyun Bailian / DashScope). Set
+  `BIOTECH_ALPHA_LLM_API_KEY` (or `DASHSCOPE_API_KEY`) and keep
+  `BIOTECH_ALPHA_LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`.
+- To use Anthropic, set `BIOTECH_ALPHA_LLM_PROVIDER=anthropic` and
+  `ANTHROPIC_API_KEY`.
+- Optional controls: `BIOTECH_ALPHA_LLM_MODEL` (default `qwen3.5-plus`),
+  `BIOTECH_ALPHA_LLM_CALL_BUDGET`, `BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET`,
+  `BIOTECH_ALPHA_LLM_TRACE_DIR` (defaults to `data/traces/`, gitignored),
+  `BIOTECH_ALPHA_LLM_DEBUG_PROMPT=1` to dump rendered prompts under
+  `data/traces/`.
+- `.env` values override shell environment when no explicit env dict is passed
+  to `LLMConfig.from_env()`, to keep the project-local config predictable.
+
+When LLM env is missing, `report` and `company-report --llm-agents ...` fail
+fast by default. Pass `--allow-no-llm` to continue in deterministic-only mode.
 
 ## Sanity Checks
 
@@ -260,8 +292,20 @@ Important files:
   metrics, when valuation input was provided.
 - `<run_id>_scorecard.json`: watchlist score, bucket, dimension scores, and
   monitoring rules.
+- `<run_id>_extraction_audit.json`: per-asset review reasons from
+  auto-extraction, when `--auto-inputs` runs.
+- `<run_id>_llm_findings.json` under `data/memos/<slug>/`: structured LLM agent
+  outputs (risks, evidence, step issues) when LLM agents run.
 - `<run_id>_memo.json`: structured memo.
-- `<run_id>_memo.md`: human-readable memo.
+- `<run_id>_memo.md`: human-readable memo (includes an LLM addendum when LLM
+  agents ran).
+
+Two additional top-level directories are written only when relevant:
+
+- `data/traces/`: JSONL LLM traces per run and optional rendered-prompt dumps.
+- `data/cache/`: macro-signals disk cache keyed on market/provider.
+
+Both are gitignored.
 
 The Markdown memo includes a `Skeptical Review` section. This section is
 generated from deterministic checks over current inputs, including trial
