@@ -892,8 +892,8 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
 P0/P1 closure:
-**P3 strategic additions closure pass** (P3.14-3.17 deterministic baseline
-landed; P3.18 export charts pending).
+**Sprint 5 closure checkpoint** (P3.14-3.18 deterministic strategic additions
+landed).
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -903,10 +903,9 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Complete P3.18 charted HTML/PDF export additions (pipeline gantt,
-   catalyst timeline, rNPV stack chart) on top of current export baseline.
-2. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
+1. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
+2. Revisit P2.9 China CDE ingestion as a future data-breadth slot.
 
 ### Acceptance Criteria
 
@@ -955,9 +954,9 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P3.18** charted HTML/PDF export finish (gantt/timeline/rNPV stack).
-2. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
+1. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
    ground-truth expansion, and additional cross-agent merge heuristics.
+2. Deferred data-breadth backlog: P2.9 China CDE registry ingestion.
 
 Pre-Sprint 5 backlog retained for later:
 

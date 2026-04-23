@@ -801,6 +801,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     export_parser.add_argument("--input", required=True, help="Input memo markdown path.")
     export_parser.add_argument("--html-output", required=True, help="Output HTML path.")
     export_parser.add_argument("--pdf-output", help="Optional output PDF path.")
+    export_parser.add_argument(
+        "--pipeline-assets",
+        help="Optional pipeline-assets JSON path for gantt chart rendering.",
+    )
+    export_parser.add_argument(
+        "--catalyst-csv",
+        help="Optional catalyst calendar CSV path for timeline rendering.",
+    )
+    export_parser.add_argument(
+        "--target-price-json",
+        help="Optional target-price JSON path for rNPV stack rendering.",
+    )
 
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient(timeout=8)
@@ -1346,7 +1358,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "memo-export":
-        html_path = export_html(args.input, args.html_output)
+        html_path = export_html(
+            args.input,
+            args.html_output,
+            pipeline_assets_path=args.pipeline_assets,
+            catalyst_csv_path=args.catalyst_csv,
+            target_price_json_path=args.target_price_json,
+        )
         payload: dict[str, object] = {"html_path": str(html_path), "pdf_path": None, "pdf_warning": None}
         if args.pdf_output:
             pdf_path, warning = export_pdf(args.input, args.pdf_output)

@@ -1201,8 +1201,35 @@ class QuickReportCliTest(unittest.TestCase):
             curr = Path(tmpdir) / "curr.md"
             bi = Path(tmpdir) / "bi.md"
             html = Path(tmpdir) / "memo.html"
+            pipeline = Path(tmpdir) / "pipeline.json"
+            catalyst = Path(tmpdir) / "catalyst.csv"
+            target = Path(tmpdir) / "target.json"
             prev.write_text("## Investment Committee Memo\n- A\n", encoding="utf-8")
             curr.write_text("## Investment Committee Memo\n- B\n", encoding="utf-8")
+            pipeline.write_text(
+                json.dumps({"assets": [{"name": "A1", "phase": "Phase 2"}]}),
+                encoding="utf-8",
+            )
+            catalyst.write_text(
+                "title,category,expected_date,expected_window,related_asset,confidence,evidence_count\n"
+                "Readout,clinical,2026-05-01,Q2,Asset,0.7,1\n",
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "analysis": {
+                            "base": {
+                                "asset_rnpv": [
+                                    {"asset_name": "A1", "rnpv": 120},
+                                    {"asset_name": "A2", "rnpv": 80},
+                                ]
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             diff_output = io.StringIO()
             with redirect_stdout(diff_output):
                 diff_exit = main(
@@ -1218,10 +1245,26 @@ class QuickReportCliTest(unittest.TestCase):
             export_output = io.StringIO()
             with redirect_stdout(export_output):
                 export_exit = main(
-                    ["memo-export", "--input", str(curr), "--html-output", str(html)]
+                    [
+                        "memo-export",
+                        "--input",
+                        str(curr),
+                        "--html-output",
+                        str(html),
+                        "--pipeline-assets",
+                        str(pipeline),
+                        "--catalyst-csv",
+                        str(catalyst),
+                        "--target-price-json",
+                        str(target),
+                    ]
                 )
             self.assertEqual(export_exit, 0)
             self.assertTrue(html.exists())
+            html_text = html.read_text(encoding="utf-8")
+            self.assertIn("id='pipeline-gantt'", html_text)
+            self.assertIn("id='catalyst-timeline'", html_text)
+            self.assertIn("id='rnpv-stack'", html_text)
 
 
 if __name__ == "__main__":

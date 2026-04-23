@@ -871,8 +871,9 @@ structure can consume them.
   **Size:** 1-2 days.
 - **P3.18** — HTML / PDF memo export with pipeline gantt, catalyst
   timeline, rNPV stack chart.
-  - **Status:** active (CLI `memo-export` now supports HTML export and optional
-    PDF export when `reportlab` is available; chart rendering remains pending).
+  - **Status:** done (CLI `memo-export` now supports HTML export with inline
+    pipeline gantt, catalyst timeline, and rNPV stack charts; optional PDF
+    export remains available when `reportlab` is installed).
   **Size:** 3-5 days.
 
 #### Execution order
