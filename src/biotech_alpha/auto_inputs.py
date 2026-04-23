@@ -50,7 +50,7 @@ HKEX_ACTIVE_STOCKS_URL = (
     f"{HKEX_BASE_URL}/ncms/script/eds/activestock_sehk_e.json"
 )
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
-PIPELINE_EXTRACTOR_VERSION = 6
+PIPELINE_EXTRACTOR_VERSION = 9
 COMPETITOR_EXTRACTOR_VERSION = 4
 
 
@@ -281,20 +281,30 @@ def draft_pipeline_assets(
     seen_assets: dict[str, dict[str, Any]] = {}
     seen_codes: dict[str, str] = {}
     for match in _asset_mentions(text):
-        primary, aliases = _split_asset_codes(match["name"])
+        context = match["context"]
+        primary, aliases = _split_asset_codes(
+            _canonical_asset_name_from_context(
+                name=match["name"],
+                context=context,
+            )
+        )
         key = primary.casefold()
         existing_key = seen_codes.get(key)
-        context = match["context"]
         candidate = _draft_asset_from_context(
             primary=primary,
             aliases=aliases,
             context=context,
             source=source,
         )
+        candidate_aliases = [
+            str(alias)
+            for alias in candidate.get("aliases", [])
+            if str(alias).strip()
+        ]
         if existing_key:
             _merge_asset_fields(seen_assets[existing_key], candidate)
-            _merge_asset_aliases(seen_assets[existing_key], aliases)
-            for alias in aliases:
+            _merge_asset_aliases(seen_assets[existing_key], candidate_aliases)
+            for alias in candidate_aliases:
                 seen_codes[alias.casefold()] = existing_key
             continue
         if len(assets) >= 12:
@@ -302,7 +312,7 @@ def draft_pipeline_assets(
         assets.append(candidate)
         seen_assets[key] = candidate
         seen_codes[key] = key
-        for alias in aliases:
+        for alias in candidate_aliases:
             seen_codes[alias.casefold()] = key
 
     return {
@@ -498,6 +508,9 @@ def _draft_asset_from_context(
     if target:
         mechanism = None
     source_year = _year_from_source_date(source.publication_date)
+    aliases = list(
+        dict.fromkeys([*aliases, *_aliases_from_context(local_context, primary)])
+    )
     return {
         "name": primary,
         "aliases": aliases,
@@ -537,9 +550,11 @@ def _local_asset_context(
     match = _asset_code_match(context=context, asset_name=asset_name)
     if not match:
         return context
-    return _truncate_at_next_numbered_section(
+    local = _truncate_at_next_numbered_section(
         context[match.start(): match.start() + size]
     )
+    local = _truncate_at_next_asset_mention(local, asset_name=asset_name)
+    return _truncate_at_listing_warning(local)
 
 
 def _asset_context_with_left(
@@ -562,6 +577,35 @@ def _asset_context_with_left(
 
 def _truncate_at_next_numbered_section(context: str) -> str:
     match = re.search(r"(?:\n|\s{2,}|\.\s+)\d+\.\s+[A-Z]", context)
+    if not match:
+        return context
+    return context[:match.start()]
+
+
+def _truncate_at_next_asset_mention(context: str, *, asset_name: str) -> str:
+    pattern = re.compile(
+        r"(?<![A-Za-z-])([A-Z]{1,6}\s*-\s*\d{3,5}|[A-Z]{1,6}-?\d{3,5})\b"
+    )
+    current, _ = _split_asset_codes(re.sub(r"\s+", "", asset_name))
+    for match in pattern.finditer(context):
+        prefix = context[:match.start()].rstrip()
+        if prefix.endswith("/"):
+            continue
+        if re.search(r"\bknown\s+as\s*$", prefix, flags=re.IGNORECASE):
+            continue
+        candidate, _ = _split_asset_codes(re.sub(r"\s+", "", match.group(1)))
+        if candidate == current:
+            continue
+        return context[:match.start()]
+    return context
+
+
+def _truncate_at_listing_warning(context: str) -> str:
+    match = re.search(
+        r"\bWarning under Rule 18A\b|\bThere is no assurance that\b",
+        context,
+        flags=re.IGNORECASE,
+    )
     if not match:
         return context
     return context[:match.start()]
@@ -597,8 +641,21 @@ def _packed_left_context(
 
 
 def _asset_code_match(*, context: str, asset_name: str) -> re.Match[str] | None:
-    pattern = rf"(?<![A-Za-z-]){re.escape(asset_name)}\b"
+    escaped = re.escape(asset_name).replace(r"\-", r"\s*-\s*")
+    pattern = rf"(?<![A-Za-z-]){escaped}\b"
     return re.search(pattern, context)
+
+
+def _aliases_from_context(context: str, asset_name: str) -> list[str]:
+    aliases: list[str] = []
+    pattern = (
+        rf"\b{re.escape(asset_name)}\b.{{0,80}}"
+        r"\(known as\s+([A-Z]{1,6}-?\d{3,5})\s+outside of China\)"
+    )
+    match = re.search(pattern, context, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        aliases.append(match.group(1))
+    return aliases
 
 
 def _merge_asset_fields(
@@ -614,8 +671,26 @@ def _merge_asset_fields(
         "partner",
         "next_milestone",
     ):
-        if not existing.get(key) and candidate.get(key):
+        existing_value = existing.get(key)
+        candidate_value = candidate.get(key)
+        if not existing_value and candidate_value:
             existing[key] = candidate[key]
+        elif key == "phase" and _phase_rank(candidate_value) > _phase_rank(
+            existing_value
+        ):
+            existing[key] = candidate_value
+        elif key == "target" and _field_specificity_score(
+            candidate_value
+        ) > _field_specificity_score(existing_value):
+            existing[key] = candidate_value
+        elif key == "modality" and _modality_rank(
+            candidate_value
+        ) > _modality_rank(existing_value):
+            existing[key] = candidate_value
+        elif key == "indication" and _field_specificity_score(
+            candidate_value
+        ) > _field_specificity_score(existing_value):
+            existing[key] = candidate_value
 
 
 def _merge_asset_aliases(existing: dict[str, Any], aliases: list[str]) -> None:
@@ -626,6 +701,64 @@ def _merge_asset_aliases(existing: dict[str, Any], aliases: list[str]) -> None:
     for alias in aliases:
         if alias != existing.get("name") and alias not in existing_aliases:
             existing_aliases.append(alias)
+
+
+def _phase_rank(value: Any) -> float:
+    text = str(value or "").casefold()
+    if not text:
+        return 0
+    if "bla under review" in text or "bla accepted" in text:
+        return 7
+    if "bla" in text:
+        return 6
+    if "phase 3" in text or "phase iii" in text:
+        return 5
+    if "phase 2" in text or "phase ii" in text:
+        return 4
+    if "phase 1" in text or "phase i" in text:
+        return 3
+    if "ind approved" in text or "ind accepted" in text:
+        return 2.5
+    if "clinical-stage" in text:
+        return 2.25
+    if "ind-enabling" in text:
+        return 2
+    if "pcc nomination" in text:
+        return 1.5
+    if "preclinical" in text or "pre-clinical" in text:
+        return 1
+    return 1
+
+
+def _modality_rank(value: Any) -> int:
+    text = str(value or "").casefold()
+    if not text:
+        return 0
+    if "tce-adc" in text:
+        return 6
+    if "bispecific adc" in text:
+        return 5
+    if "trispecific" in text:
+        return 4
+    if "bispecific fusion" in text:
+        return 4
+    if "fusion protein" in text:
+        return 3
+    if "bispecific" in text:
+        return 3
+    if "adc" in text:
+        return 2
+    if "antibody" in text:
+        return 1
+    return 1
+
+
+def _field_specificity_score(value: Any) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    parts = [part for part in re.split(r"[/;]", text) if part.strip()]
+    return len(parts) * 10 + len(text)
 
 
 def draft_financial_snapshot(
@@ -967,16 +1100,27 @@ def _asset_mentions(text: str) -> list[dict[str, str]]:
             context=_nearby_text(text, match.start(), match.end()),
         ):
             continue
+        if _listing_warning_context(
+            context=text[max(0, match.start() - 180): match.end() + 20],
+        ):
+            continue
         if _combination_partner_context(
             name=name,
             context=_nearby_text(text, match.start(), match.end()),
         ):
             continue
+        left_boundary = previous_match.end() if previous_match else None
+        if previous_match and re.search(
+            r"\bknown\s+as\s*$",
+            text[previous_match.end(): match.start()],
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            left_boundary = previous_match.start()
         context = _context_window(
             text,
             match.start(),
             match.end(),
-            left_boundary=previous_match.end() if previous_match else None,
+            left_boundary=left_boundary,
             right_boundary=next_match.start() if next_match else None,
         )
         if not _biotech_context(context):
@@ -1022,8 +1166,21 @@ def _split_asset_codes(value: str) -> tuple[str, list[str]]:
     return codes[0], codes[1:]
 
 
+def _canonical_asset_name_from_context(*, name: str, context: str) -> str:
+    pattern = (
+        r"\b([A-Z]{1,6}\s*-\s*\d{3,5}|[A-Z]{1,6}\d{3,5})"
+        rf"\b\s*\(known as\s+{re.escape(name)}\s+outside of China\)"
+    )
+    match = re.search(pattern, context, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return name
+    primary = re.sub(r"\s+", "", match.group(1))
+    return f"{primary}/{name}"
+
+
 def _target_from_context(context: str) -> str | None:
     context = re.sub(r"I\s+L23p19", "IL23p19", context)
+    context = re.sub(r"4-1\s+BB", "4-1BB", context, flags=re.IGNORECASE)
     targets = (
         "HER2",
         "B7-H3",
@@ -1040,24 +1197,30 @@ def _target_from_context(context: str) -> str | None:
         "CD19",
         "PD-1",
         "PD-L1",
+        "4-1BB",
+        "LAG-3",
         "CD40",
         "VEGF",
         "CTLA-4",
         "FcRn",
         "TSLP",
+        "BAFF",
         "TL1A",
         "IL23p19",
         "APRIL",
         "CRH",
         "MSLN",
         "BDCA2",
+        "TACI",
         "ADAM9",
         "CDH17",
+        "CD38",
+        "GPRC5D",
+        "DLL3",
     )
     parenthetical = re.search(r"\(([^)]{1,80})\)", context)
     if parenthetical:
-        local = parenthetical.group(1).lower()
-        found_local = [target for target in targets if target.lower() in local]
+        found_local = _targets_in_context_order(parenthetical.group(1), targets)
         if found_local:
             return "/".join(dict.fromkeys(found_local))
     lowered = re.sub(r"\s+", " ", context).lower()
@@ -1067,8 +1230,23 @@ def _target_from_context(context: str) -> str | None:
         for target in targets:
             if anti_target == target.lower().replace("-", ""):
                 return target
-    found = [target for target in targets if target.lower() in lowered]
+    found = _targets_in_context_order(lowered, targets)
+    if "PD-L1" in found and "4-1BB" in found and "PD-1" in found:
+        found = [target for target in found if target != "PD-1"]
     return "/".join(dict.fromkeys(found)) if found else None
+
+
+def _targets_in_context_order(
+    context: str,
+    targets: tuple[str, ...],
+) -> list[str]:
+    lowered = context.casefold()
+    found: list[tuple[int, str]] = []
+    for target in targets:
+        index = lowered.find(target.casefold())
+        if index != -1:
+            found.append((index, target))
+    return [target for _, target in sorted(found)]
 
 
 def _mechanism_from_context(
@@ -1082,8 +1260,16 @@ def _mechanism_from_context(
 
 def _modality_from_context(context: str) -> str | None:
     lowered = context.lower()
+    if "tce-adc" in lowered or "tce adc" in lowered:
+        return "TCE-ADC"
     if "bsadc" in lowered:
         return "bispecific ADC"
+    if "triab" in lowered or "trispecific" in lowered:
+        return "trispecific antibody"
+    if "fusion protein" in lowered:
+        if "bispecific" in lowered:
+            return "bispecific fusion protein"
+        return "fusion protein"
     if "adc" in lowered:
         return "ADC"
     if "vaccine" in lowered:
@@ -1101,19 +1287,30 @@ def _modality_from_context(context: str) -> str | None:
 
 def _phase_from_context(context: str) -> str | None:
     normalized = re.sub(r"\s+", " ", context)
+    normalized = re.sub(
+        r"Discovery\s*/\s*Preclinical\s+IND-Enabling\s+Phase\s+I\s+"
+        r"Phase\s+II\s+Registrational\s*/\s+Phase\s+III\s+"
+        r"Current Status/Upcoming Milestone",
+        " ",
+        normalized,
+        flags=re.IGNORECASE,
+    )
     if re.search(r"\b(BLA|Biologics License Application)\b", normalized):
         lowered = normalized.lower()
         if "under review" in lowered:
             return "BLA under review"
         if "accepted" in lowered:
             return "BLA accepted"
-    match = re.search(
+        if "submission" in lowered or "submit" in lowered:
+            return "BLA planned"
+    phase_matches = re.findall(
         r"Phase\s+([123I/abAB]+)(?!\.\d)",
-        context,
+        normalized,
         flags=re.IGNORECASE,
     )
-    if match:
-        return f"Phase {match.group(1)}"
+    if phase_matches:
+        phases = [f"Phase {match}" for match in phase_matches]
+        return max(phases, key=_phase_rank)
     if re.search(
         r"\bIND\b.{0,120}\bapproved\b|\bapproved\b.{0,120}\bIND\b",
         context,
@@ -1129,6 +1326,10 @@ def _phase_from_context(context: str) -> str | None:
     if "clinical-stage" in context.lower():
         return "clinical-stage"
     lowered = context.lower()
+    if "ind-enabling" in lowered or "ind enabling" in lowered:
+        return "IND-enabling"
+    if "pcc nomination" in lowered:
+        return "PCC nomination"
     if "preclinical" in lowered or "pre-clinical" in lowered:
         return "preclinical"
     return None
@@ -1148,17 +1349,25 @@ def _phase_from_asset_context(*, context: str, asset_name: str) -> str | None:
 
 
 def _indication_from_context(context: str) -> str | None:
+    context = re.split(r"\bAbbreviations:", context, flags=re.IGNORECASE)[0]
     terms = (
         "breast cancer",
+        "EP-NEC",
+        "SCLC",
         "NSCLC",
+        "NPC",
+        "HNSCC",
         "mCRPC",
         "cervical cancer",
         "ovarian cancer",
         "gastrointestinal tumors",
+        "gastrointestinal cancers",
         "gastric cancer",
         "colorectal cancer",
         "pancreatic cancer",
+        "neuroendocrine carcinoma",
         "systemic lupus erythematosus",
+        "multiple myeloma",
         "solid tumors",
         "autoimmune diseases",
         "atopic dermatitis",
@@ -1168,6 +1377,7 @@ def _indication_from_context(context: str) -> str | None:
         "gMG",
         "IBD",
         "IgAN",
+        "MM",
         "mCRC",
         "HCC",
         "CRC",
@@ -1176,8 +1386,11 @@ def _indication_from_context(context: str) -> str | None:
         "CNS diseases",
         "obesity",
     )
-    lowered = re.sub(r"\s+", " ", context).lower()
-    found = [term for term in terms if term.lower() in lowered]
+    found = [
+        term
+        for term in terms
+        if _term_in_context(term=term, context=context)
+    ]
     if "breast cancer" not in found and re.search(r"\bBC\b", context):
         found.append("breast cancer")
     if (
@@ -1190,7 +1403,24 @@ def _indication_from_context(context: str) -> str | None:
         and re.search(r"\bSLE\b", context)
     ):
         found.append("systemic lupus erythematosus")
+    if "IBD" not in found and re.search(
+        r"\b(?:Global|China|US|Greater\s+China)\s*IBD\b",
+        context,
+        flags=re.IGNORECASE,
+    ):
+        found.append("IBD")
+    if "autoimmune diseases" not in found and re.search(
+        r"\b(?:Global|China|US|Greater\s+China)\s*Autoimmune\s+Diseases\b",
+        context,
+        flags=re.IGNORECASE,
+    ):
+        found.append("autoimmune diseases")
     return "; ".join(dict.fromkeys(found)) if found else None
+
+
+def _term_in_context(*, term: str, context: str) -> bool:
+    pattern = r"\b" + re.escape(term).replace(r"\ ", r"\s+") + r"\b"
+    return bool(re.search(pattern, context, flags=re.IGNORECASE))
 
 
 def _geography_from_context(context: str) -> str | None:
@@ -1211,6 +1441,7 @@ def _partner_from_context(context: str) -> str | None:
         "Solstice",
         "Otsuka",
         "Spruce",
+        "Dianthus",
     )
     found = [partner for partner in partners if partner.lower() in context.lower()]
     return "; ".join(dict.fromkeys(found)) if found else None
@@ -1220,6 +1451,28 @@ def _milestone_from_context(
     context: str, *, as_of_year: int | None = None
 ) -> str | None:
     normalized = re.sub(r"\s+", " ", context).lower()
+    quarter_names = {
+        "first": "Q1",
+        "second": "Q2",
+        "third": "Q3",
+        "fourth": "Q4",
+    }
+    bla_quarter = re.search(
+        r"\bbla submission\b.{0,100}\b(first|second|third|fourth) "
+        r"quarter of (20\d{2})",
+        normalized,
+    )
+    if bla_quarter:
+        quarter = quarter_names[bla_quarter.group(1)]
+        year = int(bla_quarter.group(2))
+        return f"BLA submission in {quarter} {year}"
+    pcc_half = re.search(
+        r"\bpcc nomination\b.{0,120}\b(first half|h1) (?:of )?(20\d{2})",
+        normalized,
+    )
+    if pcc_half:
+        year = int(pcc_half.group(2))
+        return f"PCC nomination in H1 {year}"
     planned_start = re.search(r"\bplanned to start in (20\d{2})\b", normalized)
     if planned_start:
         year = int(planned_start.group(1))
@@ -1316,6 +1569,11 @@ def _payload_only_context(*, name: str, context: str) -> bool:
     ):
         return True
     return False
+
+
+def _listing_warning_context(*, context: str) -> bool:
+    lowered = context.lower()
+    return "warning under rule 18a" in lowered or "no assurance that" in lowered
 
 
 def _combination_partner_context(*, name: str, context: str) -> bool:

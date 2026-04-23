@@ -454,6 +454,17 @@ Use this shape:
   - ClinicalTrials.gov version/search failures now degrade to
     `input_validation["clinical_trials"]` warnings instead of aborting the
     one-command report when one upstream query disconnects.
+- Third HK biotech source-snapshot fixture is live for Leads Biolabs
+  (`09887.HK`, 維立志博):
+  - `PIPELINE_EXTRACTOR_VERSION = 9` refreshes stale generated drafts.
+  - The fixture guards source-scoped extraction, not current live truth:
+    LBL-024 BLA-submission status, LBL-047/DNTH212 aliasing, BDCA2/TACI
+    fusion-protein modality, TCE-ADC targets, PCC milestones, and listing-rule
+    warning / abbreviation-table leakage are now regression-tested.
+  - The parser now prefers stronger repeated evidence for target, modality,
+    indication, and phase; ignores generic pipeline table phase ladders; treats
+    `known as ... outside of China` as an alias relation; and parses BLA/PCC
+    milestone phrases from source text.
 
 ## Current Repo State
 
@@ -467,10 +478,10 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-23 after extraction-audit persistence,
-repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
-degradation. Harbour BioMed extraction / competitor versions remain
-`PIPELINE_EXTRACTOR_VERSION = 6` and `COMPETITOR_EXTRACTOR_VERSION = 4`:
+Last validated on 2026-04-23 after Leads Biolabs (`09887.HK`) fixture
+hardening, extraction-audit persistence, repeated-anchor source excerpt
+ranking, and ClinicalTrials.gov failure degradation. Extractor versions:
+`PIPELINE_EXTRACTOR_VERSION = 9` and `COMPETITOR_EXTRACTOR_VERSION = 4`:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -482,12 +493,13 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 257 unit tests ran, 250 passed, 7 skipped (online Yahoo / online
+- 258 unit tests ran, 251 passed, 7 skipped (online Yahoo / online
   Tencent / Bailian Qwen integration tests plus Anthropic online
   self-skips; all guarded behind `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
-  The latest coverage adds saved extraction-audit artifact wiring,
-  extraction-audit summary assertions, repeated-asset excerpt ranking,
-  and ClinicalTrials.gov per-term failure degradation.
+  The latest coverage adds the Leads Biolabs source-snapshot fixture, saved
+  extraction-audit artifact wiring, extraction-audit summary assertions,
+  repeated-asset excerpt ranking, and ClinicalTrials.gov per-term failure
+  degradation.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same full-test validation baseline.
@@ -529,6 +541,17 @@ Latest result:
   HBM7020 concern is substantive field mismatch review
   (`autoimmune diseases` vs source text pointing to oncology Phase I),
   not a source-excerpt coverage miss.
+- Quick Leads Biolabs (`09887.HK`) smoke:
+  `report "09887.HK" --json --no-llm --no-save` now returns 12 assets,
+  22 trials, 1 competitor, 13 catalysts, 3 input warnings, and extraction
+  audit `10/12 supported`, `2 need review`, `0 missing anchors`. The remaining
+  review assets are `LBL-056` and `LBL-082`, both missing target/mechanism
+  because the source gives modality descriptions but not molecular targets.
+  Full quick-report LLM smoke (`report "09887.HK" --json --no-save`) completed
+  6/6 graph steps OK with 17,371 total LLM tokens. Pipeline triage now says the
+  snapshot largely aligns with source text; remaining issues are real research
+  gaps: LBL-024 non-standard phase wording / competitive context, LBL-056 and
+  LBL-082 null targets, and sparse competitor benchmarking.
 - LLM ping `scripts/llm_smoke.py` (Bailian `/compatible-mode/v1`,
   `qwen3.6-plus`, `enable_thinking=False`): 1 call, 28 completion tokens,
   3.0 s latency, schema satisfied, trace recorded.
@@ -699,18 +722,18 @@ Latest smoke result:
 
 ### Current Task
 
-Harbour BioMed extraction hardening, competitor seed expansion, full
-02142 LLM quick-report smoke, repeated-anchor excerpt ranking, and
-operator-facing extraction-audit persistence are closed for the current
-source-backed scope. Remaining deterministic 02142 warnings are
-intentionally unresolved unless a source-backed parser improvement
-appears; do not infer phase from lost PDF table coordinates.
+Harbour BioMed extraction hardening, Leads Biolabs third-fixture hardening,
+competitor seed expansion, full 02142 / 09887 LLM quick-report smokes,
+repeated-anchor excerpt ranking, and operator-facing extraction-audit
+persistence are closed for the current source-backed scope. Remaining
+deterministic warnings should stay review-gated unless the source text
+clearly resolves them.
 
-The next quality gap is broader fixture coverage and validator depth,
-not audit visibility. The audit file gives operators a durable per-asset
-table; the next parser work should be grounded in another representative
-HK biotech disclosure style rather than inferring unresolved 02142
-fields from weak packed-table text.
+The latest 09887 run moved the next quality gap from extraction fidelity to
+competitive intelligence. The system can now source-ground most Leads Biolabs
+pipeline fields, but only auto-drafts one competitor seed, so LLM skeptic
+correctly flags competitive blindness for LBL-024 / LBL-034 and early TCE/ADC
+programs.
 
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
@@ -719,8 +742,9 @@ access recovers.
 
 ### Next Action
 
-1. Add a third representative HK biotech fixture and use it to catch
-   parser drift before adding more target seeds or phase heuristics.
+1. Expand conservative competitor seeds for Leads/IO2.0-style targets:
+   PD-L1/4-1BB, GPRC5D/CD3, DLL3/CD3, CD38/GPRC5D/CD3, LAG-3/PD-1, and
+   selected TCE-ADC/BsADC modalities where credible public comparators exist.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -736,9 +760,10 @@ access recovers.
   `insufficient_data` when live sector news is available, and
   subsequent same-market runs show `cache: hit` in
   `macro_context.live_signals.notes`.
-- Full 02142 quick-report smoke remains 6/6 LLM steps OK, and
+- Full 02142 / 09887 quick-report smoke remains 6/6 LLM steps OK, and
   pipeline-triage treats HBM7020 as a field-consistency review rather
-  than a missing-source-window issue.
+  than a missing-source-window issue; for 09887 it should treat LBL-056 /
+  LBL-082 as true target-disclosure gaps, not parser drift.
 - Saved-run audit artifacts remain listed in terminal output and manifest
   artifacts, with the same per-asset `extraction_audit.assets[]` table as
   the compact JSON summary.
@@ -769,8 +794,9 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Add a third representative HK biotech fixture for another disclosure
-   style, then use it to harden parser regressions conservatively.
+1. Expand conservative competitor seeds for Leads/IO2.0-style targets and
+   rerun `report "09887.HK"` to confirm competition-triage improves without
+   treating generated seeds as curated truth.
 2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 3. Keep broadening fixtures across representative HK biotech disclosure

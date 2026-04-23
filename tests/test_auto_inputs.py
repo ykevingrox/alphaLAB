@@ -84,6 +84,33 @@ GlobalSolid TumorsB7H7/HHLA2HBM1020
 Global solid tumors CLDN18.2xCD3HBM7022/ AZD5863.
 """
 
+LEADS_SAMPLE_TEXT = """
+BUSINESS HIGHLIGHTS
+During fiscal year 2025, we advanced clinical and preclinical milestones:
+LBL-024 completed patient enrollment for its registrational trial and remains
+on track for BLA submission in the third quarter of 2026 for 3L+ EP-NEC.
+For LBL-034, we orally presented Phase I data and are now advancing its
+Phase II trial. Our first clinical-stage autoimmune asset, LBL-047
+(known as DNTH212 outside of China), entered a Phase I clinical trial.
+
+Clinical Stage Products
+Opamtistomig (LBL-024, PD-L1/4-1BB BsAb), our pivotal-stage asset, is
+designed to block PD-1/L1 suppression and activate 4-1BB.
+LBL-034 (GPRC5D/CD3 BsAb) is being advanced for multiple myeloma.
+LBL-047 (anti-BDCA2/TACI bispecific fusion protein) is being evaluated
+in patients with systemic lupus erythematosus (SLE).
+
+Pre-clinical Stage Products
+LBL-054 (CDH17/CD3 TCE-ADC) entered the IND-enabling stage in Q3 2025.
+LBL-058 (DLL3/CD3 TCE-ADC) targets SCLC and other solid tumors, with
+PCC nomination targeted in the first half of 2026.
+LBL-081 (PD-L1-based Bispecific ADC) is being developed for multiple
+solid tumors with PCC nomination targeted in the first half of 2026.
+Abbreviations: IgAN = IgA nephropathy; MM = Multiple myeloma.
+Warning under Rule 18A.08: there is no assurance that LBL-081 will be
+marketed. We plan to submit the first BLA for LBL-024 in China.
+"""
+
 
 class AutoInputsTest(unittest.TestCase):
     def test_drafts_pipeline_assets_from_source_text(self) -> None:
@@ -307,6 +334,37 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(payload["short_term_debt"], 56005000)
         self.assertIsNone(payload["quarterly_cash_burn"])
         self.assertTrue(payload["needs_human_review"])
+
+    def test_leads_fixture_drafts_pipeline_without_status_leakage(self) -> None:
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Leads Biolabs", ticker="09887.HK"),
+            text=LEADS_SAMPLE_TEXT,
+            source=_leads_source(),
+        )
+
+        names = [asset["name"] for asset in payload["assets"]]
+        self.assertIn("LBL-024", names)
+        self.assertIn("LBL-047", names)
+        self.assertIn("LBL-058", names)
+        self.assertNotIn("DNTH212", names)
+        lbl024 = _asset_by_name(payload, "LBL-024")
+        self.assertEqual(lbl024["target"], "PD-L1/4-1BB")
+        self.assertEqual(lbl024["phase"], "BLA planned")
+        self.assertEqual(lbl024["next_milestone"], "BLA submission in Q3 2026")
+        self.assertNotEqual(lbl024["phase"], "preclinical")
+        lbl047 = _asset_by_name(payload, "LBL-047")
+        self.assertIn("DNTH212", lbl047["aliases"])
+        self.assertEqual(lbl047["target"], "BDCA2/TACI")
+        self.assertEqual(lbl047["modality"], "bispecific fusion protein")
+        self.assertIn("systemic lupus erythematosus", lbl047["indication"])
+        lbl058 = _asset_by_name(payload, "LBL-058")
+        self.assertEqual(lbl058["target"], "DLL3/CD3")
+        self.assertEqual(lbl058["modality"], "TCE-ADC")
+        self.assertIn("SCLC", lbl058["indication"])
+        self.assertNotIn("IgAN", lbl058["indication"] or "")
+        lbl081 = _asset_by_name(payload, "LBL-081")
+        self.assertEqual(lbl081["phase"], "PCC nomination")
+        self.assertEqual(lbl081["next_milestone"], "PCC nomination in H1 2026")
 
     def test_drafts_conference_catalysts_from_source_text(self) -> None:
         payload = draft_conference_catalysts(
@@ -789,7 +847,7 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(hbm9161["target"], "FcRn")
         self.assertIn("gMG", hbm9161["indication"])
         self.assertEqual(hbm9161["phase"], "BLA accepted")
-        self.assertEqual(_asset_by_name(payload, "HBM7004")["phase"], "preclinical")
+        self.assertEqual(_asset_by_name(payload, "HBM7004")["phase"], "IND-enabling")
         hbm7575 = _asset_by_name(payload, "HBM7575")
         self.assertIn("atopic dermatitis", hbm7575["indication"])
         self.assertEqual(hbm7575["phase"], "IND approved")
@@ -854,6 +912,26 @@ def _hbm_source(
         text_path=text_path,
         stock_code="02142",
         stock_name="HBM HOLDINGS-B",
+    )
+
+
+def _leads_source(
+    *,
+    file_path: Path = Path("leads_results.pdf"),
+    text_path: Path = Path("leads_results.txt"),
+) -> SourceDocument:
+    return SourceDocument(
+        source_type="hkex_annual_results",
+        title="Annual Results",
+        url=(
+            "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/"
+            "0327/2026032700954.pdf"
+        ),
+        publication_date="2026-03-27",
+        file_path=file_path,
+        text_path=text_path,
+        stock_code="09887",
+        stock_name="LEADS BIOLABS-B",
     )
 
 

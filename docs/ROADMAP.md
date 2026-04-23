@@ -334,9 +334,11 @@ section stays aligned with the repo. Update statuses when scope changes.
 
 - **Partially done** — Add fixture-based regression tests for representative HK
   biotech tickers to catch schema or parsing drift early. DualityBio covers the
-  orchestration path; Harbour BioMed now covers a second HKEX disclosure style
-  with USD financials and packed-table pipeline aliases. Broader representative
-  ticker coverage remains open.
+  orchestration path; Harbour BioMed covers USD financials and packed-table
+  pipeline aliases; Leads Biolabs (`09887.HK`) now covers TCE/ADC-heavy
+  annual-results text, `known as ... outside of China` aliases, table-header
+  phase-ladder leakage, BLA/PCC milestones, and abbreviation/listing-warning
+  noise. Broader representative ticker coverage remains open.
 
 - **Done** — Standardize run-level quality gates in summaries and manifests so
   users can quickly see whether output is decision-ready; optional watchlist
@@ -377,7 +379,11 @@ resilience and validator tightening remain).
   inline numbered collaboration sections from leaking partners across
   assets. Repeated source-text anchor selection now prefers evidence-rich
   mentions, so LLM triage does not miss later phase/IND/BLA evidence when
-  an earlier collaboration-only mention appears first.
+  an earlier collaboration-only mention appears first. Leads Biolabs source
+  hardening now also prefers stronger repeated target / modality / indication /
+  phase evidence, maps `known as ... outside of China` aliases, ignores generic
+  pipeline table phase ladders, parses BLA/PCC milestone phrases, and blocks
+  abbreviation/listing-warning leakage.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from
@@ -412,7 +418,10 @@ and web ingestion out).
   now in place as a conservative bootstrap; generated seed drafts refresh
   by extractor version and cover the current Harbour BioMed target families
   without treating them as curated truth. Target-overlap seeds do not copy
-  the pipeline asset indication into the competitor record.
+  the pipeline asset indication into the competitor record. The latest Leads
+  Biolabs smoke shows the next competitor gap: IO2.0/TCE-style targets such as
+  PD-L1/4-1BB, GPRC5D/CD3, DLL3/CD3, and CD38/GPRC5D/CD3 still need
+  conservative public-comparator seed coverage.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`
