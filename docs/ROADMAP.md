@@ -225,7 +225,7 @@ in place (`src/biotech_alpha/agent_runtime.py`) with a thread-safe
 `FactStore`, topological layer scheduling, same-layer parallelism, and
 per-agent error isolation. An OpenAI-compatible LLM adapter targets
 Alibaba Bailian's `/compatible-mode/v1` endpoint with `qwen3.5-plus` as the
-lower-cost development/test default model. Five LLM agents are wired through
+current development/default model. Five LLM agents are wired through
 `company-report --llm-agents ...` and the quick `report "<company|ticker>"`
 command enables the full stack by default. All LLM calls are JSONL-traced
 with token counts, latency, and a run-level cost summary.
@@ -512,9 +512,9 @@ eventually a technical / K-line agent.
   `--llm-agents competition-triage`) audits deterministic competitor
   matching outputs and feeds structured findings into the skeptic when
   chained in the same AgentGraph run.
-- **Done** — Lower the openai-compatible development/test default model from
-  `qwen3.6-plus` to `qwen3.5-plus` to conserve quota. Stronger model ids
-  remain available through `BIOTECH_ALPHA_LLM_MODEL`.
+- **Done** — Switch the openai-compatible development/default model from
+  `qwen3.6-plus` to `qwen3.5-plus`. Stronger or alternate model ids remain
+  available through `BIOTECH_ALPHA_LLM_MODEL` whenever quality requires them.
 - **Done** — Ultra-simple CLI entry `report "<company|ticker>"` for
   operator UX. It auto-enables auto-inputs, market-data, macro-signals,
   and the full LLM stack by default; missing LLM env now fails fast unless

@@ -493,8 +493,8 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-23 after switching the development/test Bailian
-default to `qwen3.5-plus`, cleaning up LLM-agent documentation drift, Leads
+Last validated on 2026-04-23 after switching the development/default Bailian
+model to `qwen3.5-plus`, cleaning up LLM-agent documentation drift, Leads
 Biolabs (`09887.HK`) fixture hardening, extraction-audit persistence,
 repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
 degradation. Extractor versions: `PIPELINE_EXTRACTOR_VERSION = 9` and
@@ -577,12 +577,11 @@ Latest result:
   snapshot largely aligns with source text; remaining issues are real research
   gaps: LBL-024 non-standard phase wording / competitive context, LBL-056 and
   LBL-082 null targets, and sparse competitor benchmarking.
-- LLM default model is now `qwen3.5-plus` for lower-cost development and
+- LLM default model is now `qwen3.5-plus` for development and compatibility
   smoke testing. The previous LLM ping (`scripts/llm_smoke.py`, Bailian
   `/compatible-mode/v1`, `qwen3.6-plus`, `enable_thinking=False`) used
   1 call, 28 completion tokens, 3.0 s latency, satisfied the schema, and
-  recorded a trace. A live `qwen3.5-plus` smoke is intentionally deferred
-  until quota pressure eases.
+  recorded a trace. Run live smoke whenever it is needed to validate behavior.
 - LLM end-to-end `company-report --ticker 09606.HK --auto-inputs
   --market-data hk-public --llm-agents scientific-skeptic`: 1 LLM call,
   1615 prompt + 734 completion tokens, 15.5 s latency, `AgentRunResult`
@@ -653,9 +652,9 @@ Latest smoke result:
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
-- Current development/test default is `qwen3.5-plus`. Use
-  `BIOTECH_ALPHA_LLM_MODEL=qwen3.6-plus` only for stronger live research
-  runs where the extra quota cost is acceptable.
+- Current development/default model is `qwen3.5-plus`. Use
+  `BIOTECH_ALPHA_LLM_MODEL=qwen3.6-plus` or another stronger model whenever
+  the research task needs it.
 - `--macro-signals yahoo-hk` is wired end-to-end and now shares a
   single fetch across every company in the same market through
   `CachingMacroSignalsProvider`. Because macro signals (HSI,
@@ -760,10 +759,9 @@ extraction-audit persistence are closed for the current source-backed scope.
 Remaining deterministic warnings should stay review-gated unless the source
 text clearly resolves them.
 
-LLM quota conservation is now part of the operating posture: the default
-Bailian model for development and smoke testing is `qwen3.5-plus`, and live
-LLM smoke should be skipped unless it is needed to validate behavior that
-offline tests cannot cover.
+Model choice is an execution-quality decision. The default Bailian model is
+currently `qwen3.5-plus`, but live LLM smoke and stronger model overrides
+should be used whenever they improve validation or research quality.
 
 The latest 09887 run moved the next quality gap from extraction fidelity to
 competitive intelligence. The system can now source-ground most Leads Biolabs
@@ -835,8 +833,8 @@ set -a; source .env; set +a
 1. Build the live global competitor discovery runner and rerun
    `report "09887.HK"` to confirm competition-triage improves without treating
    generated candidates as curated truth.
-2. Run one live `qwen3.5-plus` smoke only when quota pressure eases or a
-   provider/model compatibility question must be answered.
+2. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
+   end behavior needs validation.
 3. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 4. Keep broadening fixtures across representative HK biotech disclosure
