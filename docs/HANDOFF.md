@@ -556,6 +556,16 @@ Use this shape:
     `result_summary` + saved run manifest include per-dimension
     `score/weight/contribution/rationale`, and `watchlist-rank` supports
     `--with-scorecard-dimensions` to expand JSON rows and CSV columns.
+- P0.4 extraction evaluation harness landed:
+  - Added canonical ground-truth case set at
+    `tests/fixtures/p0_4_ground_truth_cases.json` to benchmark
+    `regulatory_pathway` and `next_binary_event`.
+  - Added deterministic evaluator module
+    `src/biotech_alpha/p0_4_ground_truth.py` plus script
+    `scripts/eval_p0_4_ground_truth.py` for CI/local threshold checks.
+  - Added regression gate test `tests/test_p0_4_ground_truth.py` and expanded
+    extraction patterns for BLA filing/acceptance phrasing and
+    topline/interim/readout event phrasing.
 
 ## Current Repo State
 
@@ -851,13 +861,13 @@ decision-ready without depending on addendum context.
 
 ### Next Action
 
-1. Extend P0.4 deterministic extraction with explicit regulatory-pathway and
-   next-binary-event fields (submission/acceptance/readout windows) for top
-   assets when source text is explicit.
-2. Add tests for missing/partial deep-dive evidence to ensure graceful
-   degradation and preserved manual-over-generated precedence.
+1. Expand ground-truth coverage from synthetic canonical phrasing to source-like
+   disclosure snippets (HKEX phrasing variants, mixed punctuation/newline noise,
+   and negative traps) while preserving precision.
+2. Keep deterministic extraction upgrades gated by the P0.4 evaluator script
+   thresholds before broad rollout.
 3. Keep the optional `AssetDeepDiveLLMAgent` as a separate follow-up after the
-   deterministic deep-dive contract is stable.
+   deterministic deep-dive contract is stable and benchmarked.
 
 ### Acceptance Criteria
 

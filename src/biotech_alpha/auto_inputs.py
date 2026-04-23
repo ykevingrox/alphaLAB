@@ -2096,15 +2096,31 @@ def _clinical_data_from_context(context: str) -> list[dict[str, Any]]:
 def _regulatory_pathway_from_context(context: str) -> str | None:
     normalized = re.sub(r"\s+", " ", context)
     lowered = normalized.casefold()
-    if "bla under review" in lowered:
+    if re.search(
+        r"\bbla\b.{0,40}\bunder review\b|\bunder review\b.{0,40}\bbla\b",
+        lowered,
+    ):
         return "BLA under review"
-    if "bla accepted" in lowered:
+    if re.search(
+        r"\bbla\b.{0,40}\baccepted\b|\baccepted\b.{0,40}\bbla\b",
+        lowered,
+    ):
         return "BLA accepted"
-    if "bla submission" in lowered or "submit the first bla" in lowered:
+    if re.search(
+        r"\bbla\b.{0,50}\b(submission|submit|filing)\b|"
+        r"\b(submission|submit|filing)\b.{0,50}\bbla\b",
+        lowered,
+    ):
         return "BLA submission planned"
-    if "ind approved" in lowered:
+    if re.search(
+        r"\bind\b.{0,40}\bapproved\b|\bapproved\b.{0,40}\bind\b",
+        lowered,
+    ):
         return "IND approved"
-    if "ind accepted" in lowered:
+    if re.search(
+        r"\bind\b.{0,40}\baccepted\b|\baccepted\b.{0,40}\bind\b",
+        lowered,
+    ):
         return "IND accepted"
     return None
 
@@ -2113,10 +2129,13 @@ def _next_binary_event_from_context(context: str) -> str | None:
     normalized = re.sub(r"\s+", " ", context)
     patterns = (
         r"(BLA submission in Q[1-4]\s+20\d{2})",
+        r"(BLA acceptance expected in Q[1-4]\s+20\d{2})",
         r"(planned to start in\s+20\d{2})",
         r"(PCC nomination in H[12]\s+20\d{2})",
         r"(present updated data at [A-Z]{3,6}\s+20\d{2})",
         r"(Phase\s+[123][a-z]?\s+readout[^.;]{0,80})",
+        r"(Topline Phase\s+(?:[123]|I{1,3})\s+data expected in [12]H\s+20\d{2}[^.;]{0,80})",
+        r"(Interim phase\s+(?:[123]|i{1,3})\s+data expected by Q[1-4]\s+20\d{2}[^.;]{0,80})",
     )
     for pattern in patterns:
         match = re.search(pattern, normalized, flags=re.IGNORECASE)

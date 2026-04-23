@@ -708,7 +708,8 @@ thesis, and deep content on the core asset instead of counts.
 
 - **P0.4** — Core Asset Deep Dive extraction + agent.
   - **Status:** active (deterministic deep-dive ranking + structured clinical
-    datapoints landed; regulatory/binary-event enrichment and optional
+    datapoints landed; regulatory/binary-event enrichment plus ground-truth
+    benchmark harness landed; broader source-like coverage and optional
     deep-dive LLM agent remain).
   - **What:** broaden HKEX PDF text extraction beyond "Business
     Highlights" into "Clinical Highlights" / "Clinical Update" / "Data

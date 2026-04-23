@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "reg_bla_under_review",
+      "field": "regulatory_pathway",
+      "context": "The BLA for relapsed SCLC is currently under review by CDE.",
+      "expected": "BLA under review"
+    },
+    {
+      "id": "reg_bla_accepted",
+      "field": "regulatory_pathway",
+      "context": "The BLA for gMG was accepted in China.",
+      "expected": "BLA accepted"
+    },
+    {
+      "id": "reg_bla_planned",
+      "field": "regulatory_pathway",
+      "context": "The company plans BLA filing in 2027 after registrational data.",
+      "expected": "BLA submission planned"
+    },
+    {
+      "id": "reg_ind_approved",
+      "field": "regulatory_pathway",
+      "context": "The IND application for COPD was approved by NMPA.",
+      "expected": "IND approved"
+    },
+    {
+      "id": "reg_ind_accepted",
+      "field": "regulatory_pathway",
+      "context": "China IND application for atopic dermatitis was accepted.",
+      "expected": "IND accepted"
+    },
+    {
+      "id": "reg_none_negative",
+      "field": "regulatory_pathway",
+      "context": "We advanced preclinical work and improved PK stability.",
+      "expected": null
+    },
+    {
+      "id": "evt_bla_submission_quarter",
+      "field": "next_binary_event",
+      "context": "LBL-024 remains on track for BLA submission in Q3 2026.",
+      "expected": "BLA submission in Q3 2026"
+    },
+    {
+      "id": "evt_planned_start_year",
+      "field": "next_binary_event",
+      "context": "The first global Phase 3 trial is planned to start in 2026.",
+      "expected": "planned to start in 2026"
+    },
+    {
+      "id": "evt_pcc_half_year",
+      "field": "next_binary_event",
+      "context": "PCC nomination in H1 2027 remains our key R&D catalyst.",
+      "expected": "PCC nomination in H1 2027"
+    },
+    {
+      "id": "evt_conference_update",
+      "field": "next_binary_event",
+      "context": "The company plans to present updated data at ASCO 2026.",
+      "expected": "present updated data at ASCO 2026"
+    },
+    {
+      "id": "evt_phase_readout_generic",
+      "field": "next_binary_event",
+      "context": "Phase 2 readout expected by year-end 2026 for the lead asset.",
+      "expected": "Phase 2 readout expected by year-end 2026 for the lead asset"
+    },
+    {
+      "id": "evt_topline_readout",
+      "field": "next_binary_event",
+      "context": "Topline Phase II data expected in 2H 2026 for second-line NSCLC.",
+      "expected": "Topline Phase II data expected in 2H 2026 for second-line NSCLC"
+    },
+    {
+      "id": "evt_interim_data",
+      "field": "next_binary_event",
+      "context": "Interim phase 1 data expected by Q4 2026 from dose escalation.",
+      "expected": "Interim phase 1 data expected by Q4 2026 from dose escalation"
+    },
+    {
+      "id": "evt_acceptance_expected",
+      "field": "next_binary_event",
+      "context": "BLA acceptance expected in Q2 2027 subject to filing timeline.",
+      "expected": "BLA acceptance expected in Q2 2027"
+    },
+    {
+      "id": "evt_none_negative",
+      "field": "next_binary_event",
+      "context": "We expanded manufacturing capacity and strengthened the CMC team.",
+      "expected": null
+    }
+  ]
+}
