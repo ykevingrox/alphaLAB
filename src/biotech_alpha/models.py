@@ -61,6 +61,7 @@ class PipelineAsset:
     rights: str | None = None
     partner: str | None = None
     next_milestone: str | None = None
+    clinical_data: tuple[str, ...] = ()
     evidence: tuple[Evidence, ...] = ()
 
 

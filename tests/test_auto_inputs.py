@@ -270,6 +270,23 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(names.count("DB-9999"), 1)
         self.assertEqual(_asset_by_name(payload, "DB-9999")["phase"], "Phase 2")
 
+    def test_drafts_pipeline_assets_extracts_clinical_data_snippets(self) -> None:
+        text = """
+        DB-7777 (HER2 ADC) reported ORR 42% and DCR 78% in metastatic breast cancer.
+        The study showed mPFS 8.6 months with n=58 at interim cutoff.
+        """
+        payload = draft_pipeline_assets(
+            identity=CompanyIdentity(company="Example Bio", ticker="7777.HK"),
+            text=text,
+            source=_source(),
+        )
+
+        asset = _asset_by_name(payload, "DB-7777")
+        clinical_data = asset["clinical_data"]
+        self.assertTrue(clinical_data)
+        self.assertTrue(any("ORR" in line for line in clinical_data))
+        self.assertTrue(any("mPFS" in line for line in clinical_data))
+
     def test_drafts_pipeline_asset_prefers_nearby_anti_target(self) -> None:
         text = """
         Spruce obtained rights to develop and commercialize HAT001/HBM9013,

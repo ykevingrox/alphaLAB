@@ -147,6 +147,9 @@ def pipeline_asset_template(company: str, ticker: str | None = None) -> dict[str
                 "rights": "Example rights",
                 "partner": "Example partner",
                 "next_milestone": "Example expected milestone window",
+                "clinical_data": [
+                    "ORR 42% in relapsed setting (n=58, interim cutoff)"
+                ],
                 "evidence": [
                     {
                         "claim": "Short source-backed claim for this asset.",
@@ -222,6 +225,7 @@ def _pipeline_asset_from_dict(row: Any) -> PipelineAsset:
         rights=_optional_str(row.get("rights")),
         partner=_optional_str(row.get("partner")),
         next_milestone=_optional_str(row.get("next_milestone")),
+        clinical_data=_str_tuple(row.get("clinical_data")),
         evidence=tuple(_evidence_from_dict(item) for item in row.get("evidence", [])),
     )
 

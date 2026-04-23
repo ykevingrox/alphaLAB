@@ -512,6 +512,9 @@ def memo_to_markdown(
                 details.append(f"milestone {asset.next_milestone}")
             suffix = f" ({'; '.join(details)})" if details else ""
             lines.append(f"- {asset.name}{suffix}")
+            if asset.clinical_data:
+                for datum in asset.clinical_data[:3]:
+                    lines.append(f"  - clinical: {datum}")
     else:
         lines.append("- No disclosed pipeline asset input was provided.")
     pipeline_llm = _findings_for(all_findings, "pipeline_triage")
@@ -958,7 +961,10 @@ def _build_clinical_first_memo(
             "Trial registry presence does not prove positive efficacy, safety, "
             "approval probability, or commercial value.",
         ),
-        key_assets=pipeline_assets,
+        key_assets=_rank_core_assets(
+            pipeline_assets=pipeline_assets,
+            asset_trial_matches=asset_trial_matches,
+        ),
         catalysts=catalysts,
         findings=tuple(findings),
         follow_up_questions=(
@@ -975,6 +981,55 @@ def _build_clinical_first_memo(
         ),
         evidence=evidence,
     )
+
+
+def _rank_core_assets(
+    *,
+    pipeline_assets: tuple[PipelineAsset, ...],
+    asset_trial_matches: tuple[TrialAssetMatch, ...],
+) -> tuple[PipelineAsset, ...]:
+    if not pipeline_assets:
+        return ()
+    match_count_by_asset: dict[str, int] = {}
+    for match in asset_trial_matches:
+        key = match.asset_name.casefold()
+        match_count_by_asset[key] = match_count_by_asset.get(key, 0) + 1
+    phase2_plus = tuple(asset for asset in pipeline_assets if _is_phase2_plus(asset.phase))
+    population = phase2_plus or pipeline_assets
+    ranked = sorted(
+        population,
+        key=lambda asset: (
+            -_phase_rank_for_deep_dive(asset.phase),
+            -match_count_by_asset.get(asset.name.casefold(), 0),
+            asset.name.casefold(),
+        ),
+    )
+    return tuple(ranked[:3])
+
+
+def _is_phase2_plus(phase: str | None) -> bool:
+    lowered = (phase or "").casefold()
+    return any(
+        token in lowered
+        for token in ("phase 2", "phase ii", "phase 3", "phase iii", "bla")
+    )
+
+
+def _phase_rank_for_deep_dive(phase: str | None) -> int:
+    lowered = (phase or "").casefold()
+    if "bla under review" in lowered or "bla accepted" in lowered:
+        return 6
+    if "bla" in lowered:
+        return 5
+    if "phase 3" in lowered or "phase iii" in lowered:
+        return 4
+    if "phase 2" in lowered or "phase ii" in lowered:
+        return 3
+    if "phase 1" in lowered or "phase i" in lowered:
+        return 2
+    if lowered:
+        return 1
+    return 0
 
 
 def _derive_clinical_catalysts(

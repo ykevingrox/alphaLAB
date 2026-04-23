@@ -44,6 +44,28 @@ class FakeClinicalTrialsClient:
 
 
 class SingleCompanyResearchTest(unittest.TestCase):
+    def test_core_asset_deep_dive_prefers_phase2_plus_assets(self) -> None:
+        client = FakeClinicalTrialsClient({"studies": []})
+        assets = (
+            PipelineAsset(name="A-101", phase="Phase 1"),
+            PipelineAsset(name="B-202", phase="Phase 2"),
+            PipelineAsset(name="C-303", phase="Phase 3"),
+            PipelineAsset(name="D-404", phase="BLA under review"),
+        )
+        result = run_single_company_research(
+            company="Example Biotech",
+            pipeline_assets=assets,
+            client=client,
+            include_asset_queries=False,
+            save=False,
+            now=datetime(2026, 4, 20, tzinfo=UTC),
+        )
+
+        self.assertEqual(
+            tuple(asset.name for asset in result.memo.key_assets),
+            ("D-404", "C-303", "B-202"),
+        )
+
     def test_clinical_trial_search_failure_degrades_to_warning(self) -> None:
         asset = PipelineAsset(name="DB-1303", target="HER2")
         client = FakeClinicalTrialsClient(
@@ -106,6 +128,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             indication="Cancer",
             phase="Phase 2",
             next_milestone="2026 data readout",
+            clinical_data=("ORR 42% in relapsed disease", "mPFS 8.6 months"),
             evidence=(
                 Evidence(
                     claim="Example Drug is a disclosed pipeline asset.",
@@ -325,6 +348,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Investment Thesis", memo_markdown)
             self.assertIn("## Valuation Detail", memo_markdown)
             self.assertIn("## Catalyst Roadmap", memo_markdown)
+            self.assertIn("clinical: ORR 42% in relapsed disease", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)

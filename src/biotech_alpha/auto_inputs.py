@@ -1161,6 +1161,7 @@ def _draft_asset_from_context(
             local_context,
             as_of_year=source_year,
         ),
+        "clinical_data": _clinical_data_from_context(local_context),
         "evidence": [
             {
                 "claim": _clean_claim(context),
@@ -2048,6 +2049,26 @@ def _indication_from_context(context: str) -> str | None:
     ):
         found.append("autoimmune diseases")
     return "; ".join(dict.fromkeys(found)) if found else None
+
+
+def _clinical_data_from_context(context: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", context)
+    snippets: list[str] = []
+    patterns = (
+        r"\bORR\b[^.;]{0,80}\b\d{1,3}(?:\.\d+)?%",
+        r"\bDCR\b[^.;]{0,80}\b\d{1,3}(?:\.\d+)?%",
+        r"\bmPFS\b[^.;]{0,80}\b\d{1,2}(?:\.\d+)?\s*(?:months?|mos?)",
+        r"\bOS\b[^.;]{0,80}\b\d{1,2}(?:\.\d+)?\s*(?:months?|mos?)",
+        r"\bn\s*=\s*\d{1,4}\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, normalized, flags=re.IGNORECASE):
+            text = match.group(0).strip(" ,;.")
+            if text and text not in snippets:
+                snippets.append(text)
+            if len(snippets) >= 4:
+                return snippets
+    return snippets
 
 
 def _term_in_context(*, term: str, context: str) -> bool:
