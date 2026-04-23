@@ -25,7 +25,12 @@ class PipelineAssetTest(unittest.TestCase):
                     "target": "PD-1/VEGF",
                     "indication": "NSCLC",
                     "phase": "Phase 3",
+                    "regulatory_pathway": "BLA submission planned",
+                    "next_binary_event": "BLA submission in Q3 2026",
                     "next_milestone": "2026 readout",
+                    "clinical_data": [
+                        "ORR 42% in relapsed setting (n=58)",
+                    ],
                     "evidence": [
                         {
                             "claim": "Ivonescimab appears in the pipeline table.",
@@ -47,6 +52,9 @@ class PipelineAssetTest(unittest.TestCase):
         self.assertEqual(assets[0].name, "Ivonescimab")
         self.assertEqual(assets[0].aliases, ("AK112", "SMT112"))
         self.assertEqual(assets[0].target, "PD-1/VEGF")
+        self.assertEqual(assets[0].regulatory_pathway, "BLA submission planned")
+        self.assertEqual(assets[0].next_binary_event, "BLA submission in Q3 2026")
+        self.assertEqual(assets[0].clinical_data[0].metric, "note")
         self.assertEqual(assets[0].evidence[0].confidence, 0.8)
 
     def test_match_pipeline_assets_to_trials_by_intervention_and_title(self) -> None:
