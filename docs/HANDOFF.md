@@ -566,6 +566,11 @@ Use this shape:
   - Added regression gate test `tests/test_p0_4_ground_truth.py` and expanded
     extraction patterns for BLA filing/acceptance phrasing and
     topline/interim/readout event phrasing.
+- P1.8 edge-case hardening progressed:
+  - `position_action.py` now forces conservative `0.0%` sizing when valuation
+    anchors are incomplete/invalid.
+  - Memo action-plan rendering now preserves the explicit
+    "research support only" disclaimer even when risk bullets are truncated.
 
 ## Current Repo State
 

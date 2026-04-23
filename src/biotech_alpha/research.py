@@ -1795,7 +1795,13 @@ def _research_only_action_plan_lines(
         lines: list[str] = []
         for finding in action_plan_findings:
             lines.append(f"- {finding.summary}")
-            lines.extend(f"  - {risk}" for risk in finding.risks[:4])
+            selected_risks = list(finding.risks[:4])
+            if not any("research support only" in risk.lower() for risk in selected_risks):
+                for risk in finding.risks:
+                    if "research support only" in risk.lower():
+                        selected_risks.append(risk)
+                        break
+            lines.extend(f"  - {risk}" for risk in selected_risks)
         return lines
     plan: list[str] = []
     sizing_map = {

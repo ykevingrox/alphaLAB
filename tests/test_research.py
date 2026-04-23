@@ -367,9 +367,15 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Investment Thesis", memo_markdown)
             self.assertIn("## Valuation Detail", memo_markdown)
             self.assertIn("## Catalyst Roadmap", memo_markdown)
+            self.assertIn("## Research-Only Action Plan", memo_markdown)
             self.assertIn("clinical: ORR 42% (n=58); relapsed disease", memo_markdown)
             self.assertIn("regulatory BLA submission planned", memo_markdown)
             self.assertIn("binary_event BLA submission in Q3 2026", memo_markdown)
+            self.assertIn("entry zone 1.05-1.27 HKD", memo_markdown)
+            self.assertIn(
+                "research support only; not a trading instruction",
+                memo_markdown.lower(),
+            )
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)
