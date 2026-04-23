@@ -822,6 +822,8 @@ These tasks are necessary medium-term but only pay off once the P0 / P1
 structure can consume them.
 
 - **P2.9** — China drug clinical trial registry ingestion.
+  - **Status:** deferred (not in this checkpoint; HKEX-driven P2 slices were
+    closed first).
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
   - **Status:** done (phase-1 baseline + report-chain integration landed:

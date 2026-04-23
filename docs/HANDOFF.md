@@ -892,7 +892,8 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
 P0/P1 closure:
-**P3 strategic additions kickoff** (P2 deterministic baseline closed).
+**P3 strategic additions kickoff** (P2.10-2.13 deterministic baseline closed;
+P2.9 China CDE ingestion deferred).
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
