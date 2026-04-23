@@ -135,6 +135,42 @@ TARGET_PRICE_SUMMARY_CSV_FIELDS = (
     "implied_upside_downside_pct",
 )
 
+_PHASE_POS_DEFAULTS: tuple[tuple[tuple[str, ...], float], ...] = (
+    (("bla under review", "bla accepted"), 0.85),
+    (("bla planned",), 0.7),
+    (("phase 3", "phase iii"), 0.55),
+    (("phase 2", "phase ii"), 0.3),
+    (("phase 1", "phase i"), 0.12),
+    (("ind approved", "ind accepted"), 0.08),
+    (("ind-enabling",), 0.04),
+    (("pcc nomination",), 0.02),
+    (("preclinical",), 0.01),
+)
+
+_INDICATION_PEAK_SALES_DEFAULTS: tuple[tuple[tuple[str, ...], float], ...] = (
+    (("nsclc", "non-small cell lung"), 8_000_000_000.0),
+    (("sclc",), 2_500_000_000.0),
+    (("ep-nec", "neuroendocrine"), 1_200_000_000.0),
+    (("multiple myeloma", "mm"), 4_000_000_000.0),
+    (("systemic lupus erythematosus", "sle"), 3_000_000_000.0),
+    (("atopic dermatitis",), 3_500_000_000.0),
+    (("asthma",), 2_500_000_000.0),
+    (("solid tumor",), 3_000_000_000.0),
+    (("breast cancer",), 4_000_000_000.0),
+)
+
+_PHASE_LAUNCH_YEAR_BUFFER: tuple[tuple[tuple[str, ...], int], ...] = (
+    (("bla under review", "bla accepted"), 1),
+    (("bla planned",), 2),
+    (("phase 3", "phase iii"), 3),
+    (("phase 2", "phase ii"), 5),
+    (("phase 1", "phase i"), 7),
+    (("ind approved", "ind accepted"), 8),
+    (("ind-enabling",), 9),
+    (("pcc nomination",), 10),
+    (("preclinical",), 11),
+)
+
 
 def target_price_assumptions_template(
     company: str,
@@ -181,6 +217,134 @@ def target_price_assumptions_template(
                 "rationale": "Update after source-backed catalyst review.",
             }
         ],
+    }
+
+
+def draft_target_price_assumptions(
+    *,
+    company: str,
+    ticker: str | None,
+    pipeline_assets_payload: dict[str, Any],
+    financial_snapshot_payload: dict[str, Any] | None = None,
+    valuation_snapshot_payload: dict[str, Any] | None = None,
+    source: str | None = None,
+    source_date: str | None = None,
+) -> dict[str, Any]:
+    """Draft first-pass target-price assumptions from generated inputs."""
+
+    valuation_payload = (
+        valuation_snapshot_payload if isinstance(valuation_snapshot_payload, dict) else {}
+    )
+    financial_payload = (
+        financial_snapshot_payload if isinstance(financial_snapshot_payload, dict) else {}
+    )
+    as_of_date = _first_non_empty_str(
+        valuation_payload.get("as_of_date"),
+        financial_payload.get("as_of_date"),
+        source_date,
+    ) or date.today().isoformat()
+    currency = _first_non_empty_str(
+        valuation_payload.get("currency"),
+        financial_payload.get("currency"),
+    ) or "HKD"
+    share_price = _positive_number_or_none(valuation_payload.get("share_price"))
+    shares_outstanding = _positive_number_or_none(
+        valuation_payload.get("shares_outstanding")
+    )
+    market_cap = _positive_number_or_none(valuation_payload.get("market_cap"))
+    if share_price is None and shares_outstanding is not None and market_cap is not None:
+        share_price = market_cap / shares_outstanding
+    if shares_outstanding is None and share_price is not None and market_cap is not None:
+        shares_outstanding = market_cap / share_price
+    if share_price is None:
+        share_price = 1.0
+    if shares_outstanding is None:
+        shares_outstanding = 1.0
+
+    cash = _non_negative_number_or_default(
+        valuation_payload.get("cash_and_equivalents"),
+        _non_negative_number_or_default(
+            financial_payload.get("cash_and_equivalents"),
+            0.0,
+        ),
+    )
+    debt = _non_negative_number_or_default(
+        valuation_payload.get("total_debt"),
+        _non_negative_number_or_default(
+            financial_payload.get("short_term_debt"),
+            0.0,
+        ),
+    )
+    as_of_year = _current_year(as_of_date)
+    assets_payload = pipeline_assets_payload.get("assets")
+    rows = assets_payload if isinstance(assets_payload, list) else []
+    drafted_assets = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "").strip()
+        if not name:
+            continue
+        phase = _optional_str(row.get("phase"))
+        indication = _optional_str(row.get("indication"))
+        evidence_source = source
+        evidence_date = source_date
+        evidence = row.get("evidence")
+        if isinstance(evidence, list) and evidence:
+            first = evidence[0]
+            if isinstance(first, dict):
+                evidence_source = _first_non_empty_str(first.get("source"), evidence_source)
+                evidence_date = _first_non_empty_str(
+                    first.get("source_date"),
+                    evidence_date,
+                )
+        drafted_assets.append(
+            {
+                "name": name,
+                "indication": indication,
+                "phase": phase,
+                "peak_sales": _peak_sales_from_indication(indication),
+                "probability_of_success": _pos_from_phase(phase),
+                "economics_share": _economics_share_from_row(row),
+                "operating_margin": 0.35,
+                "launch_year": _launch_year_from_phase(phase, as_of_year=as_of_year),
+                "discount_rate": 0.12,
+                "source": evidence_source or source or "generated_pipeline_assets",
+                "source_date": evidence_date or source_date or as_of_date,
+            }
+        )
+    if not drafted_assets:
+        drafted_assets = [
+            {
+                "name": "Example Drug",
+                "indication": "solid tumors",
+                "phase": "preclinical",
+                "peak_sales": 1_500_000_000.0,
+                "probability_of_success": 0.01,
+                "economics_share": 1.0,
+                "operating_margin": 0.35,
+                "launch_year": as_of_year + 10,
+                "discount_rate": 0.12,
+                "source": source or "generated_pipeline_assets",
+                "source_date": source_date or as_of_date,
+            }
+        ]
+
+    return {
+        "company": company,
+        "ticker": ticker,
+        "as_of_date": as_of_date,
+        "currency": currency,
+        "share_price": round(share_price, 6),
+        "shares_outstanding": round(shares_outstanding, 4),
+        "cash_and_equivalents": round(cash, 2),
+        "total_debt": round(debt, 2),
+        "expected_dilution_pct": 0.0,
+        "assets": drafted_assets,
+        "event_impacts": [],
+        "generated_by": "auto_inputs.default_rnpv",
+        "inferred_by": "default_rnpv_v1",
+        "needs_human_review": True,
     }
 
 
@@ -842,6 +1006,82 @@ def _required_str(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"target-price field {key!r} must be a non-empty string")
     return value.strip()
+
+
+def _first_non_empty_str(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _positive_number_or_none(value: Any) -> float | None:
+    number = _number_value(value)
+    if number is None or number <= 0:
+        return None
+    return number
+
+
+def _non_negative_number_or_default(value: Any, default: float) -> float:
+    number = _number_value(value)
+    if number is None or number < 0:
+        return default
+    return number
+
+
+def _contains_any(text: str, terms: tuple[str, ...]) -> bool:
+    lowered = text.casefold()
+    return any(term in lowered for term in terms)
+
+
+def _pos_from_phase(phase: str | None) -> float:
+    text = (phase or "").casefold()
+    for terms, value in _PHASE_POS_DEFAULTS:
+        if _contains_any(text, terms):
+            return value
+    return 0.03
+
+
+def _peak_sales_from_indication(indication: str | None) -> float:
+    text = (indication or "").casefold()
+    for terms, value in _INDICATION_PEAK_SALES_DEFAULTS:
+        if _contains_any(text, terms):
+            return value
+    return 2_000_000_000.0
+
+
+def _launch_year_from_phase(phase: str | None, *, as_of_year: int) -> int:
+    text = (phase or "").casefold()
+    for terms, buffer_years in _PHASE_LAUNCH_YEAR_BUFFER:
+        if _contains_any(text, terms):
+            return as_of_year + buffer_years
+    return as_of_year + 9
+
+
+def _economics_share_from_row(row: dict[str, Any]) -> float:
+    partner = str(row.get("partner") or "").casefold()
+    rights = str(row.get("rights") or "").casefold()
+    evidence_text = ""
+    evidence = row.get("evidence")
+    if isinstance(evidence, list) and evidence:
+        first = evidence[0]
+        if isinstance(first, dict):
+            evidence_text = str(first.get("claim") or "").casefold()
+    licensing_markers = (
+        "licensed",
+        "out-licensed",
+        "license agreement",
+        "exclusive agreement",
+        "rights",
+        "collaboration",
+    )
+    if (
+        _contains_any(partner, licensing_markers)
+        or _contains_any(rights, licensing_markers)
+        or _contains_any(evidence_text, licensing_markers)
+    ):
+        return 0.2
+    return 1.0
 
 
 def _optional_str(value: Any) -> str | None:

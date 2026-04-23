@@ -449,9 +449,20 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
     }
 
 
-def memo_to_markdown(memo: InvestmentMemo) -> str:
-    """Render a conservative, source-aware Markdown memo."""
+def memo_to_markdown(
+    memo: InvestmentMemo,
+    *,
+    llm_findings: tuple[AgentFinding, ...] = (),
+    llm_confidence_threshold: float = 0.3,
+) -> str:
+    """Render an investment-style memo with LLM findings merged in."""
 
+    trusted_llm = tuple(
+        finding
+        for finding in llm_findings
+        if finding.confidence >= llm_confidence_threshold
+    )
+    all_findings = (*memo.findings, *trusted_llm)
     lines = [
         f"# {memo.company} Research Memo",
         "",
@@ -459,21 +470,37 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
         f"- Market: {memo.market}",
         f"- Decision: `{memo.decision}`",
         "",
-        "## Summary",
+        "## Executive Verdict",
         "",
         memo.summary,
         "",
-        "## Bull Case",
-        "",
     ]
+    valuation_findings = _findings_for(all_findings, "target_price")
+    if valuation_findings:
+        for finding in valuation_findings:
+            lines.append(f"- {finding.summary}")
+    scorecard_findings = _findings_for(all_findings, "watchlist_scorecard")
+    if scorecard_findings:
+        lines.append(f"- {scorecard_findings[0].summary}")
+
+    lines.extend(["", "## Investment Thesis", ""])
+    lines.append("### Bull Drivers")
     lines.extend(_bullet_lines(memo.bull_case))
-    lines.extend(["", "## Bear Case", ""])
+    lines.extend(["", "### Bear Drivers"])
     lines.extend(_bullet_lines(memo.bear_case))
-    lines.extend(["", "## Key Risks", ""])
-    lines.extend(_finding_risk_lines(memo.findings))
-    lines.extend(["", "## Pipeline Assets", ""])
+    skeptic_findings = _findings_for(all_findings, "skeptic")
+    thesis_findings = _findings_for(all_findings, "investment_thesis")
+    if thesis_findings:
+        for finding in thesis_findings:
+            lines.append(f"- {finding.summary}")
+    if skeptic_findings:
+        lines.extend(["", "### Skeptical Read"])
+        for finding in skeptic_findings:
+            lines.append(f"- {finding.summary}")
+
+    lines.extend(["", "## Core Asset Deep Dive", ""])
     if memo.key_assets:
-        for asset in memo.key_assets:
+        for asset in memo.key_assets[:3]:
             details = []
             if asset.target:
                 details.append(f"target {asset.target}")
@@ -481,102 +508,63 @@ def memo_to_markdown(memo: InvestmentMemo) -> str:
                 details.append(f"indication {asset.indication}")
             if asset.phase:
                 details.append(f"phase {asset.phase}")
+            if asset.next_milestone:
+                details.append(f"milestone {asset.next_milestone}")
             suffix = f" ({'; '.join(details)})" if details else ""
             lines.append(f"- {asset.name}{suffix}")
     else:
         lines.append("- No disclosed pipeline asset input was provided.")
-    lines.extend(["", "## Clinical Trial Finding", ""])
-    for finding in memo.findings:
-        lines.append(f"- {finding.summary}")
+    pipeline_llm = _findings_for(all_findings, "pipeline_triage")
+    if pipeline_llm:
+        lines.extend(["", "### Pipeline Triage Notes"])
+        for finding in pipeline_llm:
+            lines.append(f"- {finding.summary}")
+
+    lines.extend(["", "## Catalyst Roadmap", ""])
+    for line in _catalyst_lines(memo.catalysts):
+        lines.append(line)
+
     lines.extend(["", "## Competitive Landscape", ""])
-    competitive_findings = [
-        finding
-        for finding in memo.findings
-        if finding.agent_name == "competitive_landscape_agent"
-    ]
-    if competitive_findings:
-        for finding in competitive_findings:
+    competition_findings = _findings_for(all_findings, "competition")
+    if competition_findings:
+        for finding in competition_findings:
             lines.append(f"- {finding.summary}")
     else:
         lines.append("- No curated competitive landscape input was provided.")
-    lines.extend(["", "## Skeptical Review", ""])
-    skeptic_findings = [
-        finding
-        for finding in memo.findings
-        if finding.agent_name == "scientific_skeptic_agent"
-    ]
-    if skeptic_findings:
-        for finding in skeptic_findings:
-            lines.append(f"- {finding.summary}")
-            for risk in finding.risks:
-                lines.append(f"  - {risk}")
-    else:
-        lines.append("- No skeptical review finding was generated.")
-    lines.extend(["", "## Watchlist Scorecard", ""])
-    scorecard_findings = [
-        finding
-        for finding in memo.findings
-        if finding.agent_name == "watchlist_scorecard_agent"
-    ]
-    if scorecard_findings:
-        for finding in scorecard_findings:
+
+    lines.extend(["", "## Financials & Runway", ""])
+    financial_findings = _findings_for(all_findings, "financial")
+    if financial_findings:
+        for finding in financial_findings:
             lines.append(f"- {finding.summary}")
     else:
-        lines.append("- No watchlist scorecard was generated.")
-    lines.extend(["", "## Catalyst-Adjusted Valuation", ""])
-    target_price_findings = [
-        finding
-        for finding in memo.findings
-        if finding.agent_name == "target_price_scenario_agent"
-    ]
-    if target_price_findings:
-        for finding in target_price_findings:
+        lines.append("- Financial and runway findings are not available.")
+
+    lines.extend(["", "## Valuation Detail", ""])
+    if valuation_findings:
+        for finding in valuation_findings:
             lines.append(f"- {finding.summary}")
             for risk in finding.risks:
                 lines.append(f"  - {risk}")
     else:
         lines.append("- No catalyst-adjusted target price range was generated.")
-    clinical_catalysts = tuple(
-        catalyst for catalyst in memo.catalysts if catalyst.category != "conference"
-    )
-    conference_catalysts = tuple(
-        catalyst for catalyst in memo.catalysts if catalyst.category == "conference"
-    )
 
-    lines.extend(["", "## Upcoming Clinical Catalysts", ""])
-    if clinical_catalysts:
-        for catalyst in clinical_catalysts:
-            when = (
-                catalyst.expected_date.isoformat()
-                if catalyst.expected_date
-                else "TBD"
-            )
-            if catalyst.expected_window:
-                when = catalyst.expected_window
-            asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
-            lines.append(f"- {when}: {catalyst.title}{asset}")
+    lines.extend(["", "## Scorecard Transparency", ""])
+    if scorecard_findings:
+        for finding in scorecard_findings:
+            lines.append(f"- {finding.summary}")
+            for risk in finding.risks:
+                lines.append(f"  - {risk}")
     else:
-        lines.append("- No non-conference catalysts were captured.")
+        lines.append("- No watchlist scorecard summary was generated.")
 
-    lines.extend(["", "## Conference Catalysts", ""])
-    if conference_catalysts:
-        for catalyst in conference_catalysts:
-            when = (
-                catalyst.expected_date.isoformat()
-                if catalyst.expected_date
-                else "TBD"
-            )
-            if catalyst.expected_window:
-                when = catalyst.expected_window
-            asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
-            lines.append(f"- {when}: {catalyst.title}{asset}")
-    else:
-        lines.append("- No conference catalysts were captured.")
+    lines.extend(["", "## Key Risks & Falsification", ""])
+    lines.extend(_finding_risk_lines(tuple(all_findings)))
 
-    lines.extend(["", "## Evidence", ""])
+    lines.extend(["", "## Evidence & Sources", ""])
     evidence_items = (
         *memo.evidence,
-        *(evidence for finding in memo.findings for evidence in finding.evidence),
+        *(evidence for finding in all_findings for evidence in finding.evidence),
     )
     if evidence_items:
         for evidence in evidence_items:
@@ -1447,12 +1435,73 @@ def _bullet_lines(values: tuple[str, ...]) -> list[str]:
     return [f"- {value}" for value in values]
 
 
+def _findings_for(
+    findings: tuple[AgentFinding, ...],
+    kind: str,
+) -> tuple[AgentFinding, ...]:
+    kind_key = kind.casefold()
+    selected: list[AgentFinding] = []
+    for finding in findings:
+        name = finding.agent_name.casefold()
+        if kind_key == "skeptic" and "skeptic" in name:
+            selected.append(finding)
+        elif kind_key == "pipeline_triage" and "pipeline_triage" in name:
+            selected.append(finding)
+        elif kind_key == "competition" and (
+            "competition" in name or "competitive_landscape" in name
+        ):
+            selected.append(finding)
+        elif kind_key == "financial" and (
+            "financial" in name or "cash_runway" in name or "valuation_agent" in name
+        ):
+            selected.append(finding)
+        elif kind_key == "target_price" and "target_price" in name:
+            selected.append(finding)
+        elif kind_key == "watchlist_scorecard" and "watchlist_scorecard" in name:
+            selected.append(finding)
+        elif kind_key == "investment_thesis" and "investment_thesis" in name:
+            selected.append(finding)
+    return tuple(selected)
+
+
+def _catalyst_lines(catalysts: tuple[Catalyst, ...]) -> list[str]:
+    if not catalysts:
+        return ["- No catalysts were captured."]
+    ordered = sorted(
+        catalysts,
+        key=lambda item: (
+            item.expected_date.isoformat() if item.expected_date else "9999-12-31",
+            item.expected_window or "ZZZ",
+            item.title,
+        ),
+    )
+    lines: list[str] = []
+    for catalyst in ordered:
+        when = catalyst.expected_date.isoformat() if catalyst.expected_date else "TBD"
+        if catalyst.expected_window:
+            when = catalyst.expected_window
+        asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
+        lines.append(f"- {when}: {catalyst.title}{asset}")
+    return lines
+
+
 def _finding_risk_lines(findings: tuple[AgentFinding, ...]) -> list[str]:
-    risks = [
-        risk
-        for finding in findings
-        for risk in finding.risks
-    ]
+    risks = [risk for finding in findings for risk in finding.risks]
     if not risks:
         return ["- No agent-level risks captured yet."]
-    return [f"- {risk}" for risk in risks]
+    deduped = list(dict.fromkeys(risk.strip() for risk in risks if risk.strip()))
+    ordered = sorted(deduped, key=_risk_sort_key)
+    return [f"- {risk}" for risk in ordered]
+
+
+def _risk_sort_key(risk: str) -> tuple[int, str]:
+    lowered = risk.casefold()
+    if "[high]" in lowered:
+        rank = 0
+    elif "[medium]" in lowered:
+        rank = 1
+    elif "[low]" in lowered:
+        rank = 2
+    else:
+        rank = 3
+    return (rank, lowered)

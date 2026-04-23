@@ -203,7 +203,6 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("## LLM Agent Addendum", memo_text)
             self.assertIn("Run status: 2/2 steps OK", memo_text)
             self.assertIn("Total LLM tokens: 30", memo_text)
-            self.assertIn("### Scientific Skeptic LLM", memo_text)
             self.assertIn("Pipeline evidence is thin enough", memo_text)
             self.assertIn("No asset-level clinical anchor was found", memo_text)
             findings_path = (
@@ -342,6 +341,10 @@ class CompanyReportTest(unittest.TestCase):
             generated_pipeline = generated / "09606_hk_pipeline_assets.json"
             manual_financials = manual / "09606_hk_financials.json"
             generated_financials = generated / "09606_hk_financials.json"
+            manual_target_price = manual / "09606_hk_target_price_assumptions.json"
+            generated_target_price = (
+                generated / "09606_hk_target_price_assumptions.json"
+            )
 
             manual_pipeline.write_text(
                 json.dumps(
@@ -407,11 +410,72 @@ class CompanyReportTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            manual_target_price.write_text(
+                json.dumps(
+                    {
+                        "as_of_date": "2026-04-21",
+                        "currency": "HKD",
+                        "share_price": 10.0,
+                        "shares_outstanding": 100_000_000,
+                        "cash_and_equivalents": 1_000_000_000,
+                        "total_debt": 0,
+                        "expected_dilution_pct": 0.0,
+                        "assets": [
+                            {
+                                "name": "MANUAL-DRUG",
+                                "indication": "cancer",
+                                "phase": "Phase 2",
+                                "peak_sales": 2_000_000_000,
+                                "probability_of_success": 0.3,
+                                "economics_share": 1.0,
+                                "operating_margin": 0.35,
+                                "launch_year": 2031,
+                                "discount_rate": 0.12,
+                                "source": "manual.pdf",
+                                "source_date": "2026-04-21",
+                            }
+                        ],
+                        "event_impacts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            generated_target_price.write_text(
+                json.dumps(
+                    {
+                        "as_of_date": "2026-04-21",
+                        "currency": "HKD",
+                        "share_price": 1.0,
+                        "shares_outstanding": 1.0,
+                        "cash_and_equivalents": 0,
+                        "total_debt": 0,
+                        "expected_dilution_pct": 0.0,
+                        "assets": [
+                            {
+                                "name": "GENERATED-DRUG",
+                                "indication": "cancer",
+                                "phase": "Phase 2",
+                                "peak_sales": 1_000_000_000,
+                                "probability_of_success": 0.2,
+                                "economics_share": 1.0,
+                                "operating_margin": 0.35,
+                                "launch_year": 2032,
+                                "discount_rate": 0.12,
+                                "source": "generated.pdf",
+                                "source_date": "2026-04-21",
+                            }
+                        ],
+                        "event_impacts": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             with patch("biotech_alpha.auto_inputs.generate_auto_inputs") as generate:
                 generate.return_value = AutoInputArtifacts(
                     pipeline_assets=generated_pipeline,
                     financials=generated_financials,
+                    target_price_assumptions=generated_target_price,
                 )
                 result = run_company_report(
                     company="DualityBio",
@@ -427,6 +491,10 @@ class CompanyReportTest(unittest.TestCase):
 
             self.assertEqual(result.input_paths.pipeline_assets, manual_pipeline)
             self.assertEqual(result.input_paths.financials, manual_financials)
+            self.assertEqual(
+                result.input_paths.target_price_assumptions,
+                manual_target_price,
+            )
             self.assertEqual(
                 result.research_result.pipeline_assets[0].name,
                 "MANUAL-DRUG",

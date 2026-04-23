@@ -1358,6 +1358,237 @@ def _macro_context_finding_from_payload(
     )
 
 
+INVESTMENT_THESIS_PROMPT = StructuredPrompt(
+    name="investment_thesis",
+    tags=("thesis", "investment", "llm"),
+    system=(
+        "You are the final investment-thesis editor for a biotech research memo. "
+        "You synthesize deterministic outputs and upstream LLM triage payloads into "
+        "an actionable thesis. Work only with provided facts. Do not invent numbers, "
+        "trial outcomes, or external data.\n\n"
+        "OUTPUT RULES:\n"
+        "- Return a single JSON object at top level.\n"
+        "- Required keys: thesis_summary, bull_drivers, bear_drivers, "
+        "key_assumptions, falsification_watch, decision_rationale.\n"
+        "- Optional key: confidence.\n"
+        "- Keep each bullet concise and concrete.\n"
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Pipeline triage payload:\n${pipeline_triage}\n\n"
+        "Financial triage payload:\n${financial_triage}\n\n"
+        "Competition triage payload:\n${competition_triage}\n\n"
+        "Macro context payload:\n${macro_context}\n\n"
+        "Scientific skeptic finding:\n${skeptic_finding}\n\n"
+        "Target-price snapshot:\n${target_price_snapshot}\n\n"
+        "Scorecard summary:\n${scorecard_summary}\n\n"
+        "Return EXACTLY this JSON shape:\n"
+        "{\n"
+        "  \"thesis_summary\": \"<2-3 sentence thesis>\",\n"
+        "  \"bull_drivers\": [\"<driver>\", \"...\"],\n"
+        "  \"bear_drivers\": [\"<driver>\", \"...\"],\n"
+        "  \"key_assumptions\": [\"<assumption>\", \"...\"],\n"
+        "  \"falsification_watch\": [\"<what would falsify thesis>\", \"...\"],\n"
+        "  \"decision_rationale\": \"<why current decision bucket>\",\n"
+        "  \"confidence\": 0.0\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "thesis_summary",
+            "bull_drivers",
+            "bear_drivers",
+            "key_assumptions",
+            "falsification_watch",
+            "decision_rationale",
+        ],
+        "properties": {
+            "thesis_summary": {"type": "string", "min_length": 10},
+            "bull_drivers": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 8,
+            },
+            "bear_drivers": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 8,
+            },
+            "key_assumptions": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 8,
+            },
+            "falsification_watch": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 8,
+            },
+            "decision_rationale": {"type": "string", "min_length": 5},
+            "confidence": {"type": ["number", "null"]},
+        },
+    },
+)
+
+
+@dataclass
+class InvestmentThesisLLMAgent(Agent):
+    """Final synthesis agent for investment-thesis framing."""
+
+    llm_client: LLMClient
+    name: str = "investment_thesis_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "investment_thesis_llm_finding",
+        "investment_thesis_payload",
+    )
+    max_tokens: int | None = 1800
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("InvestmentThesisLLMAgent requires an LLMClient")
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        variables = self._collect_variables(context, store)
+        system, user = INVESTMENT_THESIS_PROMPT.render(variables)
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+        try:
+            payload = INVESTMENT_THESIS_PROMPT.parse_response(call.response_text)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+        finding = _investment_thesis_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "investment_thesis_llm_finding": finding,
+                "investment_thesis_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        skeptic = store.get("scientific_skeptic_llm_finding")
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "pipeline_triage": _json_block(store.get("pipeline_triage_payload")),
+            "financial_triage": _json_block(store.get("financial_triage_payload")),
+            "competition_triage": _json_block(store.get("competition_triage_payload")),
+            "macro_context": _json_block(store.get("macro_context_payload")),
+            "skeptic_finding": _json_block(
+                {
+                    "summary": getattr(skeptic, "summary", None),
+                    "risks": list(getattr(skeptic, "risks", ()) or ()),
+                    "confidence": getattr(skeptic, "confidence", None),
+                }
+                if skeptic is not None
+                else None
+            ),
+            "target_price_snapshot": _json_block(store.get("target_price_snapshot")),
+            "scorecard_summary": _json_block(store.get("scorecard_summary")),
+        }
+
+
+def _investment_thesis_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("thesis_summary") or "").strip()
+    if not summary:
+        summary = "Investment thesis synthesis completed."
+    risks: list[str] = []
+    for line in payload.get("bear_drivers") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[bear] {text}")
+    for line in payload.get("key_assumptions") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[assumption] {text}")
+    for line in payload.get("falsification_watch") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[falsification] {text}")
+    decision_rationale = str(payload.get("decision_rationale") or "").strip()
+    if decision_rationale:
+        risks.append(f"[decision] {decision_rationale}")
+    confidence_raw = payload.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else 0.5
+    except (TypeError, ValueError):
+        confidence = 0.5
+    confidence = max(0.0, min(1.0, confidence))
+    evidence = (
+        Evidence(
+            claim=(
+                "Investment thesis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=True,
+    )
+
+
 def _source_text_block(value: Any) -> str:
     if value is None:
         return "(source text unavailable)"

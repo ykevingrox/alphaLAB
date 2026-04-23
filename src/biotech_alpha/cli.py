@@ -331,6 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "financial-triage",
             "competition-triage",
             "macro-context",
+            "investment-thesis",
         ),
         help=(
             "Opt-in LLM agents to run after deterministic research. "
@@ -795,6 +796,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "competition-triage",
                 "macro-context",
                 "scientific-skeptic",
+                "investment-thesis",
             )
             if not args.json:
                 _print_quick_report_stage(

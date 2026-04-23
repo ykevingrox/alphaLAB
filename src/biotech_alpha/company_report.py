@@ -309,14 +309,18 @@ def write_llm_memo_addendum(
     llm_trace_path: Path | None,
     output_dir: str | Path,
 ) -> Path | None:
-    """Rewrite the saved markdown memo with an LLM addendum appended."""
+    """Rewrite the saved markdown memo with merged LLM sections + metadata."""
 
     memo_path = research_result.artifacts.memo_markdown
     if memo_path is None:
         return None
 
     memo_path.parent.mkdir(parents=True, exist_ok=True)
-    base = memo_to_markdown(research_result.memo).rstrip()
+    llm_findings = tuple(getattr(llm_agent_result, "findings", ()) or ())
+    base = memo_to_markdown(
+        research_result.memo,
+        llm_findings=llm_findings,
+    ).rstrip()
     addendum = llm_memo_addendum_markdown(
         llm_agent_result,
         llm_trace_path=llm_trace_path,
@@ -332,7 +336,7 @@ def llm_memo_addendum_markdown(
     llm_trace_path: Path | None = None,
     output_dir: str | Path = "data",
 ) -> str:
-    """Render LLM agent output for inclusion in the human memo."""
+    """Render metadata-only LLM run status appendix."""
 
     findings = tuple(getattr(llm_agent_result, "findings", ()) or ())
     steps = tuple(getattr(llm_agent_result, "steps", ()) or ())
@@ -368,11 +372,13 @@ def llm_memo_addendum_markdown(
         ]
     )
 
-    if findings:
-        for finding in findings:
-            lines.extend(_llm_finding_markdown_lines(finding))
-    else:
-        lines.append("- No LLM findings were produced.")
+    high_conf = sum(1 for finding in findings if finding.confidence >= 0.3)
+    low_conf = sum(1 for finding in findings if finding.confidence < 0.3)
+    lines.append(
+        "- Findings merged into main memo sections when confidence >= 0.30."
+    )
+    lines.append(f"- High-confidence findings merged: {high_conf}.")
+    lines.append(f"- Low-confidence findings kept out of main sections: {low_conf}.")
 
     failing_steps = [
         step
@@ -397,49 +403,6 @@ def llm_memo_addendum_markdown(
             lines.append(f"- ... {len(warnings) - 10} more warning(s)")
 
     return "\n".join(lines)
-
-
-def _llm_finding_markdown_lines(finding: Any) -> list[str]:
-    label = _llm_agent_label(getattr(finding, "agent_name", "llm_agent"))
-    summary = _one_line(str(getattr(finding, "summary", "") or "No summary."))
-    confidence = getattr(finding, "confidence", None)
-    try:
-        confidence_text = f"{float(confidence):.2f}"
-    except (TypeError, ValueError):
-        confidence_text = "n/a"
-    needs_review = "yes" if getattr(finding, "needs_human_review", False) else "no"
-
-    lines = [
-        f"### {label}",
-        "",
-        f"- Summary: {summary}",
-        f"- Confidence: {confidence_text}; human review: {needs_review}",
-    ]
-    risks = tuple(getattr(finding, "risks", ()) or ())
-    if risks:
-        lines.append("- Key risks:")
-        for risk in risks[:8]:
-            lines.append(f"  - {_one_line(str(risk))}")
-        if len(risks) > 8:
-            lines.append(f"  - ... {len(risks) - 8} more risk(s)")
-    evidence_items = tuple(getattr(finding, "evidence", ()) or ())
-    if evidence_items:
-        lines.append("- Evidence:")
-        for evidence in evidence_items[:3]:
-            source = str(getattr(evidence, "source", "") or "unknown source")
-            claim = _one_line(str(getattr(evidence, "claim", "") or "Evidence"))
-            ev_confidence = getattr(evidence, "confidence", None)
-            try:
-                ev_confidence_text = f"{float(ev_confidence):.2f}"
-            except (TypeError, ValueError):
-                ev_confidence_text = "n/a"
-            lines.append(
-                f"  - {claim} [{source}], confidence {ev_confidence_text}"
-            )
-        if len(evidence_items) > 3:
-            lines.append(f"  - ... {len(evidence_items) - 3} more evidence item(s)")
-    lines.append("")
-    return lines
 
 
 def _llm_agent_label(agent_name: str) -> str:
@@ -467,6 +430,7 @@ SUPPORTED_LLM_AGENTS = (
     "financial-triage",
     "competition-triage",
     "macro-context",
+        "investment-thesis",
 )
 
 
@@ -492,6 +456,7 @@ def _run_llm_agent_pipeline(
     from biotech_alpha.agents_llm import (
         CompetitionTriageLLMAgent,
         FinancialTriageLLMAgent,
+        InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
         PipelineTriageLLMAgent,
         ScientificSkepticLLMAgent,
@@ -595,6 +560,24 @@ def _run_llm_agent_pipeline(
             ScientificSkepticLLMAgent(
                 llm_client=llm_client,
                 depends_on=skeptic_deps,
+            )
+        )
+    if "investment-thesis" in llm_agents:
+        thesis_deps: tuple[str, ...] = ("publish_research_facts",)
+        if "pipeline-triage" in llm_agents:
+            thesis_deps = thesis_deps + ("pipeline_triage_llm_agent",)
+        if "financial-triage" in llm_agents:
+            thesis_deps = thesis_deps + ("financial_triage_llm_agent",)
+        if "competition-triage" in llm_agents:
+            thesis_deps = thesis_deps + ("competition_triage_llm_agent",)
+        if "macro-context" in llm_agents:
+            thesis_deps = thesis_deps + ("macro_context_llm_agent",)
+        if "scientific-skeptic" in llm_agents:
+            thesis_deps = thesis_deps + ("scientific_skeptic_llm_agent",)
+        graph.add(
+            InvestmentThesisLLMAgent(
+                llm_client=llm_client,
+                depends_on=thesis_deps,
             )
         )
 
@@ -755,6 +738,8 @@ def build_llm_agent_facts(
         "financials_snapshot": financials_snapshot,
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
+        "target_price_snapshot": _build_target_price_snapshot(research_result),
+        "scorecard_summary": _build_scorecard_summary(research_result),
     }
 
 
@@ -976,6 +961,53 @@ def _build_macro_context(
         "source_types": source_types,
         "live_signals": live_block,
         "known_unknowns": known_unknowns,
+    }
+
+
+def _build_target_price_snapshot(
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any] | None:
+    analysis = getattr(research_result, "target_price_analysis", None)
+    if analysis is None:
+        return None
+    return {
+        "currency": analysis.currency,
+        "current_share_price": analysis.current_share_price,
+        "bear_target_price": analysis.bear.target_price,
+        "base_target_price": analysis.base.target_price,
+        "bull_target_price": analysis.bull.target_price,
+        "probability_weighted_target_price": (
+            analysis.probability_weighted_target_price
+        ),
+        "implied_upside_downside_pct": analysis.implied_upside_downside_pct,
+        "event_value_delta": analysis.event_value_delta,
+        "asset_value_delta": analysis.asset_value_delta,
+        "missing_assumptions": list(analysis.missing_assumptions),
+        "needs_human_review": analysis.needs_human_review,
+    }
+
+
+def _build_scorecard_summary(
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any] | None:
+    scorecard = getattr(research_result, "scorecard", None)
+    if scorecard is None:
+        return None
+    dimensions = []
+    for dimension in getattr(scorecard, "dimensions", ()) or ():
+        dimensions.append(
+            {
+                "name": getattr(dimension, "name", None),
+                "score": getattr(dimension, "score", None),
+                "rationale": getattr(dimension, "rationale", None),
+            }
+        )
+    return {
+        "total_score": getattr(scorecard, "total_score", None),
+        "bucket": getattr(scorecard, "bucket", None),
+        "dimensions": dimensions,
+        "monitoring_rules": list(getattr(scorecard, "monitoring_rules", ()) or ()),
+        "needs_human_review": getattr(scorecard, "needs_human_review", None),
     }
 
 
@@ -1888,9 +1920,10 @@ def _select_input_file(
     suffixes: tuple[str, ...],
 ) -> Path | None:
     candidates = []
+    normalized_suffixes = tuple(_match_key(suffix) for suffix in suffixes)
     for path in files:
         stem = _match_key(path.stem)
-        if not any(suffix in stem for suffix in suffixes):
+        if not any(suffix in stem for suffix in normalized_suffixes):
             continue
         if not tokens or not any(token in stem for token in tokens):
             continue

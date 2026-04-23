@@ -11,6 +11,7 @@ import requests
 from biotech_alpha.auto_inputs import (
     COMPETITOR_EXTRACTOR_VERSION,
     PIPELINE_EXTRACTOR_VERSION,
+    TARGET_PRICE_EXTRACTOR_VERSION,
     SourceDocument,
     _resolve_hkex_stock_id,
     draft_competitor_assets,
@@ -747,12 +748,14 @@ class AutoInputsTest(unittest.TestCase):
             self.assertIsNotNone(artifacts.competitors)
             self.assertIsNotNone(artifacts.financials)
             self.assertIsNotNone(artifacts.conference_catalysts)
+            self.assertIsNotNone(artifacts.target_price_assumptions)
             self.assertIsNotNone(artifacts.source_manifest)
 
             pipeline = _read_json(artifacts.pipeline_assets)
             competitors = _read_json(artifacts.competitors)
             financials = _read_json(artifacts.financials)
             conference = _read_json(artifacts.conference_catalysts)
+            target_price = _read_json(artifacts.target_price_assumptions)
             manifest = _read_json(artifacts.source_manifest)
 
             self.assertEqual(pipeline["assets"][0]["name"], "DB-1303")
@@ -760,13 +763,22 @@ class AutoInputsTest(unittest.TestCase):
             self.assertEqual(competitors["candidate_ingest"]["accepted"], 1)
             self.assertEqual(financials["cash_and_equivalents"], 3324529000)
             self.assertEqual(conference["catalysts"][0]["category"], "conference")
+            self.assertEqual(
+                target_price["generated_extractor_version"],
+                TARGET_PRICE_EXTRACTOR_VERSION,
+            )
+            self.assertEqual(target_price["inferred_by"], "default_rnpv_v1")
+            self.assertTrue(target_price["needs_human_review"])
+            self.assertGreaterEqual(len(target_price["assets"]), 1)
             self.assertIn("pipeline_assets", manifest["generated_inputs"])
             self.assertIn("competitors", manifest["generated_inputs"])
             self.assertIn(
                 "competitor_discovery_candidates",
                 manifest["generated_inputs"],
             )
+            self.assertIn("target_price_assumptions", manifest["generated_inputs"])
             self.assertIn("competitors", manifest["validation"])
+            self.assertIn("target_price_assumptions", manifest["validation"])
 
     def test_generate_auto_inputs_runs_ctgov_competitor_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -906,12 +918,18 @@ class AutoInputsTest(unittest.TestCase):
             self.assertEqual(artifacts.warnings, ())
             self.assertEqual(artifacts.source_documents, (source,))
             self.assertEqual(artifacts.pipeline_assets, pipeline_path)
+            self.assertIsNotNone(artifacts.target_price_assumptions)
             competitors = _read_json(artifacts.competitors)
+            target_price = _read_json(artifacts.target_price_assumptions)
             self.assertEqual(
                 competitors["generated_extractor_version"],
                 COMPETITOR_EXTRACTOR_VERSION,
             )
             self.assertGreaterEqual(len(competitors["competitors"]), 1)
+            self.assertEqual(
+                target_price["generated_extractor_version"],
+                TARGET_PRICE_EXTRACTOR_VERSION,
+            )
 
     def test_generate_auto_inputs_refreshes_stale_generated_pipeline(
         self,

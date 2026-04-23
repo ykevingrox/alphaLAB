@@ -41,6 +41,11 @@ from biotech_alpha.valuation import (
     valuation_validation_report_as_dict,
     validate_valuation_snapshot_file,
 )
+from biotech_alpha.target_price import (
+    draft_target_price_assumptions,
+    target_price_validation_report_as_dict,
+    validate_target_price_assumptions_file,
+)
 
 
 MarketDataProvider = Callable[[CompanyIdentity], dict[str, Any] | None]
@@ -65,6 +70,7 @@ HKEX_ACTIVE_STOCKS_URL = (
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
 PIPELINE_EXTRACTOR_VERSION = 9
 COMPETITOR_EXTRACTOR_VERSION = 5
+TARGET_PRICE_EXTRACTOR_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -91,6 +97,7 @@ class AutoInputArtifacts:
     financials: Path | None = None
     conference_catalysts: Path | None = None
     valuation: Path | None = None
+    target_price_assumptions: Path | None = None
     validation: dict[str, Any] | None = None
     source_documents: tuple[SourceDocument, ...] = ()
     warnings: tuple[str, ...] = ()
@@ -167,6 +174,9 @@ def generate_auto_inputs(
     financials_path = generated_input_dir / f"{slug}_financials.json"
     conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
     valuation_path = generated_input_dir / f"{slug}_valuation.json"
+    target_price_assumptions_path = (
+        generated_input_dir / f"{slug}_target_price_assumptions.json"
+    )
     generation_warnings: list[str] = []
 
     if (
@@ -287,6 +297,29 @@ def generate_auto_inputs(
     if valuation_written_path is None and valuation_path.exists():
         valuation_written_path = valuation_path
 
+    valuation_payload_for_target_price: dict[str, Any] | None = None
+    if valuation_written_path is not None and valuation_written_path.exists():
+        valuation_payload_for_target_price = _read_json(valuation_written_path)
+    financial_payload = _read_json(financials_path) if financials_path.exists() else None
+    if (
+        overwrite
+        or not target_price_assumptions_path.exists()
+        or _target_price_draft_needs_refresh(target_price_assumptions_path)
+    ):
+        target_price_payload = draft_target_price_assumptions(
+            company=identity.company,
+            ticker=identity.ticker,
+            pipeline_assets_payload=pipeline_payload,
+            financial_snapshot_payload=financial_payload,
+            valuation_snapshot_payload=valuation_payload_for_target_price,
+            source=document.url,
+            source_date=document.publication_date,
+        )
+        target_price_payload["generated_extractor_version"] = (
+            TARGET_PRICE_EXTRACTOR_VERSION
+        )
+        _write_json(target_price_assumptions_path, target_price_payload)
+
     validation = {
         "pipeline_assets": validation_report_as_dict(
             validate_pipeline_asset_file(pipeline_path)
@@ -305,6 +338,9 @@ def generate_auto_inputs(
         validation["valuation"] = valuation_validation_report_as_dict(
             validate_valuation_snapshot_file(valuation_written_path)
         )
+    validation["target_price_assumptions"] = target_price_validation_report_as_dict(
+        validate_target_price_assumptions_file(target_price_assumptions_path)
+    )
 
     generated_inputs: dict[str, Path] = {
         "pipeline_assets": pipeline_path,
@@ -314,6 +350,7 @@ def generate_auto_inputs(
     }
     if valuation_written_path is not None:
         generated_inputs["valuation"] = valuation_written_path
+    generated_inputs["target_price_assumptions"] = target_price_assumptions_path
     if discovery_candidates_path.exists():
         generated_inputs["competitor_discovery_candidates"] = (
             discovery_candidates_path
@@ -337,6 +374,7 @@ def generate_auto_inputs(
         financials=financials_path,
         conference_catalysts=conference_path,
         valuation=valuation_written_path,
+        target_price_assumptions=target_price_assumptions_path,
         validation=validation,
         source_documents=(document,),
         warnings=tuple(generation_warnings),
@@ -2439,6 +2477,21 @@ def _competitor_draft_needs_refresh(path: Path) -> bool:
         return (
             payload.get("generated_extractor_version")
             != COMPETITOR_EXTRACTOR_VERSION
+        )
+    return False
+
+
+def _target_price_draft_needs_refresh(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = _read_json(path)
+    except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
+        return True
+    if payload.get("generated_by") == "auto_inputs.default_rnpv":
+        return (
+            payload.get("generated_extractor_version")
+            != TARGET_PRICE_EXTRACTOR_VERSION
         )
     return False
 
