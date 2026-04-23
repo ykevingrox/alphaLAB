@@ -547,6 +547,61 @@ class CliTest(unittest.TestCase):
             self.assertEqual(second_exit, 0)
             self.assertEqual(second_payload["new_count"], 0)
 
+    def test_cde_track_reads_feed_file_and_tracks_state(self) -> None:
+        rss_text = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CDE</title>
+    <item>
+      <title>DualityBio 临床试验申请受理</title>
+      <link>https://cde.example.cn/123</link>
+      <guid>cde-123</guid>
+      <pubDate>Thu, 23 Apr 2026 10:00:00 +0800</pubDate>
+      <category>受理信息</category>
+    </item>
+  </channel>
+</rss>
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            feed_path = Path(tmpdir) / "cde.xml"
+            state_path = Path(tmpdir) / "seen.json"
+            feed_path.write_text(rss_text, encoding="utf-8")
+
+            first_output = io.StringIO()
+            with redirect_stdout(first_output):
+                first_exit = main(
+                    [
+                        "cde-track",
+                        "--feed-file",
+                        str(feed_path),
+                        "--query",
+                        "DualityBio",
+                        "--state-file",
+                        str(state_path),
+                    ]
+                )
+            first_payload = json.loads(first_output.getvalue())
+            self.assertEqual(first_exit, 0)
+            self.assertEqual(first_payload["new_count"], 1)
+            self.assertEqual(first_payload["typed_new_items"][0]["event_type"], "clinical")
+
+            second_output = io.StringIO()
+            with redirect_stdout(second_output):
+                second_exit = main(
+                    [
+                        "cde-track",
+                        "--feed-file",
+                        str(feed_path),
+                        "--query",
+                        "DualityBio",
+                        "--state-file",
+                        str(state_path),
+                    ]
+                )
+            second_payload = json.loads(second_output.getvalue())
+            self.assertEqual(second_exit, 0)
+            self.assertEqual(second_payload["new_count"], 0)
+
     def test_target_price_template_and_validate_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "input" / "target_price.json"

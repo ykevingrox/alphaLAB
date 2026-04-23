@@ -19,6 +19,12 @@ from biotech_alpha.clinicaltrials import (
     extract_trial_summaries,
     summaries_as_dicts,
 )
+from biotech_alpha.china_cde import (
+    fetch_cde_feed,
+    filter_cde_items,
+    parse_cde_feed,
+    track_cde_updates,
+)
 from biotech_alpha.company_report import company_report_summary, run_company_report
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
@@ -326,6 +332,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Path to persist seen HKEXnews GUID state across runs.",
     )
     company_report_parser.add_argument(
+        "--cde-feed-url",
+        help="Optional China CDE feed URL for change tracking artifacts.",
+    )
+    company_report_parser.add_argument(
+        "--cde-feed-file",
+        help="Optional local China CDE XML file path for offline tracking.",
+    )
+    company_report_parser.add_argument(
+        "--cde-state-file",
+        default="data/cache/cde/seen_guids.json",
+        help="Path to persist seen China CDE GUID state across runs.",
+    )
+    company_report_parser.add_argument(
+        "--cde-query",
+        help="Optional China CDE query keyword (defaults to company name).",
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -452,6 +475,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--hkexnews-state-file",
         default="data/cache/hkexnews/seen_guids.json",
         help="Path to persist seen HKEXnews GUID state across runs.",
+    )
+    quick_report_parser.add_argument(
+        "--cde-feed-url",
+        help="Optional China CDE feed URL for change tracking artifacts.",
+    )
+    quick_report_parser.add_argument(
+        "--cde-feed-file",
+        help="Optional local China CDE XML file path for offline tracking.",
+    )
+    quick_report_parser.add_argument(
+        "--cde-state-file",
+        default="data/cache/cde/seen_guids.json",
+        help="Path to persist seen China CDE GUID state across runs.",
+    )
+    quick_report_parser.add_argument(
+        "--cde-query",
+        help="Optional China CDE query keyword (defaults to company name).",
     )
 
     template_parser = subparsers.add_parser(
@@ -701,6 +741,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         help="Optional file path to write JSON output.",
     )
+    cde_parser = subparsers.add_parser(
+        "cde-track",
+        help="Track new China CDE feed updates since last run.",
+    )
+    cde_parser.add_argument(
+        "--feed-url",
+        help="China CDE feed URL. Provide this or --feed-file.",
+    )
+    cde_parser.add_argument(
+        "--feed-file",
+        help="Local feed XML file path for offline checks/tests.",
+    )
+    cde_parser.add_argument(
+        "--query",
+        help="Optional query filter (company, asset, indication keyword).",
+    )
+    cde_parser.add_argument(
+        "--state-file",
+        default="data/cache/cde/seen_guids.json",
+        help="Path used to persist seen CDE GUIDs.",
+    )
+    cde_parser.add_argument(
+        "--output",
+        help="Optional file path to write JSON output.",
+    )
 
     target_price_template_parser = subparsers.add_parser(
         "target-price-template",
@@ -898,6 +963,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "hkexnews_state_file",
                 "data/cache/hkexnews/seen_guids.json",
             ),
+            cde_feed_url=getattr(args, "cde_feed_url", None),
+            cde_feed_file=getattr(args, "cde_feed_file", None),
+            cde_state_file=getattr(
+                args,
+                "cde_state_file",
+                "data/cache/cde/seen_guids.json",
+            ),
+            cde_query=getattr(args, "cde_query", None),
         )
         print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
         return 0
@@ -992,6 +1065,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "hkexnews_state_file",
                 "data/cache/hkexnews/seen_guids.json",
             ),
+            cde_feed_url=getattr(args, "cde_feed_url", None),
+            cde_feed_file=getattr(args, "cde_feed_file", None),
+            cde_state_file=getattr(
+                args,
+                "cde_state_file",
+                "data/cache/cde/seen_guids.json",
+            ),
+            cde_query=getattr(args, "cde_query", None),
         )
         summary = company_report_summary(result)
         if args.json:
@@ -1253,6 +1334,48 @@ def main(argv: Sequence[str] | None = None) -> int:
             state_path=args.state_file,
         )
         payload["ticker_filter"] = args.ticker
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                json.dumps(
+                    {"path": str(path), "new_count": payload["new_count"]},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "cde-track":
+        if not args.feed_url and not args.feed_file:
+            print(
+                json.dumps(
+                    {
+                        "error": "Provide --feed-url or --feed-file for cde-track."
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 1
+        xml_text = (
+            Path(args.feed_file).read_text(encoding="utf-8")
+            if args.feed_file
+            else fetch_cde_feed(args.feed_url)
+        )
+        items = parse_cde_feed(xml_text)
+        filtered = filter_cde_items(items, query=args.query)
+        payload = track_cde_updates(
+            items=filtered,
+            state_path=args.state_file,
+        )
+        payload["query"] = args.query
         if args.output:
             path = Path(args.output)
             path.parent.mkdir(parents=True, exist_ok=True)

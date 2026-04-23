@@ -822,8 +822,11 @@ These tasks are necessary medium-term but only pay off once the P0 / P1
 structure can consume them.
 
 - **P2.9** — China drug clinical trial registry ingestion.
-  - **Status:** deferred (not in this checkpoint; HKEX-driven P2 slices were
-    closed first).
+  - **Status:** done for deterministic baseline (new `cde-track` CLI + feed
+    parser/state tracker + optional `company-report` CDE artifact + memo
+    addendum + summary/manifest threading).
+  - **Boundary now:** this baseline tracks feed-level updates only; it does not
+    yet normalize records into a structured trial registry schema.
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
   - **Status:** done (phase-1 baseline + report-chain integration landed:

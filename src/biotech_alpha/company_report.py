@@ -20,6 +20,12 @@ from biotech_alpha.hkexnews import (
     typed_items_to_event_impact_suggestions,
     suggest_expected_dilution_pct,
 )
+from biotech_alpha.china_cde import (
+    fetch_cde_feed,
+    filter_cde_items,
+    parse_cde_feed,
+    track_cde_updates,
+)
 from biotech_alpha.research import (
     ClinicalTrialsSource,
     SingleCompanyResearchResult,
@@ -79,6 +85,7 @@ class CompanyReportResult:
     llm_agent_result: Any | None = None
     llm_trace_path: Path | None = None
     hkexnews_updates_path: Path | None = None
+    cde_updates_path: Path | None = None
     hkexnews_event_impacts_path: Path | None = None
     hkexnews_dilution_hint_path: Path | None = None
     peer_valuation_path: Path | None = None
@@ -186,6 +193,10 @@ def run_company_report(
     hkexnews_feed_url: str | None = None,
     hkexnews_feed_file: str | Path | None = None,
     hkexnews_state_file: str | Path = "data/cache/hkexnews/seen_guids.json",
+    cde_feed_url: str | None = None,
+    cde_feed_file: str | Path | None = None,
+    cde_state_file: str | Path = "data/cache/cde/seen_guids.json",
+    cde_query: str | None = None,
 ) -> CompanyReportResult:
     """Run a company report from a company name or ticker.
 
@@ -318,6 +329,15 @@ def run_company_report(
             feed_url=hkexnews_feed_url,
             feed_file=hkexnews_feed_file,
             state_file=hkexnews_state_file,
+        )
+    if save and (cde_feed_url or cde_feed_file):
+        report_result = write_cde_updates_report(
+            output_dir=output_dir,
+            result=report_result,
+            feed_url=cde_feed_url,
+            feed_file=cde_feed_file,
+            state_file=cde_state_file,
+            query=cde_query or result.identity.company,
         )
     if save:
         report_result = write_extraction_audit_report(
@@ -1615,6 +1635,50 @@ def write_hkexnews_updates_report(
     )
 
 
+def write_cde_updates_report(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+    feed_url: str | None = None,
+    feed_file: str | Path | None = None,
+    state_file: str | Path = "data/cache/cde/seen_guids.json",
+    query: str | None = None,
+) -> CompanyReportResult:
+    if not feed_url and not feed_file:
+        return result
+    xml_text = (
+        Path(feed_file).read_text(encoding="utf-8")
+        if feed_file
+        else fetch_cde_feed(feed_url or "")
+    )
+    items = parse_cde_feed(xml_text)
+    filtered = filter_cde_items(items, query=query)
+    payload = track_cde_updates(items=filtered, state_path=state_file)
+    payload["query"] = query
+    payload["feed_url"] = feed_url
+    output_path = _cde_updates_report_path(output_dir=output_dir, result=result)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _append_cde_memo_section(result=result, payload=payload)
+    _update_manifest_with_extra_artifact(
+        result=result,
+        artifact_key="cde_updates",
+        artifact_path=output_path,
+        payload_key="cde_updates",
+        payload_value={
+            "item_count": payload.get("item_count"),
+            "new_count": payload.get("new_count"),
+            "query": payload.get("query"),
+            "state_path": payload.get("state_path"),
+            "typed_new_items": payload.get("typed_new_items", []),
+        },
+    )
+    return replace(result, cde_updates_path=output_path)
+
+
 def _append_hkexnews_memo_section(
     *,
     result: CompanyReportResult,
@@ -1657,6 +1721,45 @@ def _append_hkexnews_catalyst_rows(
                 continue
             writer.writerow(row)
             known_titles.add(row["title"])
+
+
+def _append_cde_memo_section(
+    *,
+    result: CompanyReportResult,
+    payload: dict[str, Any],
+) -> None:
+    memo_path = result.research_result.artifacts.memo_markdown
+    if memo_path is None:
+        return
+    path = Path(memo_path)
+    if not path.exists():
+        return
+    base = path.read_text(encoding="utf-8").rstrip()
+    section = cde_memo_addendum_markdown(payload)
+    path.write_text(f"{base}\n\n{section}\n", encoding="utf-8")
+
+
+def cde_memo_addendum_markdown(payload: dict[str, Any]) -> str:
+    typed = payload.get("typed_new_items")
+    rows = typed if isinstance(typed, list) else []
+    lines = ["## China CDE Updates", ""]
+    lines.append(
+        f"- New CDE items since last state: {payload.get('new_count', 0)} "
+        f"(total fetched: {payload.get('item_count', 0)})."
+    )
+    lines.append("- Review-gated: deterministic classification requires analyst confirmation.")
+    if not rows:
+        lines.append("- No query-matched CDE updates in this run.")
+        return "\n".join(lines)
+    lines.append("")
+    for row in rows[:5]:
+        title = str(row.get("title") or "Untitled CDE item")
+        event_type = str(row.get("event_type") or "other")
+        published = row.get("published_at") or "unknown time"
+        lines.append(f"- [{event_type}] {title} (published {published})")
+    if len(rows) > 5:
+        lines.append(f"- ... {len(rows) - 5} more update(s)")
+    return "\n".join(lines)
 
 
 def hkexnews_memo_addendum_markdown(payload: dict[str, Any]) -> str:
@@ -1792,6 +1895,23 @@ def _peer_valuation_report_path(
         / "company_report"
         / _identity_slug(result.identity)
         / f"{result.research_result.run_id}_peer_valuation.json"
+    )
+
+
+def _cde_updates_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / f"{result.research_result.run_id}_cde_updates.json"
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_cde_updates.json"
     )
 
 
@@ -1983,6 +2103,10 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.hkexnews_updates_path) if result.hkexnews_updates_path else None
         ),
         "hkexnews_updates": _build_hkexnews_summary(result),
+        "cde_updates_path": (
+            str(result.cde_updates_path) if result.cde_updates_path else None
+        ),
+        "cde_updates": _build_json_artifact_summary(result.cde_updates_path),
         "hkexnews_event_impacts_path": (
             str(result.hkexnews_event_impacts_path)
             if result.hkexnews_event_impacts_path

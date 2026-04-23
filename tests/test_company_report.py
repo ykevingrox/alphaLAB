@@ -172,11 +172,28 @@ class CompanyReportTest(unittest.TestCase):
   </channel>
 </rss>
 """
+        cde_text = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CDE</title>
+    <item>
+      <title>DualityBio 临床试验申请受理</title>
+      <link>https://cde.example.cn/abc</link>
+      <guid>cde-abc</guid>
+      <pubDate>Thu, 23 Apr 2026 11:00:00 +0800</pubDate>
+      <category>受理信息</category>
+    </item>
+  </channel>
+</rss>
+"""
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             feed_path = root / "hkex_feed.xml"
             state_path = root / "hkex_seen.json"
+            cde_feed_path = root / "cde_feed.xml"
+            cde_state_path = root / "cde_seen.json"
             feed_path.write_text(rss_text, encoding="utf-8")
+            cde_feed_path.write_text(cde_text, encoding="utf-8")
             result = run_company_report(
                 company="DualityBio",
                 ticker="09606.HK",
@@ -187,6 +204,9 @@ class CompanyReportTest(unittest.TestCase):
                 now=datetime(2026, 4, 21, tzinfo=UTC),
                 hkexnews_feed_file=feed_path,
                 hkexnews_state_file=state_path,
+                cde_feed_file=cde_feed_path,
+                cde_state_file=cde_state_path,
+                cde_query="DualityBio",
             )
             self.assertIsNotNone(result.hkexnews_updates_path)
             assert result.hkexnews_updates_path is not None
@@ -206,6 +226,7 @@ class CompanyReportTest(unittest.TestCase):
                 str(result.hkexnews_updates_path),
             )
             self.assertEqual(summary["hkexnews_updates"]["new_count"], 1)
+            self.assertTrue(summary["cde_updates"])
             self.assertTrue(summary["hkexnews_event_impacts"])
             self.assertTrue(summary["hkexnews_dilution_hint"])
             self.assertTrue(summary["peer_valuation"])
@@ -216,12 +237,14 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("hkexnews_event_impacts", manifest["artifacts"])
             self.assertIn("hkexnews_dilution_hint", manifest["artifacts"])
             self.assertIn("peer_valuation", manifest["artifacts"])
+            self.assertIn("cde_updates", manifest["artifacts"])
             self.assertEqual(manifest["hkexnews_updates"]["new_count"], 1)
             self.assertTrue(manifest["hkexnews_updates"]["typed_new_items"])
             memo_text = Path(result.research_result.artifacts.memo_markdown).read_text(
                 encoding="utf-8"
             )
             self.assertIn("## HKEXnews Updates", memo_text)
+            self.assertIn("## China CDE Updates", memo_text)
             self.assertIn("[corporate] 09606 - Voluntary Announcement", memo_text)
             catalyst_csv = Path(
                 result.research_result.artifacts.catalyst_calendar_csv
