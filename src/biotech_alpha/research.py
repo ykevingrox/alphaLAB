@@ -514,7 +514,7 @@ def memo_to_markdown(
             lines.append(f"- {asset.name}{suffix}")
             if asset.clinical_data:
                 for datum in asset.clinical_data[:3]:
-                    lines.append(f"  - clinical: {datum}")
+                    lines.append(f"  - clinical: {_clinical_data_line(datum)}")
     else:
         lines.append("- No disclosed pipeline asset input was provided.")
     pipeline_llm = _findings_for(all_findings, "pipeline_triage")
@@ -1716,6 +1716,22 @@ def _risk_sort_key(risk: str) -> tuple[int, str]:
     else:
         rank = 3
     return (rank, lowered)
+
+
+def _clinical_data_line(datum: Any) -> str:
+    metric = getattr(datum, "metric", None)
+    value = getattr(datum, "value", None)
+    unit = getattr(datum, "unit", None)
+    sample_size = getattr(datum, "sample_size", None)
+    context = getattr(datum, "context", None)
+    if metric:
+        value_part = f" {value}" if value else ""
+        unit_part = unit or ""
+        n_part = f" (n={sample_size})" if sample_size else ""
+        context_part = f"; {context}" if context else ""
+        return f"{metric}{value_part}{unit_part}{n_part}{context_part}".strip()
+    text = str(datum).strip()
+    return text or "clinical datapoint"
 
 
 def _research_only_action_plan_lines(

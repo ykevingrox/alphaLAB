@@ -9,7 +9,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from biotech_alpha.models import Evidence, PipelineAsset, TrialAssetMatch, TrialSummary
+from biotech_alpha.models import (
+    ClinicalDataPoint,
+    Evidence,
+    PipelineAsset,
+    TrialAssetMatch,
+    TrialSummary,
+)
 
 
 @dataclass(frozen=True)
@@ -148,7 +154,13 @@ def pipeline_asset_template(company: str, ticker: str | None = None) -> dict[str
                 "partner": "Example partner",
                 "next_milestone": "Example expected milestone window",
                 "clinical_data": [
-                    "ORR 42% in relapsed setting (n=58, interim cutoff)"
+                    {
+                        "metric": "ORR",
+                        "value": "42",
+                        "unit": "%",
+                        "sample_size": 58,
+                        "context": "relapsed setting interim cutoff",
+                    }
                 ],
                 "evidence": [
                     {
@@ -225,7 +237,7 @@ def _pipeline_asset_from_dict(row: Any) -> PipelineAsset:
         rights=_optional_str(row.get("rights")),
         partner=_optional_str(row.get("partner")),
         next_milestone=_optional_str(row.get("next_milestone")),
-        clinical_data=_str_tuple(row.get("clinical_data")),
+        clinical_data=_clinical_data_tuple(row.get("clinical_data")),
         evidence=tuple(_evidence_from_dict(item) for item in row.get("evidence", [])),
     )
 
@@ -361,3 +373,33 @@ def _str_tuple(value: Any) -> tuple[str, ...]:
         if item:
             aliases.append(item)
     return tuple(aliases)
+
+
+def _clinical_data_tuple(value: Any) -> tuple[ClinicalDataPoint, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, list):
+        points: list[ClinicalDataPoint] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    points.append(ClinicalDataPoint(metric="note", context=text))
+                continue
+            if not isinstance(item, dict):
+                raise ValueError("clinical_data items must be strings or objects")
+            metric = _required_str(item, "metric")
+            sample_size = item.get("sample_size")
+            if sample_size is not None and not isinstance(sample_size, int):
+                raise ValueError("clinical_data.sample_size must be an integer")
+            points.append(
+                ClinicalDataPoint(
+                    metric=metric,
+                    value=_optional_str(item.get("value")),
+                    unit=_optional_str(item.get("unit")),
+                    sample_size=sample_size,
+                    context=_optional_str(item.get("context")),
+                )
+            )
+        return tuple(points)
+    raise ValueError("clinical_data must be a list when set")

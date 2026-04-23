@@ -284,8 +284,9 @@ class AutoInputsTest(unittest.TestCase):
         asset = _asset_by_name(payload, "DB-7777")
         clinical_data = asset["clinical_data"]
         self.assertTrue(clinical_data)
-        self.assertTrue(any("ORR" in line for line in clinical_data))
-        self.assertTrue(any("mPFS" in line for line in clinical_data))
+        self.assertTrue(any(point.get("metric") == "ORR" for point in clinical_data))
+        self.assertTrue(any(point.get("metric") == "mPFS" for point in clinical_data))
+        self.assertTrue(all(point.get("sample_size") == 58 for point in clinical_data))
 
     def test_drafts_pipeline_asset_prefers_nearby_anti_target(self) -> None:
         text = """

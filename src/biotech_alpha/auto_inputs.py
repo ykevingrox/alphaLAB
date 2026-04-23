@@ -2051,24 +2051,40 @@ def _indication_from_context(context: str) -> str | None:
     return "; ".join(dict.fromkeys(found)) if found else None
 
 
-def _clinical_data_from_context(context: str) -> list[str]:
+def _clinical_data_from_context(context: str) -> list[dict[str, Any]]:
     normalized = re.sub(r"\s+", " ", context)
-    snippets: list[str] = []
-    patterns = (
-        r"\bORR\b[^.;]{0,80}\b\d{1,3}(?:\.\d+)?%",
-        r"\bDCR\b[^.;]{0,80}\b\d{1,3}(?:\.\d+)?%",
-        r"\bmPFS\b[^.;]{0,80}\b\d{1,2}(?:\.\d+)?\s*(?:months?|mos?)",
-        r"\bOS\b[^.;]{0,80}\b\d{1,2}(?:\.\d+)?\s*(?:months?|mos?)",
-        r"\bn\s*=\s*\d{1,4}\b",
+    points: list[dict[str, Any]] = []
+    patterns: tuple[tuple[str, str, str | None], ...] = (
+        (r"\bORR\b[^.;]{0,80}\b(\d{1,3}(?:\.\d+)?)%", "ORR", "%"),
+        (r"\bDCR\b[^.;]{0,80}\b(\d{1,3}(?:\.\d+)?)%", "DCR", "%"),
+        (
+            r"\bmPFS\b[^.;]{0,80}\b(\d{1,2}(?:\.\d+)?)\s*(?:months?|mos?)",
+            "mPFS",
+            "months",
+        ),
+        (
+            r"\bOS\b[^.;]{0,80}\b(\d{1,2}(?:\.\d+)?)\s*(?:months?|mos?)",
+            "OS",
+            "months",
+        ),
     )
-    for pattern in patterns:
+    sample_size_match = re.search(r"\bn\s*=\s*(\d{1,4})\b", normalized, flags=re.IGNORECASE)
+    sample_size = int(sample_size_match.group(1)) if sample_size_match else None
+    for pattern, metric, unit in patterns:
         for match in re.finditer(pattern, normalized, flags=re.IGNORECASE):
-            text = match.group(0).strip(" ,;.")
-            if text and text not in snippets:
-                snippets.append(text)
-            if len(snippets) >= 4:
-                return snippets
-    return snippets
+            context_text = match.group(0).strip(" ,;.")
+            point = {
+                "metric": metric,
+                "value": match.group(1),
+                "unit": unit,
+                "sample_size": sample_size,
+                "context": context_text,
+            }
+            if point not in points:
+                points.append(point)
+            if len(points) >= 4:
+                return points
+    return points
 
 
 def _term_in_context(*, term: str, context: str) -> bool:

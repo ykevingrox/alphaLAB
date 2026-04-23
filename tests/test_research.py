@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from biotech_alpha.models import Evidence, PipelineAsset
+from biotech_alpha.models import ClinicalDataPoint, Evidence, PipelineAsset
 from biotech_alpha.research import result_summary, run_single_company_research
 
 
@@ -128,7 +128,22 @@ class SingleCompanyResearchTest(unittest.TestCase):
             indication="Cancer",
             phase="Phase 2",
             next_milestone="2026 data readout",
-            clinical_data=("ORR 42% in relapsed disease", "mPFS 8.6 months"),
+            clinical_data=(
+                ClinicalDataPoint(
+                    metric="ORR",
+                    value="42",
+                    unit="%",
+                    sample_size=58,
+                    context="relapsed disease",
+                ),
+                ClinicalDataPoint(
+                    metric="mPFS",
+                    value="8.6",
+                    unit="months",
+                    sample_size=58,
+                    context="interim cutoff",
+                ),
+            ),
             evidence=(
                 Evidence(
                     claim="Example Drug is a disclosed pipeline asset.",
@@ -348,7 +363,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Investment Thesis", memo_markdown)
             self.assertIn("## Valuation Detail", memo_markdown)
             self.assertIn("## Catalyst Roadmap", memo_markdown)
-            self.assertIn("clinical: ORR 42% in relapsed disease", memo_markdown)
+            self.assertIn("clinical: ORR 42% (n=58); relapsed disease", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)

@@ -61,8 +61,19 @@ class PipelineAsset:
     rights: str | None = None
     partner: str | None = None
     next_milestone: str | None = None
-    clinical_data: tuple[str, ...] = ()
+    clinical_data: tuple["ClinicalDataPoint", ...] = ()
     evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class ClinicalDataPoint:
+    """Structured clinical-highlight datapoint for deep-dive rendering."""
+
+    metric: str
+    value: str | None = None
+    unit: str | None = None
+    sample_size: int | None = None
+    context: str | None = None
 
 
 @dataclass(frozen=True)
