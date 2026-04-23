@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 from pathlib import Path
 from typing import Sequence
 
@@ -376,6 +375,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         nargs="*",
         default=(),
         choices=(
+            "provisional-pipeline",
+            "provisional-financial",
             "scientific-skeptic",
             "pipeline-triage",
             "financial-triage",
@@ -989,6 +990,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         llm_client = None
         if not args.no_llm:
             llm_agents = (
+                "provisional-pipeline",
+                "provisional-financial",
                 "pipeline-triage",
                 "financial-triage",
                 "competition-triage",
@@ -1758,6 +1761,9 @@ def _print_quick_report_llm_summary(summary: dict[str, object]) -> None:
         f"{ok_count}/{len(steps)} ok, {failed_count} failed, "
         f"{skipped_count} skipped{token_text}"
     )
+    fallback_modules = llm_agents.get("fallback_modules")
+    if isinstance(fallback_modules, list) and fallback_modules:
+        print("LLM fallback modules: " + ", ".join(str(x) for x in fallback_modules))
 
 
 def _print_quick_report_artifacts(
@@ -1782,7 +1788,7 @@ def _print_quick_report_artifacts(
     _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
     _print_path_line("Missing-input report", summary.get("missing_inputs_report"))
     _print_path_line("LLM trace", summary.get("llm_trace_path"))
-    _print_path_line("Open this report", quick_paths.get("latest_report"))
+    _print_path_line("打开报告（中文）", quick_paths.get("latest_report"))
     _print_path_line("Open this folder", quick_paths.get("latest_dir"))
 
     llm_agents = _dict_value(summary, "llm_agents")
@@ -1808,19 +1814,37 @@ def _publish_quick_report_shortcuts(
     source = Path(memo_path)
     if not source.exists():
         return {}
+    source_text = source.read_text(encoding="utf-8")
     latest_dir = Path(output_dir) / "latest"
     latest_dir.mkdir(parents=True, exist_ok=True)
+    latest_report_zh = latest_dir / "latest-report-zh.md"
     latest_report = latest_dir / "latest-report.md"
-    shutil.copyfile(source, latest_report)
+    bilingual = bilingual_memo_markdown(source_text)
+    zh_text = _zh_only_from_bilingual(bilingual)
+    latest_report.write_text(zh_text, encoding="utf-8")
+    latest_report_zh.write_text(zh_text, encoding="utf-8")
     company = _string_value(_dict_value(summary, "identity"), "company") or "company"
     slug = re.sub(r"[^a-z0-9]+", "-", company.casefold()).strip("-") or "company"
+    company_latest_zh = latest_dir / f"{slug}-latest-report-zh.md"
     company_latest = latest_dir / f"{slug}-latest-report.md"
-    shutil.copyfile(source, company_latest)
+    company_latest.write_text(zh_text, encoding="utf-8")
+    company_latest_zh.write_text(zh_text, encoding="utf-8")
     return {
         "latest_report": str(latest_report),
+        "latest_report_zh": str(latest_report_zh),
         "latest_dir": str(latest_dir),
         "company_latest_report": str(company_latest),
+        "company_latest_report_zh": str(company_latest_zh),
     }
+
+
+def _zh_only_from_bilingual(text: str) -> str:
+    marker = "### 中文"
+    if marker not in text:
+        return text
+    tail = text.split(marker, maxsplit=1)[1].lstrip()
+    title = "## 中文报告\n\n"
+    return f"{title}{tail}".rstrip() + "\n"
 
 
 def _print_quick_report_next_action(summary: dict[str, object]) -> None:

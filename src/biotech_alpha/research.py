@@ -486,17 +486,18 @@ def memo_to_markdown(
     )
     all_findings = (*memo.findings, *trusted_llm)
     lines = [
-        f"# {memo.company} Research Memo",
+        f"# {memo.company} 研究报告",
         "",
-        f"- Ticker: {memo.ticker or 'N/A'}",
-        f"- Market: {memo.market}",
-        f"- Decision: `{memo.decision}`",
+        f"- 代码: {memo.ticker or '未识别'}",
+        f"- 市场: {memo.market}",
+        f"- 结论: `{memo.decision}`",
         "",
-        "## Executive Verdict",
+        "## 执行结论",
         "",
         memo.summary,
         "",
     ]
+    lines.extend(_executive_observation_lines(memo=memo, findings=tuple(all_findings)))
     valuation_findings = _findings_for(all_findings, "target_price")
     competition_findings = _findings_for(all_findings, "competition")
     if valuation_findings:
@@ -506,10 +507,10 @@ def memo_to_markdown(
     if scorecard_findings:
         lines.append(f"- {scorecard_findings[0].summary}")
 
-    lines.extend(["", "## Investment Thesis", ""])
-    lines.append("### Bull Drivers")
+    lines.extend(["", "## 投资主线", ""])
+    lines.append("### 看多驱动")
     lines.extend(_bullet_lines(memo.bull_case))
-    lines.extend(["", "### Bear Drivers"])
+    lines.extend(["", "### 看空驱动"])
     lines.extend(_bullet_lines(memo.bear_case))
     skeptic_findings = _findings_for(all_findings, "skeptic")
     thesis_findings = _findings_for(all_findings, "investment_thesis")
@@ -517,11 +518,11 @@ def memo_to_markdown(
         for finding in thesis_findings:
             lines.append(f"- {finding.summary}")
     if skeptic_findings:
-        lines.extend(["", "### Skeptical Read"])
+        lines.extend(["", "### 反证视角"])
         for finding in skeptic_findings:
             lines.append(f"- {finding.summary}")
 
-    lines.extend(["", "## Core Asset Deep Dive", ""])
+    lines.extend(["", "## 核心资产深挖", ""])
     if memo.key_assets:
         for asset in memo.key_assets[:3]:
             details = []
@@ -541,49 +542,49 @@ def memo_to_markdown(
             lines.append(f"- {asset.name}{suffix}")
             if asset.clinical_data:
                 for datum in asset.clinical_data[:3]:
-                    lines.append(f"  - clinical: {_clinical_data_line(datum)}")
+                    lines.append(f"  - 临床数据: {_clinical_data_line(datum)}")
             for line in _deep_dive_competitive_lines(
                 asset_name=asset.name,
                 competition_findings=tuple(competition_findings),
             ):
                 lines.append(f"  - {line}")
     else:
-        lines.append("- No disclosed pipeline asset input was provided.")
+        lines.append("- 未提供可用的结构化管线资产输入。")
     pipeline_llm = _findings_for(all_findings, "pipeline_triage")
     if pipeline_llm:
-        lines.extend(["", "### Pipeline Triage Notes"])
+        lines.extend(["", "### 管线审阅备注"])
         for finding in pipeline_llm:
             lines.append(f"- {finding.summary}")
 
-    lines.extend(["", "## Catalyst Roadmap", ""])
+    lines.extend(["", "## 催化剂路线图", ""])
     for line in _catalyst_lines(memo.catalysts, key_assets=memo.key_assets):
         lines.append(line)
 
-    lines.extend(["", "## Competitive Landscape", ""])
+    lines.extend(["", "## 竞争格局", ""])
     if competition_findings:
         for finding in competition_findings:
             lines.append(f"- {finding.summary}")
     else:
-        lines.append("- No curated competitive landscape input was provided.")
+        lines.append("- 未提供可用的结构化竞品输入。")
 
-    lines.extend(["", "## Financials & Runway", ""])
+    lines.extend(["", "## 财务与现金流", ""])
     financial_findings = _findings_for(all_findings, "financial")
     if financial_findings:
         for finding in financial_findings:
             lines.append(f"- {finding.summary}")
     else:
-        lines.append("- Financial and runway findings are not available.")
+        lines.append("- 财务与跑道结论暂不可用。")
 
-    lines.extend(["", "## Valuation Detail", ""])
+    lines.extend(["", "## 估值细化", ""])
     if valuation_findings:
         for finding in valuation_findings:
             lines.append(f"- {finding.summary}")
             for risk in finding.risks:
                 lines.append(f"  - {risk}")
     else:
-        lines.append("- No catalyst-adjusted target price range was generated.")
+        lines.append("- 尚未形成催化剂调整后的目标价区间。")
 
-    lines.extend(["", "## Scorecard Transparency", ""])
+    lines.extend(["", "## 评分卡透明度", ""])
     if scorecard_findings:
         for finding in scorecard_findings:
             lines.append(f"- {finding.summary}")
@@ -593,9 +594,9 @@ def memo_to_markdown(
             _scorecard_lift_target_lines(tuple(scorecard_findings))
         )
     else:
-        lines.append("- No watchlist scorecard summary was generated.")
+        lines.append("- 尚未生成评分卡摘要。")
 
-    lines.extend(["", "## Research-Only Action Plan", ""])
+    lines.extend(["", "## 研究行动计划（非交易指令）", ""])
     action_plan_findings = _findings_for(all_findings, "research_action_plan")
     lines.extend(
         _research_only_action_plan_lines(
@@ -606,10 +607,10 @@ def memo_to_markdown(
         )
     )
 
-    lines.extend(["", "## Key Risks & Falsification", ""])
+    lines.extend(["", "## 关键风险与证伪条件", ""])
     lines.extend(_finding_risk_lines(tuple(all_findings)))
 
-    lines.extend(["", "## Evidence & Sources", ""])
+    lines.extend(["", "## 证据与来源", ""])
     evidence_items = (
         *memo.evidence,
         *(evidence for finding in all_findings for evidence in finding.evidence),
@@ -627,9 +628,9 @@ def memo_to_markdown(
                 f"{source_date}, confidence {evidence.confidence:.2f}{inferred}"
             )
     else:
-        lines.append("- No source-backed evidence captured.")
+        lines.append("- 暂无可追溯证据。")
 
-    lines.extend(["", "## Follow-Up Questions", ""])
+    lines.extend(["", "## 后续问题", ""])
     lines.extend(_bullet_lines(memo.follow_up_questions))
     lines.append("")
     return "\n".join(lines)
@@ -954,46 +955,38 @@ def _build_clinical_first_memo(
             )
         )
     summary = (
-        f"First-pass research found {len(trials)} ClinicalTrials.gov records for "
-        f"{context.company}, with {len(pipeline_assets)} disclosed pipeline assets "
-        f"provided and {len(asset_trial_matches)} deterministic asset-trial matches. "
-        "This is still a partial view and should be cross-checked against company "
-        "filings, HKEX disclosures, China trial registries, cash runway, and "
-        "competitive data before any investment action."
+        f"首轮研究在 ClinicalTrials.gov 发现 {len(trials)} 条与 {context.company} 相关记录，"
+        f"已接收 {len(pipeline_assets)} 条披露管线资产输入，并形成 {len(asset_trial_matches)} 条"
+        "资产-试验匹配。当前仍是部分视图，投资判断前需继续交叉核验公司披露、HKEX 公告、"
+            "中国注册库、现金流与竞争数据。"
     )
     if not trials and not pipeline_assets:
         summary = (
-            f"No ClinicalTrials.gov records were found for {context.company} in this "
-            "first-pass search. The company may still have China-only, partner-run, "
-            "or differently named asset records that require manual source collection."
+            f"首轮检索未在 ClinicalTrials.gov 找到 {context.company} 的有效记录。"
+            "公司仍可能存在中国本土注册、合作方登记或别名资产，需补充来源后复核。"
         )
     elif pipeline_assets and not asset_trial_matches:
         summary += (
-            " None of the provided assets matched trial interventions or titles, so "
-            "asset naming, aliases, and China-only registrations need manual review."
+            " 当前提供的资产未与试验干预或标题形成匹配，资产命名、别名与中国本土注册需人工复核。"
         )
     if competitor_assets:
         summary += (
-            f" Competitive landscape input included {len(competitor_assets)} "
-            f"competitor assets and {len(competitive_matches)} deterministic "
-            "matches."
+            f" 竞争输入包含 {len(competitor_assets)} 条竞品资产，并形成 {len(competitive_matches)} 条确定性匹配。"
         )
     if cash_runway_estimate and cash_runway_estimate.runway_months is not None:
         summary += (
-            f" Cash runway was estimated at "
-            f"{cash_runway_estimate.runway_months:.1f} months."
+            f" 现金流可持续期估算约为 {cash_runway_estimate.runway_months:.1f} 个月。"
         )
     if valuation_metrics:
         summary += (
-            f" Enterprise value was estimated at "
-            f"{valuation_metrics.enterprise_value:g} {valuation_metrics.currency}."
+            f" 企业价值估算约为 {valuation_metrics.enterprise_value:g} {valuation_metrics.currency}。"
         )
     if target_price_analysis:
         summary += (
-            f" Catalyst-adjusted probability-weighted target price was "
+            f" 催化剂调整后概率加权目标价约为 "
             f"{target_price_analysis.probability_weighted_target_price:.2f} "
-            f"{target_price_analysis.currency}, with implied upside/downside of "
-            f"{target_price_analysis.implied_upside_downside_pct:.1f}%."
+            f"{target_price_analysis.currency}，对应隐含涨跌幅 "
+            f"{target_price_analysis.implied_upside_downside_pct:.1f}%。"
         )
 
     return InvestmentMemo(
@@ -1003,17 +996,13 @@ def _build_clinical_first_memo(
         decision=decision,
         summary=summary,
         bull_case=(
-            "There is at least one registry-backed clinical record to anchor follow-up."
+            ("已存在至少一条注册库证据，可作为后续深挖锚点。",)
             if trials
-            else (
-                "No registry-backed bull case can be formed from this data source yet."
-            ),
+            else ("当前数据源尚不足以形成注册库支撑的看多论据。",)
         ),
         bear_case=(
-            "ClinicalTrials.gov coverage alone is incomplete for HK and China biotech "
-            "research.",
-            "Trial registry presence does not prove positive efficacy, safety, "
-            "approval probability, or commercial value.",
+            "仅依赖 ClinicalTrials.gov 对港股/中国生物科技覆盖并不完整。",
+            "存在注册记录不等于疗效、安全性、获批概率或商业价值已被验证。",
         ),
         key_assets=_rank_core_assets(
             pipeline_assets=pipeline_assets,
@@ -1022,16 +1011,11 @@ def _build_clinical_first_memo(
         catalysts=catalysts,
         findings=tuple(findings),
         follow_up_questions=(
-            "Collect latest annual/interim reports, prospectus, investor presentation, "
-            "and HKEX announcements.",
-            "Search China drug trial registration records by company Chinese name, "
-            "asset codes, and major indications.",
-            "Map disclosed pipeline assets to trial records and identify missing core "
-            "products.",
-            "Estimate cash runway and financing risk from the latest financial "
-            "statement.",
-            "Review catalyst-adjusted target-price assumptions before using any "
-            "price range as research guidance.",
+            "收集最新年报/中报、招股书、路演材料与 HKEX 公告。",
+            "按公司中文名、资产代号与核心适应症检索中国药物试验注册记录。",
+            "将披露管线资产映射到试验记录，识别缺失核心产品。",
+            "基于最新财报估算现金流与融资风险。",
+            "在使用任何价格区间前，先复核催化剂调整后的目标价假设。",
         ),
         evidence=evidence,
     )
@@ -1097,7 +1081,7 @@ def _derive_clinical_catalysts(
         if not expected_date or expected_date < today:
             continue
 
-        title = "Primary completion date for registered clinical trial"
+        title = "注册临床试验主要完成日期"
         related_asset = trial.interventions[0] if trial.interventions else None
         catalysts.append(
             Catalyst(
@@ -1132,7 +1116,7 @@ def _derive_asset_milestone_catalysts(
             continue
         catalysts.append(
             Catalyst(
-                title=f"Company-disclosed next milestone: {asset.next_milestone}",
+                title=f"公司披露的下一里程碑：{asset.next_milestone}",
                 category="clinical",
                 expected_window=asset.next_milestone,
                 related_asset=asset.name,
@@ -1155,18 +1139,14 @@ def _build_pipeline_match_finding(
     )
     risks = ()
     if unmatched_assets:
-        risks = (
-            "Some disclosed assets did not match ClinicalTrials.gov records by "
-            "name or alias: "
-            + ", ".join(unmatched_assets),
-        )
+        risks = ("以下披露资产未通过名称或别名匹配到 ClinicalTrials.gov：" + ", ".join(unmatched_assets),)
 
     return AgentFinding(
         agent_name="pipeline_matcher",
         summary=(
-            f"{context.company} has {len(assets)} disclosed pipeline assets in the "
-            f"input set; {len(matched_assets)} assets matched {len(matches)} "
-            "ClinicalTrials.gov records by intervention or title."
+            f"{context.company} 当前输入含 {len(assets)} 条披露管线资产；"
+            f"{len(matched_assets)} 条资产与 {len(matches)} 条 ClinicalTrials.gov 记录"
+            "在干预项或标题维度形成匹配。"
         ),
         risks=risks,
         evidence=tuple(
@@ -1197,17 +1177,17 @@ def _build_data_quality_finding(
 ) -> AgentFinding:
     risks: list[str] = []
     if not pipeline_assets:
-        risks.append("No curated pipeline asset input was provided")
+        risks.append("未提供结构化管线资产输入")
     if not financial_snapshot:
-        risks.append("No financial snapshot input was provided")
+        risks.append("未提供财务快照输入")
     if not valuation_snapshot:
-        risks.append("No valuation snapshot input was provided")
+        risks.append("未提供估值快照输入")
     if not competitor_assets:
-        risks.append("No curated competitive landscape input was provided")
+        risks.append("未提供结构化竞争格局输入")
 
     warning_count = _input_warning_count(input_validation)
     if warning_count:
-        risks.append(f"Input validation produced {warning_count} warning(s)")
+        risks.append(f"输入校验产生 {warning_count} 条告警")
 
     return AgentFinding(
         agent_name="data_quality_agent",
@@ -1543,7 +1523,7 @@ def _deep_dive_competitive_lines(
             sentence = claim
             if sentence.endswith("."):
                 sentence = sentence[:-1]
-            lines.append(f"differentiation focus: {sentence}.")
+            lines.append(f"差异化要点：{sentence}。")
             if len(lines) >= 1:
                 return lines
     return lines
@@ -1561,10 +1541,10 @@ def _scorecard_lift_target_lines(
     if not rows:
         return []
     ordered = sorted(rows, key=lambda item: item[0])[:3]
-    lines = ["", "### Path to Core Candidate"]
+    lines = ["", "### 路径：提升至核心候选"]
     for contribution, name, rationale in ordered:
         lines.append(
-            f"- {name}: contribution {contribution:.1f}; evidence to improve: {rationale}"
+            f"- {_dimension_name_zh(name)}：贡献度 {contribution:.1f}；优先补强证据：{rationale}"
         )
     return lines
 
@@ -1580,6 +1560,29 @@ def _parse_scorecard_dimension_risk(text: str) -> tuple[float, str, str] | None:
     contribution = float(match.group(2))
     rationale = match.group(3).strip()
     return (contribution, name, rationale)
+
+
+def _dimension_name_zh(name: str) -> str:
+    mapping = {
+        "clinical_progress": "临床进展",
+        "pipeline_registry_match": "管线-注册匹配",
+        "cash_runway": "现金流可持续期",
+        "competition": "竞争格局",
+        "valuation": "估值",
+        "data_quality": "数据质量",
+        "skeptical_review": "反证审阅",
+    }
+    return mapping.get(name.strip(), name)
+
+
+def _bucket_zh(bucket: str) -> str:
+    mapping = {
+        "near_term_0_6m": "近端(0-6个月)",
+        "mid_term_6_18m": "中期(6-18个月)",
+        "long_term_18m_plus": "远期(18个月以上)",
+        "timing_tbd": "时间待定",
+    }
+    return mapping.get(bucket, bucket)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -1641,7 +1644,7 @@ def _slugify(value: str) -> str:
 
 def _bullet_lines(values: tuple[str, ...]) -> list[str]:
     if not values:
-        return ["- None captured yet."]
+        return ["- 暂无可用内容。"]
     return [f"- {value}" for value in values]
 
 
@@ -1682,7 +1685,7 @@ def _catalyst_lines(
     key_assets: tuple[PipelineAsset, ...] = (),
 ) -> list[str]:
     if not catalysts:
-        return ["- No catalysts were captured."]
+        return ["- 暂未捕捉到催化剂。"]
     phase_by_asset = {
         asset.name.casefold(): asset.phase for asset in key_assets if asset.name
     }
@@ -1706,10 +1709,10 @@ def _catalyst_lines(
         when = row["when"]
         asset = row["asset_suffix"]
         lines.append(
-            f"- [{bucket}; impact_score={impact_score:.1f}] {when}: "
+            f"- [{_bucket_zh(bucket)}；影响分={impact_score:.1f}] {when}："
             f"{catalyst.title}{asset} "
-            f"(expected_pos {expected_pos:.2f}, "
-            f"expected_value_delta_pct {expected_delta:+.1f}%)"
+            f"(预期成功概率 {expected_pos:.2f}，"
+            f"预期价值变化 {expected_delta:+.1f}%)"
         )
     return lines
 
@@ -1855,10 +1858,88 @@ def _finding_risk_lines(findings: tuple[AgentFinding, ...]) -> list[str]:
                 normalized = f"{normalized} (source: llm[{finding.agent_name}])"
             risk_rows.append(normalized)
     if not risk_rows:
-        return ["- No agent-level risks captured yet."]
-    deduped = list(dict.fromkeys(risk_rows))
+        return ["- 暂无智能体级别风险。"]
+    deduped = _semantic_dedupe_risks(risk_rows)
     ordered = sorted(deduped, key=_risk_sort_key)
     return [f"- {risk}" for risk in ordered]
+
+
+def _semantic_dedupe_risks(risk_rows: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen_raw: set[str] = set()
+    seen_semantic: set[str] = set()
+    for risk in risk_rows:
+        raw_key = risk.casefold().strip()
+        if raw_key in seen_raw:
+            continue
+        seen_raw.add(raw_key)
+        semantic_key = _risk_semantic_key(risk)
+        if semantic_key in seen_semantic:
+            continue
+        seen_semantic.add(semantic_key)
+        deduped.append(risk)
+    return deduped
+
+
+def _risk_semantic_key(risk: str) -> str:
+    lowered = risk.casefold()
+    canonical = (
+        lowered.replace("insufficient_data", "missing data")
+        .replace("insufficient data", "missing data")
+        .replace("missing input", "missing data")
+        .replace("input missing", "missing data")
+        .replace("no curated", "missing curated")
+        .replace("not available", "missing data")
+        .replace("unavailable", "missing data")
+        .replace("not provided", "missing data")
+    )
+    canonical = re.sub(r"\(source:\s*llm\[[^)]+\]\)", "", canonical)
+    canonical = re.sub(r"\[[^\]]+\]", " ", canonical)
+    canonical = re.sub(r"[^a-z0-9\s]+", " ", canonical)
+    canonical = re.sub(r"\s+", " ", canonical).strip()
+    return canonical
+
+
+def _executive_observation_lines(
+    *, memo: InvestmentMemo, findings: tuple[AgentFinding, ...]
+) -> list[str]:
+    observations: list[str] = []
+    for catalyst in memo.catalysts[:2]:
+        label = catalyst.expected_date.isoformat() if catalyst.expected_date else (
+            catalyst.expected_window or "timing TBD"
+        )
+        observations.append(f"关注催化剂时点：{catalyst.title}（{label}）。")
+    for finding in findings:
+        summary = finding.summary.strip()
+        if summary:
+            observations.append(summary)
+        if len(observations) >= 6:
+            break
+    compact = []
+    for line in observations:
+        text = line.strip()
+        if text and text not in compact:
+            compact.append(text)
+    while len(compact) < 3:
+        compact.append(
+            "在调整观点前，先验证不确定性最高的核心假设。"
+        )
+    lines = ["### 可执行观察"]
+    lines.extend(f"- {item}" for item in compact[:3])
+    lines.extend(["", "### 关键不确定性"])
+    risk_bullets = _finding_risk_lines(findings)
+    if risk_bullets and not risk_bullets[0].startswith("- 暂无智能体级别风险"):
+        lines.extend(risk_bullets[:3])
+    else:
+        lines.extend(
+            [
+                "- 临床数据覆盖可能仍不完整（跨注册库差异）。",
+                "- 缺少财务披露时，现金流可持续期判断置信度偏低。",
+                "- 随着同类读出更新，竞争位次可能快速变化。",
+            ]
+        )
+    lines.append("")
+    return lines
 
 
 def _risk_sort_key(risk: str) -> tuple[int, str]:
@@ -1912,9 +1993,9 @@ def _research_only_action_plan_lines(
         for finding in action_plan_findings:
             lines.append(f"- {finding.summary}")
             selected_risks = list(finding.risks[:4])
-            if not any("research support only" in risk.lower() for risk in selected_risks):
+            if not any("仅供研究支持" in risk for risk in selected_risks):
                 for risk in finding.risks:
-                    if "research support only" in risk.lower():
+                    if "仅供研究支持" in risk:
                         selected_risks.append(risk)
                         break
             lines.extend(f"  - {risk}" for risk in selected_risks)
@@ -1927,28 +2008,25 @@ def _research_only_action_plan_lines(
         "insufficient_data": "0.0%",
     }
     plan.append(
-        f"- Suggested research position sizing tier: {sizing_map.get(decision, '0.0%')}."
+        f"- 建议研究仓位区间：{sizing_map.get(decision, '0.0%')}。"
     )
     if valuation_findings:
         plan.append(
-            "- Entry focus: only add risk after reviewing bear/base/bull valuation "
-            "ranges and missing-assumption warnings."
+            "- 建仓关注点：先审阅悲观/基准/乐观估值区间与缺失假设，再决定是否提高风险暴露。"
         )
     else:
         plan.append(
-            "- Entry focus: do not form a valuation-based position until a "
-            "target-price range is available."
+            "- 建仓关注点：在形成目标价区间前，不做估值驱动的仓位判断。"
         )
     if scorecard_findings:
         plan.append(
-            "- Upgrade path to higher conviction: improve the lowest scorecard "
-            "dimensions listed above before increasing sizing."
+            "- 提升置信路径：先补齐评分卡最弱维度，再考虑提高仓位。"
         )
     plan.extend(
         [
-            "- Exit/de-risk triggers: high-impact catalyst miss, material runway "
-            "deterioration, or new high-severity evidence conflicts.",
-            "- This section is research support only, not a trading instruction.",
+            "- 减仓/去风险触发：高影响催化剂失效、现金流可持续期显著恶化，"
+            "或出现新的高严重度证据冲突。",
+            "- 本节仅供研究支持，不构成交易指令。",
         ]
     )
     return plan

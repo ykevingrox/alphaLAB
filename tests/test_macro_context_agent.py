@@ -132,15 +132,25 @@ class MacroContextHappyPathTest(unittest.TestCase):
             msg=str(step.finding.risks),
         )
 
-    def test_skips_when_macro_context_missing(self) -> None:
+    def test_uses_fallback_when_macro_context_missing(self) -> None:
         client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "macro_regime": "insufficient_data",
+                    "summary": "Fallback macro context with missing stub.",
+                    "sector_drivers": [],
+                    "sector_headwinds": ["macro data missing in structured inputs"],
+                }
+            )
+        )
         agent = MacroContextLLMAgent(llm_client=client)
 
         step = agent.run(_ctx(), FactStore({"macro_context": None}))
 
-        self.assertTrue(step.skipped)
-        self.assertIn("no macro_context", step.error or "")
-        self.assertEqual(client.calls, [])
+        self.assertFalse(step.skipped)
+        self.assertIsNone(step.error)
+        self.assertTrue(any("fallback_context:macro_context" in w for w in step.warnings))
 
     def test_schema_violation_records_error(self) -> None:
         client = FakeLLMClient()

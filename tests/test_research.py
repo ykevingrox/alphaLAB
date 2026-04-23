@@ -390,32 +390,32 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("2026-12-01", catalyst_csv)
             self.assertIn("2026 data readout", catalyst_csv)
             memo_markdown = Path(artifacts.memo_markdown).read_text()
-            self.assertIn("## Key Risks & Falsification", memo_markdown)
-            self.assertIn("## Competitive Landscape", memo_markdown)
-            self.assertIn("## Investment Thesis", memo_markdown)
-            self.assertIn("## Valuation Detail", memo_markdown)
-            self.assertIn("## Catalyst Roadmap", memo_markdown)
-            self.assertIn("## Scorecard Transparency", memo_markdown)
-            self.assertIn("### Path to Core Candidate", memo_markdown)
-            self.assertIn("## Research-Only Action Plan", memo_markdown)
-            self.assertIn("clinical: ORR 42% (n=58); relapsed disease", memo_markdown)
+            self.assertIn("## 关键风险与证伪条件", memo_markdown)
+            self.assertIn("## 竞争格局", memo_markdown)
+            self.assertIn("## 投资主线", memo_markdown)
+            self.assertIn("## 估值细化", memo_markdown)
+            self.assertIn("## 催化剂路线图", memo_markdown)
+            self.assertIn("## 评分卡透明度", memo_markdown)
+            self.assertIn("### 路径：提升至核心候选", memo_markdown)
+            self.assertIn("## 研究行动计划（非交易指令）", memo_markdown)
+            self.assertIn("临床数据: ORR 42% (n=58); relapsed disease", memo_markdown)
             self.assertIn("regulatory BLA submission planned", memo_markdown)
             self.assertIn("binary_event BLA submission in Q3 2026", memo_markdown)
             self.assertIn(
-                "differentiation focus: Example Drug matched competitor",
+                "Example Drug 与竞品",
                 memo_markdown,
             )
-            self.assertIn("cash_runway: contribution 6.4", memo_markdown)
-            self.assertIn("entry zone 1.05-1.27 HKD", memo_markdown)
+            self.assertIn("现金流可持续期：贡献度 6.4", memo_markdown)
+            self.assertIn("入场区间 1.05-1.27 HKD", memo_markdown)
             self.assertIn(
-                "research support only; not a trading instruction",
+                "仅供研究支持，不构成交易指令",
                 memo_markdown.lower(),
             )
-            self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
+            self.assertIn("输入校验产生 1 条告警", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
-            self.assertIn("Rival Drug by target_indication", memo_markdown)
-            self.assertIn("enterprise value is 2300 HKD", memo_markdown)
-            self.assertIn("Cash runway is below 24 months", memo_markdown)
+            self.assertIn("Rival Drug 在 target_indication 维度匹配", memo_markdown)
+            self.assertIn("企业价值约为 2300 HKD", memo_markdown)
+            self.assertIn("现金流可持续期低于 24 个月", memo_markdown)
 
             raw_payload = json.loads(Path(artifacts.raw_clinical_trials).read_text())
             self.assertEqual(
@@ -487,7 +487,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
         self.assertTrue(result.clinical_trial_finding.needs_human_review)
         self.assertTrue(result.memo.findings[1].needs_human_review)
         self.assertIn(
-            "No curated pipeline asset input was provided",
+            "未提供结构化管线资产输入",
             result.memo.findings[1].risks,
         )
         summary = result_summary(result)

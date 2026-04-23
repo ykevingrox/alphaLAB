@@ -36,20 +36,18 @@ def scientific_skeptic_finding(
     risks.extend(_valuation_risks(valuation_metrics))
     if input_warning_count:
         risks.append(
-            f"Input quality is not clean: {input_warning_count} validation warning(s)"
+            f"输入质量未达标：存在 {input_warning_count} 条校验告警"
         )
 
     if not risks:
         risks.append(
-            "No major deterministic counter-thesis was triggered, but source "
-            "coverage still requires human review."
+            "未触发主要确定性反证点，但来源覆盖仍需人工复核。"
         )
 
     return AgentFinding(
         agent_name="scientific_skeptic_agent",
         summary=(
-            f"{company} skeptical review identified {len(risks)} counter-thesis "
-            "point(s) from the current structured inputs."
+            f"{company} 的反证审阅在当前结构化输入下识别到 {len(risks)} 个关键反证点。"
         ),
         risks=tuple(risks),
         confidence=0.6,
@@ -59,7 +57,7 @@ def scientific_skeptic_finding(
 
 def _clinical_risks(trials: tuple[TrialSummary, ...]) -> tuple[str, ...]:
     if not trials:
-        return ("No ClinicalTrials.gov records were available for review",)
+        return ("未发现可用于审阅的 ClinicalTrials.gov 记录",)
 
     risks: list[str] = []
     active_statuses = {"RECRUITING", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"}
@@ -70,9 +68,9 @@ def _clinical_risks(trials: tuple[TrialSummary, ...]) -> tuple[str, ...]:
         if trial.phase and ("PHASE2" in trial.phase or "PHASE3" in trial.phase)
     ]
     if not active_trials:
-        risks.append("No active or upcoming ClinicalTrials.gov records were found")
+        risks.append("未发现活跃或即将启动的 ClinicalTrials.gov 记录")
     if not late_stage_trials:
-        risks.append("No phase 2/3 ClinicalTrials.gov records were found")
+        risks.append("未发现二/三期 ClinicalTrials.gov 记录")
     return tuple(risks)
 
 
@@ -81,7 +79,7 @@ def _pipeline_risks(
     asset_trial_matches: tuple[TrialAssetMatch, ...],
 ) -> tuple[str, ...]:
     if not pipeline_assets:
-        return ("No curated pipeline assets were provided for asset-level review",)
+        return ("未提供可用于资产级审阅的结构化管线输入",)
 
     matched_assets = {match.asset_name for match in asset_trial_matches}
     unmatched_assets = [
@@ -89,7 +87,7 @@ def _pipeline_risks(
     ]
     if unmatched_assets:
         return (
-            "Pipeline assets without registry matches: " + ", ".join(unmatched_assets),
+            "以下管线资产未与注册库匹配：" + ", ".join(unmatched_assets),
         )
     return ()
 
@@ -99,9 +97,9 @@ def _competition_risks(
     competitive_matches: tuple[CompetitiveMatch, ...],
 ) -> tuple[str, ...]:
     if not competitor_assets:
-        return ("No curated competitor set was provided",)
+        return ("未提供结构化竞品集合",)
     if not competitive_matches:
-        return ("Competitor assets did not match company assets deterministically",)
+        return ("竞品资产未与公司资产形成确定性匹配",)
 
     crowded_assets = [
         asset_name
@@ -112,7 +110,7 @@ def _competition_risks(
         )
     ]
     if crowded_assets:
-        return ("Crowded target/indication areas: " + ", ".join(crowded_assets),)
+        return ("目标/适应症赛道拥挤：" + ", ".join(crowded_assets),)
     return ()
 
 
@@ -120,13 +118,13 @@ def _cash_risks(
     cash_runway_estimate: CashRunwayEstimate | None,
 ) -> tuple[str, ...]:
     if not cash_runway_estimate:
-        return ("No cash runway estimate was available",)
+        return ("现金流可持续期估算不可用",)
     if cash_runway_estimate.runway_months is None:
-        return ("Cash runway could not be calculated",)
+        return ("无法计算现金流可持续期",)
     if cash_runway_estimate.runway_months < 12:
-        return ("Cash runway is below 12 months",)
+        return ("现金流可持续期低于 12 个月",)
     if cash_runway_estimate.runway_months < 24:
-        return ("Cash runway is below 24 months",)
+        return ("现金流可持续期低于 24 个月",)
     return ()
 
 
@@ -134,11 +132,11 @@ def _valuation_risks(
     valuation_metrics: ValuationMetrics | None,
 ) -> tuple[str, ...]:
     if not valuation_metrics:
-        return ("No valuation context was available",)
+        return ("估值上下文不可用",)
     risks = list(valuation_metrics.warnings)
     if (
         valuation_metrics.revenue_multiple is not None
         and valuation_metrics.revenue_multiple > 20
     ):
-        risks.append("Revenue multiple is above 20x")
+        risks.append("营收倍数高于 20x")
     return tuple(risks)

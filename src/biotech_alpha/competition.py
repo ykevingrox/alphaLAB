@@ -182,24 +182,23 @@ def competitive_landscape_finding(
     )
     risks = []
     if crowded_assets:
-        risks.append("Crowded competitive areas: " + ", ".join(crowded_assets))
+        risks.append("竞争拥挤领域：" + ", ".join(crowded_assets))
     if competitors and not matches:
-        risks.append("Competitor inputs did not match disclosed pipeline assets")
+        risks.append("竞品输入未与披露管线资产形成匹配")
 
     return AgentFinding(
         agent_name="competitive_landscape_agent",
         summary=(
-            f"{company} has {len(competitors)} curated competitor assets in the "
-            f"input set; {len(matched_assets)} company assets matched "
-            f"{len(matches)} competitor records by target or indication."
+            f"{company} 当前输入含 {len(competitors)} 条结构化竞品资产；"
+            f"{len(matched_assets)} 条公司资产与 {len(matches)} 条竞品记录"
+            "在靶点或适应症维度形成匹配。"
         ),
         risks=tuple(risks),
         evidence=tuple(
             Evidence(
                 claim=(
-                    f"{match.asset_name} matched competitor "
-                    f"{match.competitor_company} {match.competitor_asset} "
-                    f"by {match.match_scope}."
+                    f"{match.asset_name} 与竞品 {match.competitor_company} "
+                    f"{match.competitor_asset} 在 {match.match_scope} 维度匹配。"
                 ),
                 source="curated_competitor_input",
                 confidence=match.confidence,

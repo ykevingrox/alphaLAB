@@ -35,7 +35,7 @@ SCIENTIFIC_SKEPTIC_PROMPT = StructuredPrompt(
         "only with the structured facts provided in the user message. You "
         "never invent trial IDs, revenue figures, or deal terms. If evidence "
         "is missing for a claim, say so in `needs_more_evidence` instead of "
-        "speculating. Write in English. Be concise and concrete.\n\n"
+        "speculating. Be concise and concrete.\n\n"
         "OUTPUT RULES (must follow exactly):\n"
         "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
         "- Required top-level keys: summary, bear_case, risks.\n"
@@ -64,6 +64,8 @@ SCIENTIFIC_SKEPTIC_PROMPT = StructuredPrompt(
         "agent, if present):\n${competition_triage}\n\n"
         "Trial coverage summary:\n${trial_summary}\n\n"
         "Valuation + cash snapshot:\n${valuation_snapshot}\n\n"
+        "Fallback context (raw trials/evidence/input-validation for low-input runs):\n"
+        "${fallback_context}\n\n"
         "Input warnings:\n${input_warnings}\n\n"
         "Produce a structured counter-thesis. Focus on what could make the "
         "investment thesis fail in the next 12-24 months. Prioritise risks "
@@ -189,6 +191,7 @@ class ScientificSkepticLLMAgent(Agent):
             payload = SCIENTIFIC_SKEPTIC_PROMPT.parse_response(
                 call.response_text
             )
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -243,6 +246,7 @@ class ScientificSkepticLLMAgent(Agent):
             "valuation_snapshot": _json_block(
                 store.get("valuation_snapshot")
             ),
+            "fallback_context": _json_block(store.get("fallback_context")),
             "input_warnings": _format_lines(store.get("input_warnings") or []),
         }
 
@@ -337,7 +341,7 @@ PIPELINE_TRIAGE_PROMPT = StructuredPrompt(
             },
             "assets": {
                 "type": "array",
-                "min_items": 1,
+                "min_items": 0,
                 "max_items": 40,
                 "items": {
                     "type": "object",
@@ -390,12 +394,9 @@ class PipelineTriageLLMAgent(Agent):
     ) -> AgentStepResult:
         pipeline = store.get("pipeline_snapshot") or {}
         assets = pipeline.get("assets") if isinstance(pipeline, dict) else None
+        warnings: list[str] = []
         if not assets:
-            return AgentStepResult(
-                agent_name=self.name,
-                skipped=True,
-                error="no pipeline assets available for triage",
-            )
+            warnings.append("fallback_context:pipeline_triage")
 
         variables = self._collect_variables(context, store)
         system, user = PIPELINE_TRIAGE_PROMPT.render(variables)
@@ -429,6 +430,7 @@ class PipelineTriageLLMAgent(Agent):
             payload = PIPELINE_TRIAGE_PROMPT.parse_response(
                 call.response_text
             )
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -449,6 +451,7 @@ class PipelineTriageLLMAgent(Agent):
         return AgentStepResult(
             agent_name=self.name,
             finding=finding,
+            warnings=tuple(warnings),
             outputs={
                 "pipeline_triage_llm_finding": finding,
                 "pipeline_triage_payload": payload,
@@ -658,16 +661,9 @@ class FinancialTriageLLMAgent(Agent):
         self, context: AgentContext, store: FactStore
     ) -> AgentStepResult:
         snapshot = store.get("financials_snapshot")
+        warnings: list[str] = []
         if not isinstance(snapshot, dict) or not snapshot:
-            return AgentStepResult(
-                agent_name=self.name,
-                skipped=True,
-                error=(
-                    "no financials_snapshot available for triage; either "
-                    "financial inputs or a valuation snapshot must be "
-                    "present for this agent to run"
-                ),
-            )
+            warnings.append("fallback_context:financial_triage")
 
         variables = self._collect_variables(context, store)
         system, user = FINANCIAL_TRIAGE_PROMPT.render(variables)
@@ -701,6 +697,7 @@ class FinancialTriageLLMAgent(Agent):
             payload = FINANCIAL_TRIAGE_PROMPT.parse_response(
                 call.response_text
             )
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -721,6 +718,7 @@ class FinancialTriageLLMAgent(Agent):
         return AgentStepResult(
             agent_name=self.name,
             finding=finding,
+            warnings=tuple(warnings),
             outputs={
                 "financial_triage_llm_finding": finding,
                 "financial_triage_payload": payload,
@@ -928,25 +926,14 @@ class CompetitionTriageLLMAgent(Agent):
         self, context: AgentContext, store: FactStore
     ) -> AgentStepResult:
         snapshot = store.get("competition_snapshot")
+        warnings: list[str] = []
         if not isinstance(snapshot, dict) or not snapshot:
-            return AgentStepResult(
-                agent_name=self.name,
-                skipped=True,
-                error=(
-                    "no competition_snapshot available for triage; "
-                    "competitor inputs are required"
-                ),
-            )
+            warnings.append("fallback_context:competition_triage")
+            snapshot = {}
         competitor_assets = snapshot.get("competitor_assets")
         if not competitor_assets:
-            return AgentStepResult(
-                agent_name=self.name,
-                skipped=True,
-                error=(
-                    "competition_snapshot has no competitor_assets; "
-                    "skip competition triage"
-                ),
-            )
+            if "fallback_context:competition_triage" not in warnings:
+                warnings.append("fallback_context:competition_triage")
 
         variables = self._collect_variables(context, store)
         system, user = COMPETITION_TRIAGE_PROMPT.render(variables)
@@ -980,6 +967,7 @@ class CompetitionTriageLLMAgent(Agent):
             payload = COMPETITION_TRIAGE_PROMPT.parse_response(
                 call.response_text
             )
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -1000,6 +988,7 @@ class CompetitionTriageLLMAgent(Agent):
         return AgentStepResult(
             agent_name=self.name,
             finding=finding,
+            warnings=tuple(warnings),
             outputs={
                 "competition_triage_llm_finding": finding,
                 "competition_triage_payload": payload,
@@ -1222,16 +1211,9 @@ class MacroContextLLMAgent(Agent):
         self, context: AgentContext, store: FactStore
     ) -> AgentStepResult:
         macro_context = store.get("macro_context")
+        warnings: list[str] = []
         if not isinstance(macro_context, dict) or not macro_context:
-            return AgentStepResult(
-                agent_name=self.name,
-                skipped=True,
-                error=(
-                    "no macro_context fact available; upstream "
-                    "publish_research_facts must supply at least a "
-                    "market / sector stub for this agent to run"
-                ),
-            )
+            warnings.append("fallback_context:macro_context")
 
         variables = self._collect_variables(context, store)
         system, user = MACRO_CONTEXT_PROMPT.render(variables)
@@ -1265,6 +1247,7 @@ class MacroContextLLMAgent(Agent):
             payload = MACRO_CONTEXT_PROMPT.parse_response(
                 call.response_text
             )
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -1285,6 +1268,7 @@ class MacroContextLLMAgent(Agent):
         return AgentStepResult(
             agent_name=self.name,
             finding=finding,
+            warnings=tuple(warnings),
             outputs={
                 "macro_context_llm_finding": finding,
                 "macro_context_payload": payload,
@@ -1385,6 +1369,8 @@ INVESTMENT_THESIS_PROMPT = StructuredPrompt(
         "Scientific skeptic finding:\n${skeptic_finding}\n\n"
         "Target-price snapshot:\n${target_price_snapshot}\n\n"
         "Scorecard summary:\n${scorecard_summary}\n\n"
+        "Fallback context (raw evidence/trials for low-input runs):\n"
+        "${fallback_context}\n\n"
         "Return EXACTLY this JSON shape:\n"
         "{\n"
         "  \"thesis_summary\": \"<2-3 sentence thesis>\",\n"
@@ -1482,6 +1468,7 @@ class InvestmentThesisLLMAgent(Agent):
             )
         try:
             payload = INVESTMENT_THESIS_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -1520,6 +1507,7 @@ class InvestmentThesisLLMAgent(Agent):
             "financial_triage": _json_block(store.get("financial_triage_payload")),
             "competition_triage": _json_block(store.get("competition_triage_payload")),
             "macro_context": _json_block(store.get("macro_context_payload")),
+            "fallback_context": _json_block(store.get("fallback_context")),
             "skeptic_finding": _json_block(
                 {
                     "summary": getattr(skeptic, "summary", None),
@@ -1532,6 +1520,241 @@ class InvestmentThesisLLMAgent(Agent):
             "target_price_snapshot": _json_block(store.get("target_price_snapshot")),
             "scorecard_summary": _json_block(store.get("scorecard_summary")),
         }
+
+
+PROVISIONAL_PIPELINE_PROMPT = StructuredPrompt(
+    name="provisional_pipeline",
+    tags=("pipeline", "provisional", "llm"),
+    system=(
+        "You generate provisional pipeline rows when curated pipeline inputs are missing. "
+        "Work only from provided trial/evidence context. Do not fabricate external facts."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n\n"
+        "Pipeline snapshot:\n${pipeline_snapshot}\n\n"
+        "Trial summary:\n${trial_summary}\n\n"
+        "Fallback context:\n${fallback_context}\n\n"
+        "Return EXACTLY this JSON shape:\n"
+        "{\n"
+        "  \"summary\": \"<short summary>\",\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"assets\": [\n"
+        "    {\n"
+        "      \"name\": \"<asset>\",\n"
+        "      \"target\": \"<target or null>\",\n"
+        "      \"indication\": \"<indication or null>\",\n"
+        "      \"phase\": \"<phase or null>\",\n"
+        "      \"confidence\": 0.0,\n"
+        "      \"needs_human_review\": true\n"
+        "    }\n"
+        "  ]\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": ["summary", "assets"],
+        "properties": {
+            "summary": {"type": "string", "min_length": 1},
+            "confidence": {"type": ["number", "null"]},
+            "assets": {
+                "type": "array",
+                "max_items": 24,
+                "items": {
+                    "type": "object",
+                    "required": ["name", "needs_human_review"],
+                    "properties": {
+                        "name": {"type": "string", "min_length": 1},
+                        "target": {"type": ["string", "null"]},
+                        "indication": {"type": ["string", "null"]},
+                        "phase": {"type": ["string", "null"]},
+                        "confidence": {"type": ["number", "null"]},
+                        "needs_human_review": {"type": "boolean"},
+                    },
+                },
+            },
+        },
+    },
+)
+
+
+@dataclass
+class ProvisionalPipelineLLMAgent(Agent):
+    llm_client: LLMClient
+    name: str = "provisional_pipeline_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = ("provisional_pipeline_payload",)
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        pipeline = store.get("pipeline_snapshot") or {}
+        assets = pipeline.get("assets") if isinstance(pipeline, dict) else None
+        if assets:
+            return AgentStepResult(agent_name=self.name)
+        system, user = PROVISIONAL_PIPELINE_PROMPT.render(
+            {
+                "company": context.company,
+                "ticker": context.ticker or "n/a",
+                "market": context.market,
+                "pipeline_snapshot": _json_block(store.get("pipeline_snapshot")),
+                "trial_summary": _json_block(store.get("trial_summary")),
+                "fallback_context": _json_block(store.get("fallback_context")),
+            }
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=0.1,
+                max_tokens=1200,
+                response_format_json=True,
+            )
+            payload = PROVISIONAL_PIPELINE_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except (LLMError, SchemaError):
+            payload = _deterministic_provisional_pipeline_from_fallback(
+                store.get("fallback_context")
+            )
+        provisional_assets = payload.get("assets") or []
+        return AgentStepResult(
+            agent_name=self.name,
+            warnings=("fallback_context:provisional_pipeline",),
+            outputs={
+                "provisional_pipeline_payload": payload,
+                "pipeline_snapshot": {"assets": provisional_assets},
+            },
+        )
+
+
+def _deterministic_provisional_pipeline_from_fallback(
+    fallback_context: Any,
+) -> dict[str, Any]:
+    trial_rows = []
+    if isinstance(fallback_context, dict):
+        raw_rows = fallback_context.get("trial_rows")
+        if isinstance(raw_rows, list):
+            trial_rows = raw_rows
+    assets: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in trial_rows:
+        if not isinstance(row, dict):
+            continue
+        interventions = row.get("interventions")
+        name = None
+        if isinstance(interventions, list) and interventions:
+            name = str(interventions[0]).strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        assets.append(
+            {
+                "name": name,
+                "target": None,
+                "indication": (
+                    str((row.get("conditions") or [None])[0])
+                    if isinstance(row.get("conditions"), list) and row.get("conditions")
+                    else None
+                ),
+                "phase": row.get("phase"),
+                "confidence": 0.2,
+                "needs_human_review": True,
+            }
+        )
+        if len(assets) >= 12:
+            break
+    return {
+        "summary": "基于试验回退上下文生成临时管线草案。",
+        "confidence": 0.2,
+        "assets": assets,
+    }
+
+
+PROVISIONAL_FINANCIAL_PROMPT = StructuredPrompt(
+    name="provisional_financial",
+    tags=("financial", "provisional", "llm"),
+    system=(
+        "You provide a provisional runway range when curated financial inputs are missing. "
+        "Use cautious language and include uncertainty."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n\n"
+        "Financial snapshot:\n${financials_snapshot}\n\n"
+        "Valuation snapshot:\n${valuation_snapshot}\n\n"
+        "Fallback context:\n${fallback_context}\n\n"
+        "Return EXACTLY this JSON shape:\n"
+        "{\n"
+        "  \"summary\": \"<short summary>\",\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"runway_range_months\": \"<e.g. 6-12>\",\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": ["summary", "runway_range_months", "needs_human_review"],
+        "properties": {
+            "summary": {"type": "string", "min_length": 1},
+            "confidence": {"type": ["number", "null"]},
+            "runway_range_months": {"type": "string", "min_length": 3},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class ProvisionalFinancialLLMAgent(Agent):
+    llm_client: LLMClient
+    name: str = "provisional_financial_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = ("provisional_financial_payload",)
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        snapshot = store.get("financials_snapshot")
+        if isinstance(snapshot, dict) and snapshot:
+            return AgentStepResult(agent_name=self.name)
+        system, user = PROVISIONAL_FINANCIAL_PROMPT.render(
+            {
+                "company": context.company,
+                "ticker": context.ticker or "n/a",
+                "market": context.market,
+                "financials_snapshot": _json_block(store.get("financials_snapshot")),
+                "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+                "fallback_context": _json_block(store.get("fallback_context")),
+            }
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=0.1,
+                max_tokens=700,
+                response_format_json=True,
+            )
+            payload = PROVISIONAL_FINANCIAL_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except (LLMError, SchemaError) as exc:
+            return AgentStepResult(agent_name=self.name, error=str(exc))
+        return AgentStepResult(
+            agent_name=self.name,
+            warnings=("fallback_context:provisional_financial",),
+            outputs={
+                "provisional_financial_payload": payload,
+                "financials_snapshot": {
+                    "provisional_runway": payload,
+                    "financial_warnings": [
+                        "provisional financial snapshot generated by LLM"
+                    ],
+                },
+            },
+        )
 
 
 def _investment_thesis_finding_from_payload(
@@ -1684,6 +1907,25 @@ def _json_block(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, indent=2, default=str)
     except TypeError:
         return str(value)
+
+
+def _normalize_payload_company(payload: Any, expected_company: str) -> Any:
+    wrong_names = ("德琪医药", "Antengene", "德琪")
+
+    def _walk(value: Any) -> Any:
+        if isinstance(value, str):
+            text = value
+            for wrong in wrong_names:
+                if wrong in text and expected_company:
+                    text = text.replace(wrong, expected_company)
+            return text
+        if isinstance(value, list):
+            return [_walk(item) for item in value]
+        if isinstance(value, dict):
+            return {key: _walk(item) for key, item in value.items()}
+        return value
+
+    return _walk(payload)
 
 
 def _finding_from_payload(

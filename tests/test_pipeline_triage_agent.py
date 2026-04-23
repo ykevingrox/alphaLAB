@@ -124,8 +124,19 @@ class PipelineTriageHappyPathTest(unittest.TestCase):
         self.assertIn("pipeline_triage_llm_finding", step.outputs)
         self.assertIn("pipeline_triage_payload", step.outputs)
 
-    def test_skips_when_pipeline_is_empty(self) -> None:
+    def test_uses_fallback_when_pipeline_is_empty(self) -> None:
         client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "coverage_confidence": 0.2,
+                    "summary": "Fallback triage with no structured assets.",
+                    "assets": [
+                        {"name": "fallback", "severity": "none", "issues": []}
+                    ],
+                }
+            )
+        )
         agent = PipelineTriageLLMAgent(llm_client=client)
 
         step = agent.run(
@@ -133,9 +144,9 @@ class PipelineTriageHappyPathTest(unittest.TestCase):
             FactStore({"pipeline_snapshot": {"assets": []}}),
         )
 
-        self.assertTrue(step.skipped)
-        self.assertIn("no pipeline assets", step.error or "")
-        self.assertEqual(client.calls, [])
+        self.assertFalse(step.skipped)
+        self.assertIsNone(step.error)
+        self.assertTrue(any("fallback_context:pipeline_triage" in w for w in step.warnings))
 
     def test_schema_violation_records_error(self) -> None:
         client = FakeLLMClient()

@@ -24,7 +24,7 @@ class PositionActionTest(unittest.TestCase):
         self.assertEqual(plan.entry_zone_low, 8.0)
         self.assertEqual(plan.entry_zone_high, 10.0)
         self.assertTrue(
-            any("below 12 months" in trigger for trigger in plan.exit_trigger_conditions)
+            any("低于 12 个月" in trigger for trigger in plan.exit_trigger_conditions)
         )
 
     def test_build_research_action_plan_handles_inverted_edge(self) -> None:
@@ -52,9 +52,9 @@ class PositionActionTest(unittest.TestCase):
         )
 
         self.assertEqual(finding.agent_name, "research_action_plan_agent")
-        self.assertIn("entry zone 8.00-10.00 HKD", finding.summary)
+        self.assertIn("入场区间 8.00-10.00 HKD", finding.summary)
         self.assertIn("guidance_type=research_only", finding.risks)
-        self.assertTrue(any("research support only" in risk.lower() for risk in finding.risks))
+        self.assertTrue(any("仅供研究支持" in risk for risk in finding.risks))
 
     def test_build_research_action_plan_degrades_when_price_missing(self) -> None:
         analysis = _analysis(current=0.0, bear=8.0, base=12.0, bull=16.0)
@@ -65,7 +65,7 @@ class PositionActionTest(unittest.TestCase):
         self.assertEqual(plan.suggested_position_pct, 0.0)
         self.assertIsNone(plan.entry_zone_low)
         self.assertIsNone(plan.entry_zone_high)
-        self.assertTrue(any("keep sizing at 0.0%" in note for note in plan.notes))
+        self.assertTrue(any("维持 0.0% 仓位" in note for note in plan.notes))
 
     def test_research_action_plan_finding_keeps_non_signal_language(self) -> None:
         analysis = _analysis(current=0.0, bear=8.0, base=12.0, bull=16.0)
@@ -78,8 +78,8 @@ class PositionActionTest(unittest.TestCase):
             plan=plan,
             currency="HKD",
         )
+        self.assertIn("研究行动计划", finding.summary)
         lowered_summary = finding.summary.lower()
-        self.assertIn("research-only action plan", lowered_summary)
         self.assertNotIn("buy", lowered_summary)
         self.assertNotIn("sell", lowered_summary)
 

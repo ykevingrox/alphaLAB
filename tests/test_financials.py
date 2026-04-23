@@ -43,7 +43,7 @@ class FinancialsTest(unittest.TestCase):
         self.assertEqual(estimate.monthly_cash_burn, 50)
         self.assertEqual(estimate.runway_months, 18)
         self.assertFalse(estimate.needs_human_review)
-        self.assertIn("18.0 months", finding.summary)
+        self.assertIn("18.0 个月", finding.summary)
         self.assertEqual(finding.evidence[0].source, "annual-report.pdf")
 
     def test_estimate_cash_runway_flags_missing_burn(self) -> None:

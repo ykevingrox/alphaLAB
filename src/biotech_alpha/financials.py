@@ -191,18 +191,18 @@ def cash_runway_finding(
     """Convert a cash runway estimate into an agent finding."""
 
     runway_text = (
-        f"{estimate.runway_months:.1f} months"
+        f"{estimate.runway_months:.1f} 个月"
         if estimate.runway_months is not None
-        else "unavailable"
+        else "不可用"
     )
     evidence = ()
     if snapshot.source:
         evidence = (
             Evidence(
                 claim=(
-                    f"{company} reported cash and equivalents of "
+                    f"{company} 披露货币资金 "
                     f"{snapshot.cash_and_equivalents:g} {snapshot.currency} "
-                    f"as of {snapshot.as_of_date}."
+                    f"（截至 {snapshot.as_of_date}）。"
                 ),
                 source=snapshot.source,
                 source_date=snapshot.source_date,
@@ -213,7 +213,7 @@ def cash_runway_finding(
     return AgentFinding(
         agent_name="cash_runway_agent",
         summary=(
-            f"{company} estimated runway is {runway_text}, using "
+            f"{company} 估算的现金流可持续期为 {runway_text}，采用 "
             f"{estimate.method}."
         ),
         risks=estimate.warnings,

@@ -201,18 +201,18 @@ def valuation_finding(
     """Convert valuation metrics into an agent finding."""
 
     multiple_text = (
-        f"{metrics.revenue_multiple:.1f}x revenue"
+        f"营收倍数 {metrics.revenue_multiple:.1f}x"
         if metrics.revenue_multiple is not None
-        else "revenue multiple unavailable"
+        else "营收倍数不可用"
     )
     evidence = ()
     if snapshot.source:
         evidence = (
             Evidence(
                 claim=(
-                    f"{company} valuation snapshot used market cap "
+                    f"{company} 估值快照使用市值 "
                     f"{metrics.market_cap:g} {metrics.currency} as of "
-                    f"{snapshot.as_of_date}."
+                    f"{snapshot.as_of_date}。"
                 ),
                 source=snapshot.source,
                 source_date=snapshot.source_date,
@@ -223,8 +223,8 @@ def valuation_finding(
     return AgentFinding(
         agent_name="valuation_agent",
         summary=(
-            f"{company} enterprise value is {metrics.enterprise_value:g} "
-            f"{metrics.currency}; valuation context is {multiple_text}."
+            f"{company} 企业价值约为 {metrics.enterprise_value:g} "
+            f"{metrics.currency}；估值上下文为 {multiple_text}。"
         ),
         risks=metrics.warnings,
         evidence=evidence,

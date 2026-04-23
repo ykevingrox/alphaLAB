@@ -45,10 +45,10 @@ class CompanyReportTest(unittest.TestCase):
             ticker="09606.HK",
             registry_path=None,
         )
-        self.assertEqual(identity.company, "09606.HK")
+        self.assertEqual(identity.company, "映恩生物")
         self.assertEqual(identity.ticker, "09606.HK")
         self.assertEqual(identity.market, "HK")
-        self.assertEqual(identity.search_term, "09606.HK")
+        self.assertEqual(identity.search_term, "DualityBio")
 
     def test_resolves_company_from_optional_registry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -296,9 +296,9 @@ class CompanyReportTest(unittest.TestCase):
             memo_path = result.research_result.artifacts.memo_markdown
             assert memo_path is not None
             memo_text = Path(memo_path).read_text(encoding="utf-8")
-            self.assertIn("## LLM Agent Addendum", memo_text)
-            self.assertIn("Run status: 2/2 steps OK", memo_text)
-            self.assertIn("Total LLM tokens: 30", memo_text)
+            self.assertIn("## LLM Agent 附录", memo_text)
+            self.assertIn("运行状态：2/2 步成功", memo_text)
+            self.assertIn("LLM 总 token：30", memo_text)
             self.assertIn("Pipeline evidence is thin enough", memo_text)
             self.assertIn("No asset-level clinical anchor was found", memo_text)
             findings_path = (
@@ -386,10 +386,10 @@ class CompanyReportTest(unittest.TestCase):
                     now=datetime(2026, 4, 21, tzinfo=UTC),
                 )
 
-            self.assertEqual(result.identity.search_term, "DUALITYBIO")
+            self.assertEqual(result.identity.search_term, "DualityBio")
             self.assertIn("DUALITYBIO-B", result.identity.aliases)
             self.assertIn("DUALITYBIO", result.identity.aliases)
-            self.assertEqual(client.search_terms[0], "DUALITYBIO")
+            self.assertEqual(client.search_terms[0], "DualityBio")
             self.assertEqual(result.input_paths.pipeline_assets, pipeline)
             self.assertEqual(result.input_paths.financials, financials)
             self.assertEqual(len(result.research_result.pipeline_assets), 1)

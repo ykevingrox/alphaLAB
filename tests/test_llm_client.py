@@ -249,9 +249,11 @@ class StructuredPromptTest(unittest.TestCase):
         system, user = self._prompt().render(
             {"name": "Jia", "topic": "biotech"}
         )
-        self.assertEqual(system, "you are a test")
+        self.assertIn("you are a test", system)
+        self.assertIn("请使用简体中文思考与输出", system)
         self.assertIn("Hello, Jia!", user)
         self.assertIn("biotech", user)
+        self.assertIn("请用简体中文填写", user)
         self.assertIn("single JSON object", user)
 
     def test_parse_accepts_plain_json(self) -> None:

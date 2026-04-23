@@ -96,8 +96,17 @@ class CompetitionTriageHappyPathTest(unittest.TestCase):
         )
         self.assertIn("competition_triage_payload", step.outputs)
 
-    def test_skips_when_competitor_assets_missing(self) -> None:
+    def test_uses_fallback_when_competitor_assets_missing(self) -> None:
         client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "crowding_signal": "insufficient_data",
+                    "summary": "Fallback competition triage due to missing peers.",
+                    "findings": [],
+                }
+            )
+        )
         agent = CompetitionTriageLLMAgent(llm_client=client)
         store = FactStore(
             {
@@ -110,9 +119,9 @@ class CompetitionTriageHappyPathTest(unittest.TestCase):
 
         step = agent.run(_ctx(), store)
 
-        self.assertTrue(step.skipped)
-        self.assertIn("no competitor_assets", step.error or "")
-        self.assertEqual(client.calls, [])
+        self.assertFalse(step.skipped)
+        self.assertIsNone(step.error)
+        self.assertTrue(any("fallback_context:competition_triage" in w for w in step.warnings))
 
     def test_schema_violation_records_error(self) -> None:
         client = FakeLLMClient()

@@ -137,8 +137,17 @@ class FinancialTriageHappyPathTest(unittest.TestCase):
         self.assertIn("financial_triage_llm_finding", step.outputs)
         self.assertIn("financial_triage_payload", step.outputs)
 
-    def test_skips_when_financials_snapshot_missing(self) -> None:
+    def test_uses_fallback_when_financials_snapshot_missing(self) -> None:
         client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "runway_sanity": "insufficient_data",
+                    "summary": "Fallback financial triage due to missing snapshot.",
+                    "findings": [],
+                }
+            )
+        )
         agent = FinancialTriageLLMAgent(llm_client=client)
 
         step = agent.run(
@@ -146,9 +155,9 @@ class FinancialTriageHappyPathTest(unittest.TestCase):
             FactStore({"financials_snapshot": None}),
         )
 
-        self.assertTrue(step.skipped)
-        self.assertIn("no financials_snapshot", step.error or "")
-        self.assertEqual(client.calls, [])
+        self.assertFalse(step.skipped)
+        self.assertIsNone(step.error)
+        self.assertTrue(any("fallback_context:financial_triage" in w for w in step.warnings))
 
     def test_schema_violation_records_error(self) -> None:
         client = FakeLLMClient()

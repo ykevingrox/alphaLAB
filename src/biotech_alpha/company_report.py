@@ -100,6 +100,16 @@ INPUT_SUFFIXES = {
     "target_price_assumptions": ("target_price_assumptions", "target_price"),
 }
 
+_BUILTIN_IDENTITY_OVERRIDES: tuple[dict[str, Any], ...] = (
+    {
+        "company": "映恩生物",
+        "ticker": "09606.HK",
+        "market": "HK",
+        "search_term": "DualityBio",
+        "aliases": ("DualityBio", "Duality", "映恩"),
+    },
+)
+
 MISSING_INPUT_SPECS = {
     "pipeline_assets": {
         "severity": "high",
@@ -396,23 +406,23 @@ def llm_memo_addendum_markdown(
     skipped_steps = sum(1 for step in steps if getattr(step, "skipped", False))
 
     lines = [
-        "## LLM Agent Addendum",
+        "## LLM Agent 附录",
         "",
         (
-            f"- Run status: {ok_steps}/{len(steps)} steps OK, "
-            f"{failed_steps} failed, {skipped_steps} skipped."
+            f"- 运行状态：{ok_steps}/{len(steps)} 步成功，"
+            f"{failed_steps} 步失败，{skipped_steps} 步跳过。"
         ),
     ]
     total_tokens = cost_summary.get("total_tokens")
     calls = cost_summary.get("calls")
     if total_tokens is not None:
         call_label = f" across {calls} call(s)" if calls is not None else ""
-        lines.append(f"- Total LLM tokens: {total_tokens}{call_label}.")
+        lines.append(f"- LLM 总 token：{total_tokens}{call_label}。")
     if llm_trace_path is not None:
-        lines.append(f"- Trace: {_display_path(llm_trace_path, output_dir)}")
+        lines.append(f"- 追踪文件：{_display_path(llm_trace_path, output_dir)}")
     lines.extend(
         [
-            "- These findings are model-generated and review-gated.",
+            "- 以下结论由模型生成，默认需人工复核。",
             "",
         ]
     )
@@ -470,12 +480,14 @@ def _one_line(text: str) -> str:
 
 
 SUPPORTED_LLM_AGENTS = (
+    "provisional-pipeline",
+    "provisional-financial",
     "scientific-skeptic",
     "pipeline-triage",
     "financial-triage",
     "competition-triage",
     "macro-context",
-        "investment-thesis",
+    "investment-thesis",
 )
 
 
@@ -504,6 +516,8 @@ def _run_llm_agent_pipeline(
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
         PipelineTriageLLMAgent,
+        ProvisionalFinancialLLMAgent,
+        ProvisionalPipelineLLMAgent,
         ScientificSkepticLLMAgent,
     )
 
@@ -557,6 +571,20 @@ def _run_llm_agent_pipeline(
         return None
 
     graph.add(DeterministicAgent("publish_research_facts", _publish))
+    if "provisional-pipeline" in llm_agents:
+        graph.add(
+            ProvisionalPipelineLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
+    if "provisional-financial" in llm_agents:
+        graph.add(
+            ProvisionalFinancialLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "pipeline-triage" in llm_agents:
         graph.add(
             PipelineTriageLLMAgent(
@@ -586,43 +614,17 @@ def _run_llm_agent_pipeline(
             )
         )
     if "scientific-skeptic" in llm_agents:
-        # When upstream triage agents are requested, chain the skeptic so
-        # the skeptic's FactStore view already contains their payloads.
-        # This is a hard dependency in the current runtime: if any declared
-        # upstream fails the skeptic is skipped. Callers who want the
-        # skeptic to survive a triage failure should run only
-        # `--llm-agents scientific-skeptic`.
-        skeptic_deps: tuple[str, ...] = ("publish_research_facts",)
-        if "pipeline-triage" in llm_agents:
-            skeptic_deps = skeptic_deps + ("pipeline_triage_llm_agent",)
-        if "financial-triage" in llm_agents:
-            skeptic_deps = skeptic_deps + ("financial_triage_llm_agent",)
-        if "competition-triage" in llm_agents:
-            skeptic_deps = skeptic_deps + ("competition_triage_llm_agent",)
-        if "macro-context" in llm_agents:
-            skeptic_deps = skeptic_deps + ("macro_context_llm_agent",)
         graph.add(
             ScientificSkepticLLMAgent(
                 llm_client=llm_client,
-                depends_on=skeptic_deps,
+                depends_on=("publish_research_facts",),
             )
         )
     if "investment-thesis" in llm_agents:
-        thesis_deps: tuple[str, ...] = ("publish_research_facts",)
-        if "pipeline-triage" in llm_agents:
-            thesis_deps = thesis_deps + ("pipeline_triage_llm_agent",)
-        if "financial-triage" in llm_agents:
-            thesis_deps = thesis_deps + ("financial_triage_llm_agent",)
-        if "competition-triage" in llm_agents:
-            thesis_deps = thesis_deps + ("competition_triage_llm_agent",)
-        if "macro-context" in llm_agents:
-            thesis_deps = thesis_deps + ("macro_context_llm_agent",)
-        if "scientific-skeptic" in llm_agents:
-            thesis_deps = thesis_deps + ("scientific_skeptic_llm_agent",)
         graph.add(
             InvestmentThesisLLMAgent(
                 llm_client=llm_client,
-                depends_on=thesis_deps,
+                depends_on=("publish_research_facts",),
             )
         )
 
@@ -772,6 +774,10 @@ def build_llm_agent_facts(
     competition_snapshot = _build_competition_snapshot(
         research_result=research_result
     )
+    fallback_context = _build_fallback_context(
+        research_result=research_result,
+        auto_input_artifacts=auto_input_artifacts,
+    )
 
     return {
         "skeptic_risks": skeptic_risks,
@@ -783,8 +789,58 @@ def build_llm_agent_facts(
         "financials_snapshot": financials_snapshot,
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
+        "fallback_context": fallback_context,
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
+    }
+
+
+def _build_fallback_context(
+    *,
+    research_result: SingleCompanyResearchResult,
+    auto_input_artifacts: Any | None,
+) -> dict[str, Any]:
+    """Build broad context for LLM fallback when structured facts are thin."""
+
+    memo_evidence = getattr(research_result.memo, "evidence", ()) or ()
+    evidence_rows = [
+        {
+            "claim": evidence.claim,
+            "source": evidence.source,
+            "source_date": evidence.source_date,
+            "confidence": evidence.confidence,
+            "is_inferred": evidence.is_inferred,
+        }
+        for evidence in memo_evidence[:20]
+    ]
+    trial_rows = [
+        {
+            "registry_id": trial.registry_id,
+            "title": trial.title,
+            "status": trial.status,
+            "phase": trial.phase,
+            "conditions": list(trial.conditions),
+            "interventions": list(trial.interventions),
+            "primary_completion_date": trial.primary_completion_date,
+        }
+        for trial in (research_result.trials or ())[:25]
+    ]
+    source_docs = []
+    if auto_input_artifacts is not None:
+        for doc in getattr(auto_input_artifacts, "source_documents", ()) or ():
+            source_docs.append(
+                {
+                    "title": getattr(doc, "title", None),
+                    "url": getattr(doc, "url", None),
+                    "source_type": getattr(doc, "source_type", None),
+                    "publication_date": getattr(doc, "publication_date", None),
+                }
+            )
+    return {
+        "trial_rows": trial_rows,
+        "evidence_rows": evidence_rows,
+        "source_documents": source_docs[:20],
+        "input_validation": dict(research_result.input_validation or {}),
     }
 
 
@@ -1250,6 +1306,12 @@ def _source_signal_score(window: str, asset: dict[str, Any]) -> int:
 def _llm_agent_result_payload(result: Any) -> dict[str, Any]:
     """Serialize an AgentRunResult to a JSON-friendly dict."""
 
+    fallback_modules: list[str] = []
+    for step in getattr(result, "steps", ()) or ():
+        for warning in getattr(step, "warnings", ()) or ():
+            text = str(warning)
+            if text.startswith("fallback_context:"):
+                fallback_modules.append(text.split(":", 1)[1].strip())
     return {
         "findings": [
             {
@@ -1282,6 +1344,7 @@ def _llm_agent_result_payload(result: Any) -> dict[str, Any]:
             for s in getattr(result, "steps", ())
         ],
         "warnings": list(getattr(result, "warnings", ())),
+        "fallback_modules": list(dict.fromkeys(fallback_modules)),
         "cost_summary": dict(getattr(result, "cost_summary", {}) or {}),
     }
 
@@ -1322,6 +1385,17 @@ def resolve_company_identity(
     else:
         aliases = ()
         registry_name = None
+        override = _builtin_identity_override(clean_company or clean_ticker or "")
+        if override is not None:
+            clean_company = _clean_text(override.get("company")) or clean_company
+            clean_ticker = _clean_text(override.get("ticker")) or clean_ticker
+            market = market or _clean_text(override.get("market"))
+            search_term = search_term or _clean_text(override.get("search_term"))
+            aliases = tuple(
+                str(alias).strip()
+                for alias in override.get("aliases", ())
+                if str(alias).strip()
+            )
 
     clean_company = clean_company or clean_ticker
     clean_ticker = clean_ticker or None
@@ -1336,6 +1410,24 @@ def resolve_company_identity(
         aliases=aliases,
         registry_match=registry_name,
     )
+
+
+def _builtin_identity_override(query: str) -> dict[str, Any] | None:
+    normalized = _clean_text(query).casefold()
+    if not normalized:
+        return None
+    for row in _BUILTIN_IDENTITY_OVERRIDES:
+        candidates = [
+            row.get("company"),
+            row.get("ticker"),
+            row.get("search_term"),
+            *(row.get("aliases") or ()),
+        ]
+        for candidate in candidates:
+            text = _clean_text(candidate)
+            if text and text.casefold() == normalized:
+                return row
+    return None
 
 
 def discover_company_inputs(
@@ -1379,12 +1471,10 @@ def enrich_identity_from_auto_input_artifacts(
             if alias not in aliases and alias != identity.company:
                 aliases.append(alias)
 
-    search_term = identity.search_term
-    if not _has_ascii_letter(search_term or ""):
-        search_term = next(
-            (alias for alias in aliases if _has_ascii_letter(alias)),
-            search_term,
-        )
+    search_term = next(
+        (alias for alias in aliases if _has_ascii_letter(alias)),
+        identity.search_term,
+    )
     if tuple(aliases) == identity.aliases and search_term == identity.search_term:
         return identity
     return replace(

@@ -52,9 +52,8 @@ class ClinicalTrialAgent:
         return AgentFinding(
             agent_name=self.name,
             summary=(
-                f"{context.company} has {len(trials)} matched trials in the current "
-                f"input set, including {len(active)} active or upcoming trials and "
-                f"{len(late_stage)} phase 2/3 records."
+                f"{context.company} 在当前输入下匹配到 {len(trials)} 项试验，"
+                f"其中活跃/即将启动 {len(active)} 项，二/三期 {len(late_stage)} 项。"
             ),
             score=None,
             risks=(),

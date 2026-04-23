@@ -39,6 +39,14 @@ class StructuredPrompt:
         """
 
         body = Template(self.user_template).substitute(variables)
+        zh_system_prefix = (
+            "请使用简体中文思考与输出。"
+            "除JSON键名外，所有文本内容必须为简体中文。"
+        )
+        zh_user_prefix = (
+            "请用简体中文填写下面JSON对象中的所有文本字段，"
+            "不要输出英文叙述。"
+        )
         tail = ""
         if self.required_json:
             tail += (
@@ -47,7 +55,9 @@ class StructuredPrompt:
             )
         if self.extra_instructions:
             tail += "\n\n" + self.extra_instructions
-        return self.system, body + tail
+        system = zh_system_prefix + "\n\n" + self.system
+        user = zh_user_prefix + "\n\n" + body + tail
+        return system, user
 
     def parse_response(self, text: str) -> dict[str, Any]:
         """Parse a JSON response from ``text`` and validate against schema."""

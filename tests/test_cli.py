@@ -1110,7 +1110,7 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertIn("- Not saved (--no-save)", terminal)
             kwargs = run.call_args.kwargs
             self.assertTrue(kwargs["auto_inputs"])
-            self.assertEqual(kwargs["llm_agents"][0], "pipeline-triage")
+            self.assertEqual(kwargs["llm_agents"][0], "provisional-pipeline")
             self.assertIsNotNone(kwargs["market_data_provider"])
             self.assertIsNotNone(kwargs["macro_signals_provider"])
             self.assertIsNotNone(kwargs["competitor_discovery_client"])
@@ -1193,10 +1193,13 @@ class QuickReportCliTest(unittest.TestCase):
                 output_dir=tmpdir,
                 save=True,
             )
-            self.assertIn("latest_report", payload)
-            latest = Path(payload["latest_report"])
-            self.assertTrue(latest.exists())
-            self.assertEqual(latest.read_text(encoding="utf-8"), "# memo\n")
+            self.assertIn("latest_report_zh", payload)
+            latest_main = Path(payload["latest_report"])
+            latest_zh = Path(payload["latest_report_zh"])
+            self.assertTrue(latest_main.exists())
+            self.assertTrue(latest_zh.exists())
+            self.assertEqual(latest_main.read_text(encoding="utf-8"), "## 中文\n\n# memo\n")
+            self.assertEqual(latest_zh.read_text(encoding="utf-8"), "## 中文\n\n# memo\n")
 
     def test_report_command_json_keeps_machine_readable_summary(self) -> None:
         fake_summary = {"identity": {"ticker": "09606.HK"}, "status": "ok"}
@@ -1301,7 +1304,7 @@ class QuickReportCliTest(unittest.TestCase):
                 ["memo-bilingual", "--input", str(curr), "--output", str(bi)]
             )
             self.assertEqual(bilingual_exit, 0)
-            self.assertIn("### 中文（机器草稿，需人工复核）", bi.read_text(encoding="utf-8"))
+            self.assertIn("## 中文", bi.read_text(encoding="utf-8"))
             export_output = io.StringIO()
             with redirect_stdout(export_output):
                 export_exit = main(

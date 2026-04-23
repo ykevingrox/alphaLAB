@@ -41,34 +41,31 @@ def build_research_action_plan(
         # No valid valuation anchor means no sizing signal.
         suggested_position_pct = 0.0
     triggers = [
-        "De-risk on any high-impact catalyst miss or material trial delay.",
-        "De-risk if new high-severity contradictory evidence appears.",
+        "若高影响催化剂失效或试验显著延期，则执行去风险。",
+        "若出现新的高严重度矛盾证据，则执行去风险。",
     ]
     if _is_valid_positive_number(target_price_analysis.bull.target_price):
         triggers.insert(
             0,
             (
-                "De-risk if spot price moves above bull target "
-                f"({target_price_analysis.bull.target_price:.2f} "
-                f"{target_price_analysis.currency}) without matching evidence."
+                "若现价显著高于乐观目标价 "
+                f"（{target_price_analysis.bull.target_price:.2f} "
+                f"{target_price_analysis.currency}）但缺乏证据支撑，则执行去风险。"
             ),
         )
     if runway_months is not None:
         triggers.append(
-            f"De-risk if cash runway estimate falls below 12 months "
-            f"(current: {runway_months:.1f} months)."
+            f"若现金流可持续期估算低于 12 个月则去风险（当前：{runway_months:.1f} 个月）。"
         )
     notes = [
-        "Research support only; not a trading instruction.",
+        "仅供研究支持，不构成交易指令。",
         (
-            "Entry zone references bear/base valuation anchors and must be "
-            "cross-checked against liquidity and catalyst timing."
+            "入场区间仅基于悲观/基准估值锚，需结合流动性与催化剂时点复核。"
         ),
     ]
     if low is None or high is None:
         notes.append(
-            "Entry zone unavailable due to incomplete/invalid target-price inputs; "
-            "keep sizing at 0.0% until anchors are restored."
+            "目标价输入不完整或无效，入场区间不可用；在锚点恢复前维持 0.0% 仓位。"
         )
     return ResearchActionPlan(
         guidance_type="research_only",
@@ -89,15 +86,15 @@ def research_action_plan_finding(
 ) -> AgentFinding:
     """Expose the plan as a standard agent finding."""
 
-    zone_text = "entry zone unavailable"
+    zone_text = "入场区间不可用"
     if plan.entry_zone_low is not None and plan.entry_zone_high is not None:
         zone_text = (
-            f"entry zone {plan.entry_zone_low:.2f}-{plan.entry_zone_high:.2f} "
+            f"入场区间 {plan.entry_zone_low:.2f}-{plan.entry_zone_high:.2f} "
             f"{currency}"
         )
     summary = (
-        f"{company} research-only action plan suggests "
-        f"{plan.suggested_position_pct:.1f}% sizing with {zone_text}."
+        f"{company} 的研究行动计划建议仓位 "
+        f"{plan.suggested_position_pct:.1f}%，{zone_text}。"
     )
     return AgentFinding(
         agent_name="research_action_plan_agent",

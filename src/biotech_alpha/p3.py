@@ -70,19 +70,11 @@ def historical_memo_diff(previous_path: str | Path, current_path: str | Path) ->
 
 
 def bilingual_memo_markdown(markdown_text: str) -> str:
-    lines = markdown_text.splitlines()
-    zh_lines = [_translate_line(line) for line in lines]
     return "\n".join(
         [
-            "## Bilingual Memo",
-            "",
-            "### English",
+            "## 中文",
             "",
             markdown_text.rstrip(),
-            "",
-            "### 中文（机器草稿，需人工复核）",
-            "",
-            "\n".join(zh_lines).rstrip(),
             "",
         ]
     )

@@ -89,7 +89,7 @@ class CompetitionTest(unittest.TestCase):
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0].match_scope, "target_indication")
         self.assertEqual(matches[0].confidence, 0.8)
-        self.assertIn("1 company assets matched 1", finding.summary)
+        self.assertIn("1 条公司资产与 1 条竞品记录", finding.summary)
         self.assertTrue(finding.needs_human_review)
 
     def test_validate_competitor_file_reports_invalid_contract(self) -> None:

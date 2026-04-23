@@ -46,6 +46,22 @@ Use this shape:
 
 ## Last Completed
 
+- LLM-first usability redesign checkpoint (P0/P1/P2) landed:
+  - New provisional LLM agents `provisional-pipeline` and
+    `provisional-financial` are wired into the report graph and quick
+    `report` defaults.
+  - Skeptic/thesis no longer hard-depend on upstream triage agents; triage
+    failures no longer create a skip cascade for final narrative sections.
+  - LLM fact store now includes `fallback_context` (trials/evidence/source docs
+    + validation payload) so thesis/skeptic can still produce substantive output
+    in low-input runs.
+  - Triage/macro agents switched from hard-skip to fallback-run mode and emit
+    explicit `fallback_context:<module>` warnings.
+  - Quick report terminal output now prints `LLM fallback modules: ...` when
+    fallback paths were used.
+  - Memo rendering now enforces `Executive Verdict` actionable blocks
+    (`Actionable Observations` + `Key Uncertainties`) and semantic risk dedupe
+    for repeated "missing input/insufficient data" variants.
 - Quick `report "<company|ticker>"` UX now writes obvious shortcut outputs for
   saved runs: `data/latest/latest-report.md` plus a company-scoped
   `<slug>-latest-report.md`, so operators can open one stable path without
@@ -897,10 +913,8 @@ Latest smoke result:
 
 ### Current Task
 
-Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
-P0/P1 closure:
-**Sprint 5 closure checkpoint** (P3.14-3.18 deterministic strategic additions
-landed).
+Stabilize the LLM-first redesign checkpoint after landing the first full pass
+of P0/P1/P2 usability changes.
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -910,12 +924,8 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
-   as non-blocking enhancements.
-2. Improve CDE normalization precision with richer field extraction dictionaries
-   when prioritized (current version is deterministic + review-gated).
-3. Keep a hybrid extractor fallback (rule-first + LLM-on-low-confidence) as a
-   contingency only; enable it only if deterministic recall/precision degrades.
+Run live quick-report smoke (`report "DualityBio"`) and compare skip counts,
+fallback-module trace lines, and memo density against the previous baseline.
 
 ### Acceptance Criteria
 
@@ -982,6 +992,22 @@ Pre-Sprint 5 backlog retained for later:
   HK-only.
 
 ## Do Not Break
+
+## Latest Checkpoint (2026-04-23)
+
+- Current task: close the user-reported quality gaps for DualityBio one-command output.
+- Last completed:
+  - Added built-in identity override so `DualityBio`/`映恩生物`/`09606.HK` resolve consistently even when optional registry file is absent.
+  - `report "DualityBio"` now resolves to `Company: 映恩生物 (09606.HK)` with populated pipeline/financial/competition inputs (no provisional fallback modules in the latest smoke run).
+  - Localized major deterministic report text in scorecard, competition, financial, valuation, action-plan, and memo rendering paths.
+  - Replaced `Path to Core Candidate` with `路径：提升至核心候选`; replaced `N/A` ticker display with `未识别`.
+  - Added payload-level company-name normalization in LLM agents to prevent known wrong-entity substitution (e.g., `德琪医药` for DualityBio context).
+  - Updated unit tests for localized output behavior; full suite passes.
+- Validation:
+  - `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'`
+  - `PYTHONPATH=src .venv/bin/python -m biotech_alpha.cli report "DualityBio"`
+- Next action:
+  - Continue reducing residual English fragments that originate from raw evidence payloads and source excerpts (especially in `Evidence & Sources` and LLM risk tags), without removing source fidelity.
 
 - `company-report` must accept either `--company` or `--ticker`.
 - Manual input files in `data/input/` must override generated drafts in

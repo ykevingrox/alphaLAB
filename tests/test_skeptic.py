@@ -35,16 +35,16 @@ class SkepticTest(unittest.TestCase):
         self.assertEqual(finding.agent_name, "scientific_skeptic_agent")
         self.assertTrue(finding.needs_human_review)
         self.assertIn(
-            "No active or upcoming ClinicalTrials.gov records were found",
+            "未发现活跃或即将启动的 ClinicalTrials.gov 记录",
             finding.risks,
         )
         self.assertIn(
-            "No phase 2/3 ClinicalTrials.gov records were found",
+            "未发现二/三期 ClinicalTrials.gov 记录",
             finding.risks,
         )
-        self.assertIn("No cash runway estimate was available", finding.risks)
+        self.assertIn("现金流可持续期估算不可用", finding.risks)
         self.assertIn(
-            "Input quality is not clean: 2 validation warning(s)",
+            "输入质量未达标：存在 2 条校验告警",
             finding.risks,
         )
 
@@ -84,11 +84,11 @@ class SkepticTest(unittest.TestCase):
         )
 
         self.assertIn(
-            "Pipeline assets without registry matches: Unmatched Drug",
+            "以下管线资产未与注册库匹配：Unmatched Drug",
             finding.risks,
         )
-        self.assertIn("Cash runway is below 24 months", finding.risks)
-        self.assertIn("Revenue multiple is above 20x", finding.risks)
+        self.assertIn("现金流可持续期低于 24 个月", finding.risks)
+        self.assertIn("营收倍数高于 20x", finding.risks)
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ class ValuationTest(unittest.TestCase):
         self.assertEqual(metrics.enterprise_value, 2300)
         self.assertEqual(metrics.revenue_multiple, 11.5)
         self.assertFalse(metrics.needs_human_review)
-        self.assertIn("11.5x revenue", finding.summary)
+        self.assertIn("营收倍数 11.5x", finding.summary)
 
     def test_calculate_valuation_metrics_from_price_and_shares(self) -> None:
         payload = {

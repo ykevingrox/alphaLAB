@@ -655,9 +655,9 @@ def target_price_finding(
     return AgentFinding(
         agent_name="target_price_scenario_agent",
         summary=(
-            f"{company} probability-weighted target price is "
+            f"{company} 概率加权目标价约为 "
             f"{analysis.probability_weighted_target_price:.2f} "
-            f"{analysis.currency}, with bear/base/bull range "
+            f"{analysis.currency}，悲观/基准/乐观区间为 "
             f"{analysis.bear.target_price:.2f}/"
             f"{analysis.base.target_price:.2f}/"
             f"{analysis.bull.target_price:.2f}."
@@ -950,7 +950,7 @@ def _missing_assumptions(
 ) -> tuple[str, ...]:
     missing: list[str] = []
     if not assumptions.event_impacts:
-        missing.append("no event impact assumptions supplied")
+        missing.append("未提供事件影响假设")
     for asset in assumptions.assets:
         if not asset.source:
             missing.append(f"{asset.name} missing source")

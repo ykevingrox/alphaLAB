@@ -102,7 +102,7 @@ def scorecard_finding(
     """Convert a scorecard into an agent finding."""
     total_weight = sum(max(dimension.weight, 0.0) for dimension in scorecard.dimensions) or 1.0
     risks = tuple(
-        f"{dimension.name} (score={dimension.score:.1f}, "
+        f"{_dimension_display_name(dimension.name)} (score={dimension.score:.1f}, "
         f"weight={dimension.weight:.2f}, "
         f"contribution={dimension.score * (dimension.weight / total_weight):.1f}): "
         f"{dimension.rationale}"
@@ -111,7 +111,7 @@ def scorecard_finding(
     return AgentFinding(
         agent_name="watchlist_scorecard_agent",
         summary=(
-            f"{company} watchlist score is {scorecard.total_score:.1f}/100 "
+            f"{company} 观察名单评分为 {scorecard.total_score:.1f}/100 "
             f"({scorecard.bucket})."
         ),
         score=scorecard.total_score,
@@ -131,12 +131,12 @@ def _clinical_progress_dimension(
     trials: tuple[TrialSummary, ...],
 ) -> ScoreDimension:
     if not trials:
-        return ScoreDimension("clinical_progress", 10, "no registry trials found")
+        return ScoreDimension("clinical_progress", 10, "未发现注册库试验")
     if any(trial.phase and "PHASE3" in trial.phase for trial in trials):
-        return ScoreDimension("clinical_progress", 75, "phase 3 registry coverage")
+        return ScoreDimension("clinical_progress", 75, "覆盖到三期注册试验")
     if any(trial.phase and "PHASE2" in trial.phase for trial in trials):
-        return ScoreDimension("clinical_progress", 60, "phase 2 registry coverage")
-    return ScoreDimension("clinical_progress", 35, "only early or unclear trials found")
+        return ScoreDimension("clinical_progress", 60, "覆盖到二期注册试验")
+    return ScoreDimension("clinical_progress", 35, "仅有早期或阶段不清晰试验")
 
 
 def _pipeline_match_dimension(
@@ -144,13 +144,13 @@ def _pipeline_match_dimension(
     asset_trial_matches: tuple[TrialAssetMatch, ...],
 ) -> ScoreDimension:
     if not pipeline_assets:
-        return ScoreDimension("pipeline_registry_match", 20, "no pipeline input")
+        return ScoreDimension("pipeline_registry_match", 20, "缺少管线输入")
     matched_assets = {match.asset_name for match in asset_trial_matches}
     ratio = len(matched_assets) / len(pipeline_assets)
     return ScoreDimension(
         "pipeline_registry_match",
         round(ratio * 100, 1),
-        f"{len(matched_assets)} of {len(pipeline_assets)} assets matched registry",
+        f"{len(matched_assets)}/{len(pipeline_assets)} 个资产与注册库匹配",
     )
 
 
@@ -158,7 +158,7 @@ def _cash_runway_dimension(
     cash_runway_estimate: CashRunwayEstimate | None,
 ) -> ScoreDimension:
     if not cash_runway_estimate or cash_runway_estimate.runway_months is None:
-        return ScoreDimension("cash_runway", 20, "cash runway unavailable")
+        return ScoreDimension("cash_runway", 20, "现金流可持续期不可用")
     months = cash_runway_estimate.runway_months
     if months >= 36:
         score = 85
@@ -168,7 +168,7 @@ def _cash_runway_dimension(
         score = 45
     else:
         score = 20
-    return ScoreDimension("cash_runway", score, f"estimated runway {months:.1f} months")
+    return ScoreDimension("cash_runway", score, f"现金流可持续期约 {months:.1f} 个月")
 
 
 def _competition_dimension(
@@ -177,35 +177,35 @@ def _competition_dimension(
     competitive_matches: tuple[CompetitiveMatch, ...],
 ) -> ScoreDimension:
     if not competitor_assets:
-        return ScoreDimension("competition", 35, "no competitor input")
+        return ScoreDimension("competition", 35, "缺少竞品输入")
     if not pipeline_assets:
-        return ScoreDimension("competition", 30, "competitors cannot map to assets")
+        return ScoreDimension("competition", 30, "竞品无法映射到本公司资产")
     if not competitive_matches:
-        return ScoreDimension("competition", 40, "competitors did not match assets")
+        return ScoreDimension("competition", 40, "竞品未与资产形成匹配")
     max_matches = max(
         sum(1 for match in competitive_matches if match.asset_name == asset.name)
         for asset in pipeline_assets
     )
     if max_matches >= 3:
-        return ScoreDimension("competition", 35, "crowded matched asset area")
-    return ScoreDimension("competition", 60, "competitors mapped for review")
+        return ScoreDimension("competition", 35, "目标/适应症赛道拥挤")
+    return ScoreDimension("competition", 60, "竞品映射可用于审阅")
 
 
 def _valuation_dimension(
     valuation_metrics: ValuationMetrics | None,
 ) -> ScoreDimension:
     if not valuation_metrics:
-        return ScoreDimension("valuation", 40, "valuation context unavailable")
+        return ScoreDimension("valuation", 40, "估值上下文不可用")
     multiple = valuation_metrics.revenue_multiple
     if multiple is None:
-        return ScoreDimension("valuation", 50, "revenue multiple unavailable")
+        return ScoreDimension("valuation", 50, "营收倍数不可用")
     if multiple > 20:
         score = 30
     elif multiple > 10:
         score = 55
     else:
         score = 70
-    return ScoreDimension("valuation", score, f"revenue multiple {multiple:.1f}x")
+    return ScoreDimension("valuation", score, f"营收倍数 {multiple:.1f}x")
 
 
 def _data_quality_dimension(
@@ -233,11 +233,11 @@ def _data_quality_dimension(
     score -= input_warning_count * 10
     score = max(score, 0)
     if input_warning_count:
-        rationale = f"{input_warning_count} validation warning(s)"
+        rationale = f"{input_warning_count} 条校验告警"
     elif missing:
-        rationale = "missing " + ", ".join(missing)
+        rationale = "缺失：" + ", ".join(missing)
     else:
-        rationale = "all curated input types available"
+        rationale = "核心输入类型齐全"
     return ScoreDimension("data_quality", score, rationale)
 
 
@@ -246,7 +246,7 @@ def _skeptic_dimension(skeptic_risk_count: int) -> ScoreDimension:
     return ScoreDimension(
         "skeptical_review",
         score,
-        f"{skeptic_risk_count} counter-thesis risk(s)",
+        f"{skeptic_risk_count} 条反证风险",
     )
 
 
@@ -304,3 +304,16 @@ def _score_bucket(score: float) -> str:
     if score >= 35:
         return "needs_more_evidence"
     return "low_priority"
+
+
+def _dimension_display_name(name: str) -> str:
+    mapping = {
+        "clinical_progress": "临床进展",
+        "pipeline_registry_match": "管线-注册匹配",
+        "cash_runway": "现金流可持续期",
+        "competition": "竞争格局",
+        "valuation": "估值",
+        "data_quality": "数据质量",
+        "skeptical_review": "反证审阅",
+    }
+    return mapping.get(name, name)
