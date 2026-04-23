@@ -35,6 +35,12 @@ from biotech_alpha.financials import (
     validate_financial_snapshot_file,
     write_financial_snapshot_template,
 )
+from biotech_alpha.hkexnews import (
+    fetch_hkex_rss,
+    filter_hkex_items_by_ticker,
+    parse_hkex_rss,
+    track_hkex_news_updates,
+)
 from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
@@ -637,6 +643,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output",
         help="Optional file path to write catalyst alerts.",
     )
+    hkexnews_parser = subparsers.add_parser(
+        "hkexnews-track",
+        help="Track new HKEXnews RSS announcements since last run.",
+    )
+    hkexnews_parser.add_argument(
+        "--feed-url",
+        help="HKEXnews RSS URL. Provide this or --feed-file.",
+    )
+    hkexnews_parser.add_argument(
+        "--feed-file",
+        help="Local RSS XML file path. Useful for offline checks/tests.",
+    )
+    hkexnews_parser.add_argument(
+        "--ticker",
+        help="Optional ticker filter (e.g., 09887.HK).",
+    )
+    hkexnews_parser.add_argument(
+        "--state-file",
+        default="data/cache/hkexnews/seen_guids.json",
+        help="Path used to persist seen announcement GUIDs.",
+    )
+    hkexnews_parser.add_argument(
+        "--output",
+        help="Optional file path to write JSON output.",
+    )
 
     target_price_template_parser = subparsers.add_parser(
         "target-price-template",
@@ -1098,6 +1129,48 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 json.dumps(
                     {"path": str(path), "alert_count": len(alerts)},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "hkexnews-track":
+        if not args.feed_url and not args.feed_file:
+            print(
+                json.dumps(
+                    {
+                        "error": "Provide --feed-url or --feed-file for hkexnews-track."
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 1
+        xml_text = (
+            Path(args.feed_file).read_text(encoding="utf-8")
+            if args.feed_file
+            else fetch_hkex_rss(args.feed_url)
+        )
+        items = parse_hkex_rss(xml_text)
+        filtered = filter_hkex_items_by_ticker(items, ticker=args.ticker)
+        payload = track_hkex_news_updates(
+            items=filtered,
+            state_path=args.state_file,
+        )
+        payload["ticker_filter"] = args.ticker
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(
+                json.dumps(
+                    {"path": str(path), "new_count": payload["new_count"]},
                     ensure_ascii=False,
                     indent=2,
                 )

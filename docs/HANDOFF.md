@@ -584,6 +584,14 @@ Use this shape:
     differentiation lines when curated competitive matches exist.
   - Key Risks rendering now tags medium/high LLM triage risks
     (`confidence >= 0.4`) as `source: llm[agent_name]`.
+- P2 kickoff landed (HKEXnews RSS baseline):
+  - Added deterministic HKEXnews RSS parser + seen-guid state tracker module
+    (`src/biotech_alpha/hkexnews.py`) with CLI entry
+    `hkexnews-track` (supports `--feed-url` or `--feed-file`).
+  - Added offline/unit regression coverage for parser + state-diff behavior and
+    CLI integration (`tests/test_hkexnews.py`, `tests/test_cli.py`).
+  - Boundary: this is the ingestion/change-tracking baseline only; it does not
+    yet auto-map announcements into memo catalysts or valuation deltas.
 
 ## Current Repo State
 
@@ -868,7 +876,7 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
 P0/P1 closure:
-**P2.x Data breadth (next phase pick by highest memo gap)**.
+**P2.10 HKEXnews RSS and change tracker integration (phase 1 baseline)**.
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -878,11 +886,12 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Start P2 with the highest-impact data gap visible in current memo quality
-   (China CDE or HKEXnews RSS first).
-2. Keep optional `AssetDeepDiveLLMAgent` as a non-blocking enhancement track.
-3. Re-open deeper P0.4 source-like expansion only if deterministic extraction
-   quality regresses on canonical fixtures.
+1. Wire `hkexnews-track` outputs into report ingestion path so saved runs carry
+   structured announcement-change artifacts.
+2. Add deterministic event typing for common HKEX announcement classes
+   (clinical, regulatory, financing, corporate) with review flags.
+3. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
+   as non-blocking enhancements.
 
 ### Acceptance Criteria
 

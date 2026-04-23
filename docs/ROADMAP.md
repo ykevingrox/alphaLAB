@@ -824,6 +824,10 @@ structure can consume them.
 - **P2.9** — China drug clinical trial registry ingestion.
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
+  - **Status:** active (phase-1 baseline landed: RSS parse + seen-guid state
+    tracking + CLI `hkexnews-track`; report integration and event typing remain).
+  - **Boundary now:** this phase does not yet auto-thread announcements into
+    memo catalysts, target-price deltas, or scorecard signals.
   **Size:** 2 days.
 - **P2.11** — License / BD event tracker into `event_impacts`.
   **Size:** 2 days.

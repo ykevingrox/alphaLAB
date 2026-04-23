@@ -492,6 +492,61 @@ class CliTest(unittest.TestCase):
             self.assertEqual(payload["alert_count"], 1)
             self.assertEqual(payload["alerts"][0]["change_type"], "date_changed")
 
+    def test_hkexnews_track_reads_feed_file_and_tracks_state(self) -> None:
+        rss_text = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>HKEXnews</title>
+    <item>
+      <title>09887 - Voluntary Announcement</title>
+      <link>https://www.hkexnews.hk/123</link>
+      <guid>hkex-123</guid>
+      <pubDate>Thu, 23 Apr 2026 10:00:00 +0800</pubDate>
+      <category>Announcement</category>
+    </item>
+  </channel>
+</rss>
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            feed_path = Path(tmpdir) / "feed.xml"
+            state_path = Path(tmpdir) / "seen.json"
+            feed_path.write_text(rss_text, encoding="utf-8")
+
+            first_output = io.StringIO()
+            with redirect_stdout(first_output):
+                first_exit = main(
+                    [
+                        "hkexnews-track",
+                        "--feed-file",
+                        str(feed_path),
+                        "--ticker",
+                        "09887.HK",
+                        "--state-file",
+                        str(state_path),
+                    ]
+                )
+            first_payload = json.loads(first_output.getvalue())
+            self.assertEqual(first_exit, 0)
+            self.assertEqual(first_payload["new_count"], 1)
+            self.assertEqual(first_payload["new_items"][0]["guid"], "hkex-123")
+
+            second_output = io.StringIO()
+            with redirect_stdout(second_output):
+                second_exit = main(
+                    [
+                        "hkexnews-track",
+                        "--feed-file",
+                        str(feed_path),
+                        "--ticker",
+                        "09887.HK",
+                        "--state-file",
+                        str(state_path),
+                    ]
+                )
+            second_payload = json.loads(second_output.getvalue())
+            self.assertEqual(second_exit, 0)
+            self.assertEqual(second_payload["new_count"], 0)
+
     def test_target_price_template_and_validate_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "input" / "target_price.json"
