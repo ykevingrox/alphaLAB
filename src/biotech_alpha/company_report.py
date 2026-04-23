@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import csv
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,9 @@ from biotech_alpha.hkexnews import (
     filter_hkex_items_by_ticker,
     parse_hkex_rss,
     track_hkex_news_updates,
+    typed_items_to_catalyst_rows,
+    typed_items_to_event_impact_suggestions,
+    suggest_expected_dilution_pct,
 )
 from biotech_alpha.research import (
     ClinicalTrialsSource,
@@ -75,6 +79,9 @@ class CompanyReportResult:
     llm_agent_result: Any | None = None
     llm_trace_path: Path | None = None
     hkexnews_updates_path: Path | None = None
+    hkexnews_event_impacts_path: Path | None = None
+    hkexnews_dilution_hint_path: Path | None = None
+    peer_valuation_path: Path | None = None
 
 
 INPUT_SUFFIXES = {
@@ -1496,6 +1503,8 @@ def write_hkexnews_updates_report(
     payload = track_hkex_news_updates(items=filtered, state_path=state_file)
     payload["ticker_filter"] = result.identity.ticker
     payload["feed_url"] = feed_url
+    typed_items = payload.get("typed_new_items")
+    typed_rows = typed_items if isinstance(typed_items, list) else []
 
     output_path = _hkexnews_updates_report_path(output_dir=output_dir, result=result)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1506,6 +1515,10 @@ def write_hkexnews_updates_report(
     _append_hkexnews_memo_section(
         result=result,
         payload=payload,
+    )
+    _append_hkexnews_catalyst_rows(
+        result=result,
+        typed_rows=typed_rows,
     )
     _update_manifest_with_extra_artifact(
         result=result,
@@ -1520,7 +1533,86 @@ def write_hkexnews_updates_report(
             "typed_new_items": payload.get("typed_new_items", []),
         },
     )
-    return replace(result, hkexnews_updates_path=output_path)
+    event_impacts_payload = {
+        "event_impacts": typed_items_to_event_impact_suggestions(typed_rows),
+        "needs_human_review": True,
+    }
+    event_impacts_path = _hkexnews_event_impacts_report_path(
+        output_dir=output_dir,
+        result=result,
+    )
+    event_impacts_path.parent.mkdir(parents=True, exist_ok=True)
+    event_impacts_path.write_text(
+        json.dumps(event_impacts_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _update_manifest_with_extra_artifact(
+        result=result,
+        artifact_key="hkexnews_event_impacts",
+        artifact_path=event_impacts_path,
+        payload_key="hkexnews_event_impacts",
+        payload_value={
+            "event_impact_count": len(event_impacts_payload["event_impacts"]),
+            "needs_human_review": True,
+        },
+    )
+
+    dilution_payload = suggest_expected_dilution_pct(
+        typed_items=typed_rows,
+        current_expected_dilution_pct=(
+            result.research_result.target_price_assumptions.expected_dilution_pct
+            if result.research_result.target_price_assumptions
+            else None
+        ),
+    )
+    dilution_path = _hkexnews_dilution_hint_report_path(
+        output_dir=output_dir,
+        result=result,
+    )
+    dilution_path.parent.mkdir(parents=True, exist_ok=True)
+    dilution_path.write_text(
+        json.dumps(dilution_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _update_manifest_with_extra_artifact(
+        result=result,
+        artifact_key="hkexnews_dilution_hint",
+        artifact_path=dilution_path,
+        payload_key="hkexnews_dilution_hint",
+        payload_value={
+            "suggested_expected_dilution_pct": dilution_payload.get(
+                "suggested_expected_dilution_pct"
+            ),
+            "financing_signal_count": dilution_payload.get("financing_signal_count"),
+            "needs_human_review": True,
+        },
+    )
+
+    peer_payload = _build_peer_valuation_payload(result)
+    peer_path = _peer_valuation_report_path(output_dir=output_dir, result=result)
+    peer_path.parent.mkdir(parents=True, exist_ok=True)
+    peer_path.write_text(
+        json.dumps(peer_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _update_manifest_with_extra_artifact(
+        result=result,
+        artifact_key="peer_valuation",
+        artifact_path=peer_path,
+        payload_key="peer_valuation",
+        payload_value={
+            "peer_count": peer_payload.get("peer_count", 0),
+            "needs_human_review": True,
+        },
+    )
+
+    return replace(
+        result,
+        hkexnews_updates_path=output_path,
+        hkexnews_event_impacts_path=event_impacts_path,
+        hkexnews_dilution_hint_path=dilution_path,
+        peer_valuation_path=peer_path,
+    )
 
 
 def _append_hkexnews_memo_section(
@@ -1537,6 +1629,34 @@ def _append_hkexnews_memo_section(
     base = path.read_text(encoding="utf-8").rstrip()
     section = hkexnews_memo_addendum_markdown(payload)
     path.write_text(f"{base}\n\n{section}\n", encoding="utf-8")
+
+
+def _append_hkexnews_catalyst_rows(
+    *,
+    result: CompanyReportResult,
+    typed_rows: list[dict[str, Any]],
+) -> None:
+    path = result.research_result.artifacts.catalyst_calendar_csv
+    if path is None:
+        return
+    csv_path = Path(path)
+    if not csv_path.exists():
+        return
+    rows = typed_items_to_catalyst_rows(typed_rows)
+    if not rows:
+        return
+    existing = csv_path.read_text(encoding="utf-8").splitlines()
+    if not existing:
+        return
+    fields = existing[0].split(",")
+    known_titles = {line.split(",")[0] for line in existing[1:] if line}
+    with csv_path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        for row in rows:
+            if row["title"] in known_titles:
+                continue
+            writer.writerow(row)
+            known_titles.add(row["title"])
 
 
 def hkexnews_memo_addendum_markdown(payload: dict[str, Any]) -> str:
@@ -1615,6 +1735,63 @@ def _hkexnews_updates_report_path(
         / "company_report"
         / _identity_slug(result.identity)
         / f"{result.research_result.run_id}_hkexnews_updates.json"
+    )
+
+
+def _hkexnews_event_impacts_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_hkexnews_event_impacts.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_hkexnews_event_impacts.json"
+    )
+
+
+def _hkexnews_dilution_hint_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_hkexnews_dilution_hint.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_hkexnews_dilution_hint.json"
+    )
+
+
+def _peer_valuation_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_peer_valuation.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_peer_valuation.json"
     )
 
 
@@ -1712,6 +1889,54 @@ def missing_inputs_payload(
     }
 
 
+def _build_peer_valuation_payload(result: CompanyReportResult) -> dict[str, Any]:
+    current = result.research_result.valuation_metrics
+    peers: list[dict[str, Any]] = []
+    if current is None:
+        return {
+            "peer_count": 0,
+            "peers": peers,
+            "current_enterprise_value": None,
+            "current_revenue_multiple": None,
+            "needs_human_review": True,
+            "rationale": "Current run has no valuation metrics to compare.",
+        }
+    market = (result.identity.market or "").casefold()
+    for match in result.research_result.competitive_matches:
+        ev = None
+        rev_mult = None
+        for peer in result.research_result.competitor_assets:
+            if (
+                peer.company == match.competitor_company
+                and peer.asset_name == match.competitor_asset
+            ):
+                break
+        peers.append(
+            {
+                "company": match.competitor_company,
+                "asset_name": match.competitor_asset,
+                "match_scope": match.match_scope,
+                "match_confidence": match.confidence,
+                "enterprise_value": ev,
+                "revenue_multiple": rev_mult,
+                "market": market or None,
+                "phase": "to_verify",
+                "needs_human_review": True,
+            }
+        )
+    return {
+        "peer_count": len(peers),
+        "peers": peers[:20],
+        "current_enterprise_value": current.enterprise_value,
+        "current_revenue_multiple": current.revenue_multiple,
+        "needs_human_review": True,
+        "rationale": (
+            "Peer set is seeded from competitive matches; phase and valuation "
+            "fields require curated peer snapshots."
+        ),
+    }
+
+
 def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
     """Return compact JSON summary for CLI output."""
 
@@ -1758,6 +1983,26 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.hkexnews_updates_path) if result.hkexnews_updates_path else None
         ),
         "hkexnews_updates": _build_hkexnews_summary(result),
+        "hkexnews_event_impacts_path": (
+            str(result.hkexnews_event_impacts_path)
+            if result.hkexnews_event_impacts_path
+            else None
+        ),
+        "hkexnews_event_impacts": _build_json_artifact_summary(
+            result.hkexnews_event_impacts_path
+        ),
+        "hkexnews_dilution_hint_path": (
+            str(result.hkexnews_dilution_hint_path)
+            if result.hkexnews_dilution_hint_path
+            else None
+        ),
+        "hkexnews_dilution_hint": _build_json_artifact_summary(
+            result.hkexnews_dilution_hint_path
+        ),
+        "peer_valuation_path": (
+            str(result.peer_valuation_path) if result.peer_valuation_path else None
+        ),
+        "peer_valuation": _build_json_artifact_summary(result.peer_valuation_path),
     }
 
 
@@ -1780,6 +2025,21 @@ def _build_hkexnews_summary(result: CompanyReportResult) -> dict[str, Any] | Non
         "new_count": payload.get("new_count", 0),
         "typed_new_items": typed if isinstance(typed, list) else [],
     }
+
+
+def _build_json_artifact_summary(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    payload_path = Path(path)
+    if not payload_path.exists():
+        return {"path": str(payload_path), "available": False}
+    try:
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"path": str(payload_path), "available": False}
+    if isinstance(payload, dict):
+        return {"path": str(payload_path), "available": True, **payload}
+    return {"path": str(payload_path), "available": True, "payload": payload}
 
 
 def _build_extraction_audit(result: CompanyReportResult) -> dict[str, Any]:

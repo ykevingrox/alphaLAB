@@ -91,6 +91,90 @@ def classify_hkex_item(item: HkexNewsItem) -> str:
     return "corporate"
 
 
+def typed_items_to_catalyst_rows(
+    typed_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in typed_items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        event_type = str(item.get("event_type") or "corporate")
+        published = _date_part(item.get("published_at"))
+        rows.append(
+            {
+                "title": f"HKEXnews: {title}",
+                "category": _event_type_to_catalyst_category(event_type),
+                "expected_date": published,
+                "expected_window": "reported",
+                "related_asset": None,
+                "confidence": 0.25,
+                "evidence_count": 1,
+            }
+        )
+    return rows
+
+
+def typed_items_to_event_impact_suggestions(
+    typed_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    suggestions: list[dict[str, Any]] = []
+    for item in typed_items:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        event_type = str(item.get("event_type") or "corporate")
+        base = {
+            "event_type": f"hkex_{event_type}",
+            "asset_name": "to_verify",
+            "probability_of_success_delta": 0.0,
+            "peak_sales_delta_pct": 0.0,
+            "launch_year_delta": 0,
+            "discount_rate_delta": 0.0,
+            "rationale": f"HKEXnews-derived suggestion: {title}",
+            "needs_human_review": True,
+        }
+        text = f"{title} {item.get('category') or ''}".casefold()
+        if event_type == "regulatory":
+            base["probability_of_success_delta"] = 0.05
+            base["discount_rate_delta"] = -0.01
+        elif event_type == "clinical":
+            base["probability_of_success_delta"] = 0.03
+        elif event_type == "financing":
+            base["discount_rate_delta"] = 0.01
+        if any(
+            token in text
+            for token in ("license", "licence", "collaboration", "partnership")
+        ):
+            base["peak_sales_delta_pct"] = 0.05
+            base["event_type"] = "hkex_license_bd"
+        suggestions.append(base)
+    return suggestions
+
+
+def suggest_expected_dilution_pct(
+    *,
+    typed_items: list[dict[str, Any]],
+    current_expected_dilution_pct: float | None,
+) -> dict[str, Any]:
+    financing_count = sum(
+        1 for item in typed_items if str(item.get("event_type")) == "financing"
+    )
+    baseline = current_expected_dilution_pct or 0.0
+    step_up = min(financing_count * 0.02, 0.1)
+    suggested = round(max(baseline, baseline + step_up), 4)
+    return {
+        "current_expected_dilution_pct": baseline,
+        "suggested_expected_dilution_pct": suggested,
+        "financing_signal_count": financing_count,
+        "needs_human_review": True,
+        "rationale": (
+            "HKEX financing-class announcements can imply additional equity "
+            "issuance risk; suggestion is deterministic and conservative."
+        ),
+    }
+
+
 def filter_hkex_items_by_ticker(
     items: tuple[HkexNewsItem, ...],
     *,
@@ -106,6 +190,24 @@ def filter_hkex_items_by_ticker(
         for item in items
         if normalized in item.title or normalized in item.link or normalized in item.guid
     )
+
+
+def _event_type_to_catalyst_category(event_type: str) -> str:
+    return {
+        "clinical": "clinical",
+        "regulatory": "regulatory",
+        "financing": "financial",
+        "corporate": "corporate",
+    }.get(event_type, "corporate")
+
+
+def _date_part(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value).date().isoformat()
+    except ValueError:
+        return None
 
 
 def _node_text(node: ET.Element, tag: str) -> str:

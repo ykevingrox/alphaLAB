@@ -824,19 +824,28 @@ structure can consume them.
 - **P2.9** — China drug clinical trial registry ingestion.
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
-  - **Status:** active (phase-1 baseline + report-chain integration landed:
+  - **Status:** done (phase-1 baseline + report-chain integration landed:
     RSS parse, seen-guid tracking, CLI `hkexnews-track`, and saved
     `hkexnews_updates` report artifact; deterministic event typing landed; memo
-    threading landed; catalyst/valuation threading remains).
-  - **Boundary now:** this phase does not yet auto-thread announcements into
-    memo catalysts, target-price deltas, or scorecard signals.
+    threading landed; catalyst-calendar threading and review-gated valuation
+    hooks landed).
+  - **Boundary now:** HKEX-derived impacts remain review-gated suggestions;
+    no automatic target-price overwrite is applied.
   **Size:** 2 days.
 - **P2.11** — License / BD event tracker into `event_impacts`.
+  - **Status:** done (deterministic HKEX license/BD keyword tracker now emits
+    review-gated event-impact suggestion rows in saved artifacts/manifest).
   **Size:** 2 days.
 - **P2.12** — Peer valuation comparison (target + phase-matched HK
-  biotech). **Size:** 2 days.
+  biotech).
+  - **Status:** done (deterministic peer-valuation baseline now writes a
+    comparable peer set scaffold from competitive matches, review-gated).
+  **Size:** 2 days.
 - **P2.13** — Equity history / financing track with automatic
-  `expected_dilution_pct` suggestion. **Size:** 2 days.
+  `expected_dilution_pct` suggestion.
+  - **Status:** done (financing-class HKEX announcements now emit
+    review-gated `expected_dilution_pct` suggestions).
+  **Size:** 2 days.
 
 #### P3 — Strategic additions
 

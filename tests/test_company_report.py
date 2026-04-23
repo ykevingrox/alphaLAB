@@ -206,10 +206,16 @@ class CompanyReportTest(unittest.TestCase):
                 str(result.hkexnews_updates_path),
             )
             self.assertEqual(summary["hkexnews_updates"]["new_count"], 1)
+            self.assertTrue(summary["hkexnews_event_impacts"])
+            self.assertTrue(summary["hkexnews_dilution_hint"])
+            self.assertTrue(summary["peer_valuation"])
             manifest = json.loads(
                 Path(result.research_result.artifacts.manifest_json).read_text()
             )
             self.assertIn("hkexnews_updates", manifest["artifacts"])
+            self.assertIn("hkexnews_event_impacts", manifest["artifacts"])
+            self.assertIn("hkexnews_dilution_hint", manifest["artifacts"])
+            self.assertIn("peer_valuation", manifest["artifacts"])
             self.assertEqual(manifest["hkexnews_updates"]["new_count"], 1)
             self.assertTrue(manifest["hkexnews_updates"]["typed_new_items"])
             memo_text = Path(result.research_result.artifacts.memo_markdown).read_text(
@@ -217,6 +223,10 @@ class CompanyReportTest(unittest.TestCase):
             )
             self.assertIn("## HKEXnews Updates", memo_text)
             self.assertIn("[corporate] 09606 - Voluntary Announcement", memo_text)
+            catalyst_csv = Path(
+                result.research_result.artifacts.catalyst_calendar_csv
+            ).read_text(encoding="utf-8")
+            self.assertIn("HKEXnews: 09606 - Voluntary Announcement", catalyst_csv)
 
     def test_saved_memo_includes_llm_addendum(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

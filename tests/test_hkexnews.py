@@ -8,7 +8,10 @@ from biotech_alpha.hkexnews import (
     classify_hkex_item,
     filter_hkex_items_by_ticker,
     parse_hkex_rss,
+    suggest_expected_dilution_pct,
     track_hkex_news_updates,
+    typed_items_to_catalyst_rows,
+    typed_items_to_event_impact_suggestions,
 )
 
 
@@ -61,6 +64,28 @@ class HkexNewsTest(unittest.TestCase):
             )[0]
         )
         self.assertEqual(clinical, "clinical")
+
+    def test_typed_item_converters(self) -> None:
+        items = parse_hkex_rss(
+            SAMPLE_RSS.replace("Voluntary Announcement", "Financing Placement")
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            payload = track_hkex_news_updates(
+                items=items,
+                state_path=Path(tmpdir) / "seen.json",
+            )
+        typed = payload["typed_new_items"]
+        catalysts = typed_items_to_catalyst_rows(typed)
+        self.assertTrue(catalysts)
+        self.assertEqual(catalysts[0]["category"], "financial")
+        impacts = typed_items_to_event_impact_suggestions(typed)
+        self.assertTrue(impacts)
+        self.assertEqual(impacts[0]["event_type"], "hkex_financing")
+        dilution = suggest_expected_dilution_pct(
+            typed_items=typed,
+            current_expected_dilution_pct=0.01,
+        )
+        self.assertGreaterEqual(dilution["suggested_expected_dilution_pct"], 0.01)
 
 
 if __name__ == "__main__":

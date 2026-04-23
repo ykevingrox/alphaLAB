@@ -602,8 +602,12 @@ Use this shape:
     `clinical/regulatory/financing/corporate` labels (all review-gated).
   - Typed HKEXnews items are now threaded into saved memo markdown under
     `## HKEXnews Updates` (review-gated addendum block).
-  - Boundary: items are not yet converted into deterministic catalyst-calendar
-    rows or target-price delta inputs.
+  - Typed HKEXnews items are now appended into saved catalyst calendar CSV
+    as deterministic `HKEXnews: ...` rows.
+  - Added review-gated HKEX-derived artifacts:
+    `hkexnews_event_impacts`, `hkexnews_dilution_hint`, and `peer_valuation`.
+  - Sprint-5 P2 boundary now: deterministic hooks are closed; remaining
+    improvements are quality/depth enhancements, not missing wiring.
 
 ## Current Repo State
 
@@ -888,7 +892,7 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
 P0/P1 closure:
-**P2.10 HKEXnews RSS and change tracker integration (phase 1 baseline)**.
+**P3 strategic additions kickoff** (P2 deterministic baseline closed).
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -898,11 +902,9 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Convert typed HKEXnews events into deterministic catalyst-calendar rows where
-   parsing confidence is sufficient.
-2. Add optional valuation-impact mapping hooks for financing/regulatory
-   announcement classes (still review-gated).
-3. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
+1. Start P3.14 technical-timing baseline (`KlineTechnicalLLMAgent`) with
+   explicit research-only framing and confidence gating.
+2. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
 
 ### Acceptance Criteria
@@ -952,12 +954,9 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
-   events, peer valuation, equity history (pick based on the gap the
-   P0 / P1 memo reveals).
-2. **P3.x** Strategic additions: K-line agent, historical memo diff,
+1. **P3.x** Strategic additions: K-line agent, historical memo diff,
     portfolio concentration, bilingual memo, HTML/PDF export.
-3. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
+2. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
    ground-truth expansion, and additional cross-agent merge heuristics.
 
 Pre-Sprint 5 backlog retained for later:
