@@ -529,8 +529,8 @@ eventually a technical / K-line agent.
   available through `BIOTECH_ALPHA_LLM_MODEL` whenever quality requires them.
 - **Done** — Ultra-simple CLI entry `report "<company|ticker>"` for
   operator UX. It auto-enables auto-inputs, market-data, macro-signals,
-  and the full LLM stack by default; missing LLM env now fails fast unless
-  `--allow-no-llm` is passed explicitly.
+  and the full LLM stack by default; missing LLM env now auto-degrades to
+  deterministic mode with an explicit terminal note (no fail-fast by default).
 - **Done** — Productized quick-report terminal output. `report` now prints
   progress stages, a compact operator summary, LLM status, and artifact
   paths by default; `report --json` preserves the machine-readable compact

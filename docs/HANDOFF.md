@@ -46,6 +46,13 @@ Use this shape:
 
 ## Last Completed
 
+- Quick `report "<company|ticker>"` UX now writes obvious shortcut outputs for
+  saved runs: `data/latest/latest-report.md` plus a company-scoped
+  `<slug>-latest-report.md`, so operators can open one stable path without
+  hunting run IDs.
+- Quick `report` now defaults to "try LLM, auto-degrade if unavailable":
+  missing/invalid LLM env no longer hard-fails by default; the terminal prints
+  an explicit fallback note and continues deterministic execution.
 - `company-report --auto-inputs` can resolve HKEX annual-results sources,
   download the source PDF, extract text, generate draft pipeline and financial
   inputs, validate them, and run the report.

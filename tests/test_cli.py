@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from biotech_alpha.cli import (
+    _publish_quick_report_shortcuts,
     _print_quick_report_summary,
     _split_company_or_ticker,
     _resolve_macro_signals_provider,
@@ -1179,6 +1180,24 @@ class QuickReportCliTest(unittest.TestCase):
             output.getvalue(),
         )
 
+    def test_publish_quick_report_shortcuts_writes_latest_report_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            memo = Path(tmpdir) / "memo.md"
+            memo.write_text("# memo\n", encoding="utf-8")
+            summary = {
+                "identity": {"company": "DualityBio"},
+                "research": {"artifacts": {"memo_markdown": str(memo)}},
+            }
+            payload = _publish_quick_report_shortcuts(
+                summary=summary,
+                output_dir=tmpdir,
+                save=True,
+            )
+            self.assertIn("latest_report", payload)
+            latest = Path(payload["latest_report"])
+            self.assertTrue(latest.exists())
+            self.assertEqual(latest.read_text(encoding="utf-8"), "# memo\n")
+
     def test_report_command_json_keeps_machine_readable_summary(self) -> None:
         fake_summary = {"identity": {"ticker": "09606.HK"}, "status": "ok"}
         with patch(
@@ -1198,20 +1217,7 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(output.getvalue()), fake_summary)
 
-    def test_report_command_errors_when_llm_client_missing_by_default(self) -> None:
-        with patch(
-            "biotech_alpha.cli._build_llm_client",
-            side_effect=RuntimeError("missing key"),
-        ), patch(
-            "biotech_alpha.cli.company_report_summary",
-            return_value={"identity": {}, "status": "ok"},
-        ):
-            with self.assertRaises(RuntimeError):
-                output = io.StringIO()
-                with redirect_stdout(output):
-                    main(["report", "DualityBio", "--no-save"])
-
-    def test_report_command_can_degrade_when_allow_no_llm_set(self) -> None:
+    def test_report_command_auto_degrades_when_llm_client_missing(self) -> None:
         with patch(
             "biotech_alpha.cli.run_company_report"
         ) as run, patch(
@@ -1224,9 +1230,7 @@ class QuickReportCliTest(unittest.TestCase):
             run.return_value = object()
             output = io.StringIO()
             with redirect_stdout(output):
-                exit_code = main(
-                    ["report", "DualityBio", "--allow-no-llm", "--no-save"]
-                )
+                exit_code = main(["report", "DualityBio", "--no-save"])
 
             self.assertEqual(exit_code, 0)
             self.assertIn(

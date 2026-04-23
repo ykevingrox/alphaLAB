@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 from pathlib import Path
 from typing import Sequence
 
@@ -449,8 +450,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--allow-no-llm",
         action="store_true",
         help=(
-            "If LLM client init fails (e.g. missing API key), continue in "
-            "deterministic-only mode instead of exiting with error."
+            "Deprecated compatibility flag. Quick report now auto-degrades to "
+            "deterministic mode when LLM is unavailable."
         ),
     )
     quick_report_parser.add_argument(
@@ -1005,8 +1006,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             try:
                 llm_client = _build_llm_client(llm_agents)
             except Exception as exc:
-                if not args.allow_no_llm:
-                    raise
                 llm_agents = ()
                 llm_client = None
                 if not args.json:
@@ -1078,6 +1077,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.json:
             print(json.dumps(summary, ensure_ascii=False, indent=2))
         else:
+            quick_paths = _publish_quick_report_shortcuts(
+                summary=summary,
+                output_dir=args.output_dir,
+                save=not args.no_save,
+            )
             _print_quick_report_stage(
                 4,
                 4,
@@ -1088,6 +1092,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 summary,
                 save=not args.no_save,
                 output_dir=args.output_dir,
+                quick_paths=quick_paths,
             )
         return 0
 
@@ -1636,6 +1641,7 @@ def _print_quick_report_summary(
     *,
     save: bool,
     output_dir: str | Path = "data",
+    quick_paths: dict[str, str] | None = None,
 ) -> None:
     """Print a compact operator-facing summary for ``report``."""
 
@@ -1684,6 +1690,7 @@ def _print_quick_report_summary(
         artifacts=artifacts,
         save=save,
         output_dir=output_dir,
+        quick_paths=quick_paths or {},
     )
     _print_quick_report_next_action(summary)
 
@@ -1760,6 +1767,7 @@ def _print_quick_report_artifacts(
     artifacts: dict[str, object],
     save: bool,
     output_dir: str | Path,
+    quick_paths: dict[str, str],
 ) -> None:
     print()
     print("Artifacts")
@@ -1774,12 +1782,45 @@ def _print_quick_report_artifacts(
     _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
     _print_path_line("Missing-input report", summary.get("missing_inputs_report"))
     _print_path_line("LLM trace", summary.get("llm_trace_path"))
+    _print_path_line("Open this report", quick_paths.get("latest_report"))
+    _print_path_line("Open this folder", quick_paths.get("latest_dir"))
 
     llm_agents = _dict_value(summary, "llm_agents")
     run_id = _string_value(research, "run_id")
     if llm_agents and run_id:
         findings_path = Path(output_dir) / "memos" / f"{run_id}_llm_findings.json"
         _print_path_line("LLM findings", findings_path)
+
+
+def _publish_quick_report_shortcuts(
+    *,
+    summary: dict[str, object],
+    output_dir: str | Path,
+    save: bool,
+) -> dict[str, str]:
+    if not save:
+        return {}
+    research = _dict_value(summary, "research")
+    artifacts = _dict_value(research, "artifacts")
+    memo_path = artifacts.get("memo_markdown")
+    if not isinstance(memo_path, str) or not memo_path.strip():
+        return {}
+    source = Path(memo_path)
+    if not source.exists():
+        return {}
+    latest_dir = Path(output_dir) / "latest"
+    latest_dir.mkdir(parents=True, exist_ok=True)
+    latest_report = latest_dir / "latest-report.md"
+    shutil.copyfile(source, latest_report)
+    company = _string_value(_dict_value(summary, "identity"), "company") or "company"
+    slug = re.sub(r"[^a-z0-9]+", "-", company.casefold()).strip("-") or "company"
+    company_latest = latest_dir / f"{slug}-latest-report.md"
+    shutil.copyfile(source, company_latest)
+    return {
+        "latest_report": str(latest_report),
+        "latest_dir": str(latest_dir),
+        "company_latest_report": str(company_latest),
+    }
 
 
 def _print_quick_report_next_action(summary: dict[str, object]) -> None:
