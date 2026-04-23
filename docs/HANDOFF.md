@@ -892,8 +892,8 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
 P0/P1 closure:
-**P3 strategic additions kickoff** (P2.10-2.13 deterministic baseline closed;
-P2.9 China CDE ingestion deferred).
+**P3 strategic additions closure pass** (P3.14-3.17 deterministic baseline
+landed; P3.18 export charts pending).
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -903,8 +903,8 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Start P3.14 technical-timing baseline (`KlineTechnicalLLMAgent`) with
-   explicit research-only framing and confidence gating.
+1. Complete P3.18 charted HTML/PDF export additions (pipeline gantt,
+   catalyst timeline, rNPV stack chart) on top of current export baseline.
 2. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
 
@@ -955,8 +955,7 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P3.x** Strategic additions: K-line agent, historical memo diff,
-    portfolio concentration, bilingual memo, HTML/PDF export.
+1. **P3.18** charted HTML/PDF export finish (gantt/timeline/rNPV stack).
 2. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
    ground-truth expansion, and additional cross-agent merge heuristics.
 

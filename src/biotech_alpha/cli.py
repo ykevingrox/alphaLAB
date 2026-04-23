@@ -46,6 +46,13 @@ from biotech_alpha.pipeline import (
     validation_report_as_dict,
     write_pipeline_asset_template,
 )
+from biotech_alpha.p3 import (
+    bilingual_memo_markdown,
+    export_html,
+    export_pdf,
+    historical_memo_diff,
+    technical_timing_from_ohlcv,
+)
 from biotech_alpha.research import result_summary, run_single_company_research
 from biotech_alpha.target_price import (
     build_target_price_analysis,
@@ -761,6 +768,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Run without writing target-price artifacts to disk.",
     )
+    technical_parser = subparsers.add_parser(
+        "technical-timing",
+        help="Build deterministic technical timing summary from OHLCV CSV.",
+    )
+    technical_parser.add_argument(
+        "--ohlcv",
+        required=True,
+        help="OHLCV CSV path with at least close column.",
+    )
+    technical_parser.add_argument(
+        "--output",
+        help="Optional output JSON path.",
+    )
+    memo_diff_parser = subparsers.add_parser(
+        "memo-diff",
+        help="Diff two memo markdown files.",
+    )
+    memo_diff_parser.add_argument("--previous", required=True, help="Previous memo path.")
+    memo_diff_parser.add_argument("--current", required=True, help="Current memo path.")
+    memo_diff_parser.add_argument("--output", help="Optional output JSON path.")
+    bilingual_parser = subparsers.add_parser(
+        "memo-bilingual",
+        help="Export bilingual markdown from an English memo.",
+    )
+    bilingual_parser.add_argument("--input", required=True, help="Input memo markdown path.")
+    bilingual_parser.add_argument("--output", required=True, help="Output bilingual markdown path.")
+    export_parser = subparsers.add_parser(
+        "memo-export",
+        help="Export memo markdown to HTML and optional PDF.",
+    )
+    export_parser.add_argument("--input", required=True, help="Input memo markdown path.")
+    export_parser.add_argument("--html-output", required=True, help="Output HTML path.")
+    export_parser.add_argument("--pdf-output", help="Optional output PDF path.")
 
     args = parser.parse_args(argv)
     client = ClinicalTrialsClient(timeout=8)
@@ -1272,6 +1312,47 @@ def main(argv: Sequence[str] | None = None) -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "technical-timing":
+        payload = technical_timing_from_ohlcv(args.ohlcv)
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "memo-diff":
+        payload = historical_memo_diff(args.previous, args.current)
+        if args.output:
+            path = Path(args.output)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "memo-bilingual":
+        source = Path(args.input).read_text(encoding="utf-8")
+        text = bilingual_memo_markdown(source)
+        path = Path(args.output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "memo-export":
+        html_path = export_html(args.input, args.html_output)
+        payload: dict[str, object] = {"html_path": str(html_path), "pdf_path": None, "pdf_warning": None}
+        if args.pdf_output:
+            pdf_path, warning = export_pdf(args.input, args.pdf_output)
+            payload["pdf_path"] = str(pdf_path) if pdf_path is not None else None
+            payload["pdf_warning"] = warning
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
     parser.error(f"Unknown command: {args.command}")

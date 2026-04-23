@@ -35,6 +35,7 @@ class WatchlistEntry:
     revenue_multiple: float | None
     targets: tuple[str, ...]
     indications: tuple[str, ...]
+    modalities: tuple[str, ...]
     scorecard_dimensions: tuple[dict[str, Any], ...]
     monitoring_rules: tuple[str, ...]
     memo_markdown: str | None
@@ -51,6 +52,8 @@ class PortfolioGuardrail:
     market_concentration_count: int
     target_concentration_count: int
     indication_concentration_count: int
+    modality_concentration_count: int
+    catalyst_density_concentration_count: int
     guardrail_flags: tuple[str, ...]
 
 
@@ -81,8 +84,11 @@ WATCHLIST_CSV_FIELDS = (
     "market_concentration_count",
     "target_concentration_count",
     "indication_concentration_count",
+    "modality_concentration_count",
+    "catalyst_density_concentration_count",
     "targets",
     "indications",
+    "modalities",
     "guardrail_flags",
     "monitoring_rules",
     "memo_markdown",
@@ -166,6 +172,8 @@ def watchlist_entries_as_dicts(
     market_counts = _optional_value_counts(entry.market for entry in entries)
     target_counts = _concentration_counts(entries, "targets")
     indication_counts = _concentration_counts(entries, "indications")
+    modality_counts = _concentration_counts(entries, "modalities")
+    catalyst_density_counts = _catalyst_density_counts(entries)
     rows: list[dict[str, Any]] = []
     for index, entry in enumerate(entries, start=1):
         row = {
@@ -178,10 +186,13 @@ def watchlist_entries_as_dicts(
                     market_counts=market_counts,
                     target_counts=target_counts,
                     indication_counts=indication_counts,
+                    modality_counts=modality_counts,
+                    catalyst_density_counts=catalyst_density_counts,
                 )
             ),
             "targets": list(entry.targets),
             "indications": list(entry.indications),
+            "modalities": list(entry.modalities),
             "monitoring_rules": list(entry.monitoring_rules),
         }
         if include_scorecard_dimensions:
@@ -199,6 +210,8 @@ def build_portfolio_guardrail(
     market_counts: dict[str, int] | None = None,
     target_counts: dict[str, int] | None = None,
     indication_counts: dict[str, int] | None = None,
+    modality_counts: dict[str, int] | None = None,
+    catalyst_density_counts: dict[str, int] | None = None,
 ) -> PortfolioGuardrail:
     """Build conservative research-only position and concentration guardrails."""
 
@@ -252,12 +265,21 @@ def build_portfolio_guardrail(
 
     target_count = _max_group_count(entry.targets, target_counts or {})
     indication_count = _max_group_count(entry.indications, indication_counts or {})
+    modality_count = _max_group_count(entry.modalities, modality_counts or {})
+    catalyst_density_key = _catalyst_density_bucket(entry)
+    catalyst_density_count = (catalyst_density_counts or {}).get(catalyst_density_key, 0)
     if target_count >= 3:
         limit = min(limit, 1.0)
         flags.append("target_concentration")
     if indication_count >= 3:
         limit = min(limit, 1.0)
         flags.append("indication_concentration")
+    if modality_count >= 3:
+        limit = min(limit, 1.0)
+        flags.append("modality_concentration")
+    if catalyst_density_key == "high":
+        limit = min(limit, 1.0)
+        flags.append("high_catalyst_density")
 
     return PortfolioGuardrail(
         sizing_tier=_sizing_tier(limit),
@@ -266,6 +288,8 @@ def build_portfolio_guardrail(
         market_concentration_count=market_count,
         target_concentration_count=target_count,
         indication_concentration_count=indication_count,
+        modality_concentration_count=modality_count,
+        catalyst_density_concentration_count=catalyst_density_count,
         guardrail_flags=tuple(flags),
     )
 
@@ -373,6 +397,7 @@ def _entry_from_manifest(manifest_path: Path) -> WatchlistEntry | None:
         ),
         targets=_asset_field_values(pipeline_payload, "target"),
         indications=_asset_field_values(pipeline_payload, "indication"),
+        modalities=_asset_field_values(pipeline_payload, "modality"),
         scorecard_dimensions=_scorecard_dimensions(scorecard),
         monitoring_rules=_string_tuple(scorecard.get("monitoring_rules")),
         memo_markdown=_artifact_str(manifest_path, artifacts, "memo_markdown"),
@@ -440,6 +465,7 @@ def _csv_row(
     csv_row["guardrail_flags"] = "; ".join(row.get("guardrail_flags") or [])
     csv_row["targets"] = "; ".join(row.get("targets") or [])
     csv_row["indications"] = "; ".join(row.get("indications") or [])
+    csv_row["modalities"] = "; ".join(row.get("modalities") or [])
     if include_scorecard_dimensions:
         for item in row.get("scorecard_dimensions") or []:
             if not isinstance(item, dict):
@@ -570,6 +596,24 @@ def _optional_value_counts(values: Any) -> dict[str, int]:
         key = _normalize_group_value(value)
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _catalyst_density_counts(entries: tuple[WatchlistEntry, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        key = _catalyst_density_bucket(entry)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _catalyst_density_bucket(entry: WatchlistEntry) -> str:
+    denominator = max(entry.pipeline_asset_count, 1)
+    density = entry.catalyst_count / denominator
+    if density >= 3:
+        return "high"
+    if density >= 1:
+        return "medium"
+    return "low"
 
 
 def _max_group_count(values: tuple[str, ...], counts: dict[str, int]) -> int:

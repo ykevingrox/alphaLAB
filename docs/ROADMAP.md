@@ -853,15 +853,27 @@ structure can consume them.
 
 - **P3.14** — `KlineTechnicalLLMAgent` (OHLCV + a few classic indicators;
   flags divergence vs fundamental / macro read; research-only).
+  - **Status:** done (deterministic baseline via `technical-timing` command:
+    SMA20/SMA60, RSI14, volatility, support/resistance, research-only output).
   **Size:** 3 days.
 - **P3.15** — Historical memo diff (same slug, last two runs).
+  - **Status:** done (CLI `memo-diff` landed, emits machine-readable unified diff).
   **Size:** 2 days.
 - **P3.16** — Portfolio-level concentration checks (target / modality /
-  catalyst density). **Size:** 1 day.
+  catalyst density).
+  - **Status:** done (watchlist guardrail now includes modality concentration
+    and catalyst-density concentration counts/flags).
+  **Size:** 1 day.
 - **P3.17** — Bilingual memo output (EN + zh-CN; preserve English
-  technical terms). **Size:** 1-2 days.
+  technical terms).
+  - **Status:** done (CLI `memo-bilingual` writes EN + zh-CN draft memo with
+    explicit review-gated translation label).
+  **Size:** 1-2 days.
 - **P3.18** — HTML / PDF memo export with pipeline gantt, catalyst
-  timeline, rNPV stack chart. **Size:** 3-5 days.
+  timeline, rNPV stack chart.
+  - **Status:** active (CLI `memo-export` now supports HTML export and optional
+    PDF export when `reportlab` is available; chart rendering remains pending).
+  **Size:** 3-5 days.
 
 #### Execution order
 

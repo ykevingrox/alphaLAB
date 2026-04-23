@@ -1180,6 +1180,49 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertEqual(kwargs["llm_agents"], ())
             self.assertIsNone(kwargs["llm_client"])
 
+    def test_technical_timing_command_outputs_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            csv_path = Path(tmpdir) / "ohlcv.csv"
+            lines = ["date,open,high,low,close,volume"]
+            for idx in range(1, 31):
+                close = 10 + idx * 0.1
+                lines.append(f"2026-04-{idx:02d},10,11,9,{close:.2f},100000")
+            csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["technical-timing", "--ohlcv", str(csv_path)])
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(payload["guidance_type"], "research_only")
+
+    def test_memo_diff_bilingual_and_export_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prev = Path(tmpdir) / "prev.md"
+            curr = Path(tmpdir) / "curr.md"
+            bi = Path(tmpdir) / "bi.md"
+            html = Path(tmpdir) / "memo.html"
+            prev.write_text("## Investment Committee Memo\n- A\n", encoding="utf-8")
+            curr.write_text("## Investment Committee Memo\n- B\n", encoding="utf-8")
+            diff_output = io.StringIO()
+            with redirect_stdout(diff_output):
+                diff_exit = main(
+                    ["memo-diff", "--previous", str(prev), "--current", str(curr)]
+                )
+            self.assertEqual(diff_exit, 0)
+            self.assertTrue(json.loads(diff_output.getvalue())["has_changes"])
+            bilingual_exit = main(
+                ["memo-bilingual", "--input", str(curr), "--output", str(bi)]
+            )
+            self.assertEqual(bilingual_exit, 0)
+            self.assertIn("### 中文（机器草稿，需人工复核）", bi.read_text(encoding="utf-8"))
+            export_output = io.StringIO()
+            with redirect_stdout(export_output):
+                export_exit = main(
+                    ["memo-export", "--input", str(curr), "--html-output", str(html)]
+                )
+            self.assertEqual(export_exit, 0)
+            self.assertTrue(html.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

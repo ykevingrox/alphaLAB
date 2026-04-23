@@ -61,7 +61,9 @@ class WatchlistTest(unittest.TestCase):
             self.assertEqual(rows[0]["revenue_multiple"], 7.5)
             self.assertEqual(rows[0]["targets"], ["PD-1"])
             self.assertEqual(rows[0]["indications"], ["NSCLC"])
+            self.assertEqual(rows[0]["modalities"], ["mAb"])
             self.assertEqual(rows[0]["target_concentration_count"], 2)
+            self.assertEqual(rows[0]["modality_concentration_count"], 2)
             self.assertEqual(rows[0]["company_concentration_count"], 1)
             self.assertEqual(rows[0]["market_concentration_count"], 2)
             self.assertEqual(rows[0]["research_position_limit_pct"], 1.0)
@@ -133,9 +135,11 @@ class WatchlistTest(unittest.TestCase):
 
             self.assertEqual(rows[0]["target_concentration_count"], 3)
             self.assertEqual(rows[0]["indication_concentration_count"], 3)
+            self.assertEqual(rows[0]["modality_concentration_count"], 3)
             self.assertEqual(rows[0]["research_position_limit_pct"], 1.0)
             self.assertIn("target_concentration", rows[0]["guardrail_flags"])
             self.assertIn("indication_concentration", rows[0]["guardrail_flags"])
+            self.assertIn("modality_concentration", rows[0]["guardrail_flags"])
 
     def test_latest_watchlist_entries_keeps_newest_run_per_company(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -292,6 +296,7 @@ class WatchlistTest(unittest.TestCase):
                             "name": "Example Drug",
                             "target": "PD-1",
                             "indication": "NSCLC",
+                            "modality": "mAb",
                         }
                     ]
                 }
