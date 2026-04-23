@@ -124,6 +124,14 @@ Use this shape:
   extractor version is stale. Target-overlap seeds keep competitor
   indication as `to_verify` so the pipeline asset's indication is not
   misrepresented as a competitor label.
+- Global competitor discovery ingestion is now wired into the same generated
+  competitor draft path. If
+  `data/input/generated/<slug>_competitor_discovery_candidates.json` exists,
+  `draft_competitor_assets` review-gates each candidate before adding it:
+  source URL, source date, evidence snippet, rationale, non-self company, and
+  deterministic target-family match are required. Accepted rows remain
+  `needs_human_review` / `is_inferred` and carry the candidate's evidence URL;
+  rejected candidates are counted in `candidate_ingest`.
 - Live `company-report --auto-inputs --market-data hk-public` runs for both
   DualityBio (`09606.HK`) and Harbour BioMed (`02142.HK`) write
   `data/input/generated/<slug>_valuation.json` drafts sourced from the
@@ -490,7 +498,7 @@ default to `qwen3.5-plus`, cleaning up LLM-agent documentation drift, Leads
 Biolabs (`09887.HK`) fixture hardening, extraction-audit persistence,
 repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
 degradation. Extractor versions: `PIPELINE_EXTRACTOR_VERSION = 9` and
-`COMPETITOR_EXTRACTOR_VERSION = 4`:
+`COMPETITOR_EXTRACTOR_VERSION = 5`:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -502,13 +510,18 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 258 unit tests ran, 251 passed, 7 skipped (online Yahoo / online
+- 259 unit tests ran, 252 passed, 7 skipped (online Yahoo / online
   Tencent / Bailian Qwen integration tests plus Anthropic online
   self-skips; all guarded behind `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
   The latest coverage adds the Leads Biolabs source-snapshot fixture, saved
   extraction-audit artifact wiring, extraction-audit summary assertions,
   repeated-asset excerpt ranking, and ClinicalTrials.gov per-term failure
   degradation.
+- Competitor draft generation now emits `discovery_requests` for each
+  pipeline target and can ingest local LLM/web discovery candidate packs from
+  `*_competitor_discovery_candidates.json`. Offline tests cover accepting a
+  source-backed GPRC5D/CD3 global candidate for Leads Biolabs and rejecting
+  self-company, loose-target, and no-source candidates.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same full-test validation baseline.
@@ -556,6 +569,9 @@ Latest result:
   audit `10/12 supported`, `2 need review`, `0 missing anchors`. The remaining
   review assets are `LBL-056` and `LBL-082`, both missing target/mechanism
   because the source gives modality descriptions but not molecular targets.
+  After competitor extractor v5, the generated competitor draft still has
+  1 competitor without a candidate pack, but now also emits 10
+  `discovery_requests` and `candidate_ingest = 0 accepted / 0 rejected`.
   Full quick-report LLM smoke (`report "09887.HK" --json --no-save`) completed
   6/6 graph steps OK with 17,371 total LLM tokens. Pipeline triage now says the
   snapshot largely aligns with source text; remaining issues are real research
@@ -738,11 +754,11 @@ Latest smoke result:
 ### Current Task
 
 Harbour BioMed extraction hardening, Leads Biolabs third-fixture hardening,
-competitor seed expansion, full 02142 / 09887 LLM quick-report smokes,
-repeated-anchor excerpt ranking, and operator-facing extraction-audit
-persistence are closed for the current source-backed scope. Remaining
-deterministic warnings should stay review-gated unless the source text
-clearly resolves them.
+global competitor-discovery candidate ingestion, full 02142 / 09887 LLM
+quick-report smokes, repeated-anchor excerpt ranking, and operator-facing
+extraction-audit persistence are closed for the current source-backed scope.
+Remaining deterministic warnings should stay review-gated unless the source
+text clearly resolves them.
 
 LLM quota conservation is now part of the operating posture: the default
 Bailian model for development and smoke testing is `qwen3.5-plus`, and live
@@ -751,9 +767,10 @@ offline tests cannot cover.
 
 The latest 09887 run moved the next quality gap from extraction fidelity to
 competitive intelligence. The system can now source-ground most Leads Biolabs
-pipeline fields, but only auto-drafts one competitor seed, so LLM skeptic
-correctly flags competitive blindness for LBL-024 / LBL-034 and early TCE/ADC
-programs.
+pipeline fields and safely ingest evidence-backed global discovery candidates,
+but it still needs a live discovery runner that fills the candidate pack from
+bounded sources such as ClinicalTrials.gov, company pipeline pages, filings,
+and LLM-read snippets.
 
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
@@ -762,9 +779,10 @@ access recovers.
 
 ### Next Action
 
-1. Expand conservative competitor seeds for Leads/IO2.0-style targets:
-   PD-L1/4-1BB, GPRC5D/CD3, DLL3/CD3, CD38/GPRC5D/CD3, LAG-3/PD-1, and
-   selected TCE-ADC/BsADC modalities where credible public comparators exist.
+1. Build the live global competitor discovery runner that reads
+   `discovery_requests`, searches bounded public sources, uses LLM extraction
+   only to produce source-backed candidate rows, and writes
+   `<slug>_competitor_discovery_candidates.json`.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -814,9 +832,9 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Expand conservative competitor seeds for Leads/IO2.0-style targets and
-   rerun `report "09887.HK"` to confirm competition-triage improves without
-   treating generated seeds as curated truth.
+1. Build the live global competitor discovery runner and rerun
+   `report "09887.HK"` to confirm competition-triage improves without treating
+   generated candidates as curated truth.
 2. Run one live `qwen3.5-plus` smoke only when quota pressure eases or a
    provider/model compatibility question must be answered.
 3. Re-check quantitative macro feeds from a fresh network or after

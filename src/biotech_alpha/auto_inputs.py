@@ -51,7 +51,7 @@ HKEX_ACTIVE_STOCKS_URL = (
 )
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
 PIPELINE_EXTRACTOR_VERSION = 9
-COMPETITOR_EXTRACTOR_VERSION = 4
+COMPETITOR_EXTRACTOR_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -145,9 +145,13 @@ def generate_auto_inputs(
     text = document.text_path.read_text(encoding="utf-8")
     pipeline_path = generated_input_dir / f"{slug}_pipeline_assets.json"
     competitors_path = generated_input_dir / f"{slug}_competitors.json"
+    discovery_candidates_path = (
+        generated_input_dir / f"{slug}_competitor_discovery_candidates.json"
+    )
     financials_path = generated_input_dir / f"{slug}_financials.json"
     conference_path = generated_input_dir / f"{slug}_conference_catalysts.json"
     valuation_path = generated_input_dir / f"{slug}_valuation.json"
+    generation_warnings: list[str] = []
 
     if (
         overwrite
@@ -162,10 +166,24 @@ def generate_auto_inputs(
         _write_json(pipeline_path, pipeline_payload)
     else:
         pipeline_payload = _read_json(pipeline_path)
+    discovery_candidates, candidate_warning = _read_competitor_discovery_file(
+        discovery_candidates_path
+    )
+    if candidate_warning:
+        generation_warnings.append(candidate_warning)
+    candidates_newer = (
+        discovery_candidates_path.exists()
+        and (
+            not competitors_path.exists()
+            or discovery_candidates_path.stat().st_mtime
+            >= competitors_path.stat().st_mtime
+        )
+    )
     if (
         overwrite
         or not competitors_path.exists()
         or _competitor_draft_needs_refresh(competitors_path)
+        or candidates_newer
     ):
         _write_json(
             competitors_path,
@@ -173,6 +191,7 @@ def generate_auto_inputs(
                 identity=identity,
                 pipeline_assets_payload=pipeline_payload,
                 source=document,
+                discovery_candidates=discovery_candidates,
             ),
         )
     if overwrite or not financials_path.exists():
@@ -194,7 +213,6 @@ def generate_auto_inputs(
             ),
         )
 
-    valuation_warnings: list[str] = []
     valuation_written_path: Path | None = None
     if market_data_provider is not None and (
         overwrite or not valuation_path.exists()
@@ -203,13 +221,13 @@ def generate_auto_inputs(
             provider=market_data_provider,
             identity=identity,
         )
-        valuation_warnings.extend(provider_warnings)
+        generation_warnings.extend(provider_warnings)
         if payload is not None:
             draft = draft_valuation_snapshot(
                 identity=identity,
                 market_data=payload,
             )
-            valuation_warnings.extend(draft["warnings"])
+            generation_warnings.extend(draft["warnings"])
             if draft.get("writeable"):
                 _write_json(valuation_path, draft["payload"])
                 valuation_written_path = valuation_path
@@ -244,6 +262,10 @@ def generate_auto_inputs(
     }
     if valuation_written_path is not None:
         generated_inputs["valuation"] = valuation_written_path
+    if discovery_candidates_path.exists():
+        generated_inputs["competitor_discovery_candidates"] = (
+            discovery_candidates_path
+        )
 
     manifest_path = processed_dir / f"{date.today().isoformat()}_source_manifest.json"
     _write_json(
@@ -253,7 +275,7 @@ def generate_auto_inputs(
             "source_documents": [asdict(document)],
             "generated_inputs": generated_inputs,
             "validation": validation,
-            "warnings": list(valuation_warnings),
+            "warnings": list(generation_warnings),
         },
     )
     return AutoInputArtifacts(
@@ -265,7 +287,7 @@ def generate_auto_inputs(
         valuation=valuation_written_path,
         validation=validation,
         source_documents=(document,),
-        warnings=tuple(valuation_warnings),
+        warnings=tuple(generation_warnings),
     )
 
 
@@ -368,27 +390,35 @@ def draft_competitor_assets(
     identity: CompanyIdentity,
     pipeline_assets_payload: dict[str, Any],
     source: SourceDocument,
+    discovery_candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Draft a conservative competitor seed set from extracted targets.
 
     This is intentionally heuristic and human-review-first. The goal is
     to reduce zero-competitor runs by pre-populating plausible same-target
     peers for major disclosed targets, while keeping every row clearly
-    source-tagged as inferred.
+    source-tagged as inferred. Optional ``discovery_candidates`` are
+    source-backed records from a future LLM/web discovery layer; they are
+    still gated deterministically before entering the competitor draft.
     """
 
     competitors: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    accepted_candidates = 0
+    rejected_candidates = 0
+    discovery_requests: list[dict[str, Any]] = []
     rows = pipeline_assets_payload.get("assets", [])
     if not isinstance(rows, list):
         rows = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
+    pipeline_rows = [
+        row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("target") or "").strip()
+    ]
+    for row in pipeline_rows:
         target = str(row.get("target") or "").strip()
-        if not target:
-            continue
         pipeline_indication = str(row.get("indication") or "").strip()
+        discovery_requests.append(_competitor_discovery_request(row, target))
         for seed in _competitor_seeds_for_target(target):
             key = (seed["company"], seed["asset_name"])
             if key in seen:
@@ -431,6 +461,24 @@ def draft_competitor_assets(
             )
         if len(competitors) >= 16:
             break
+    for candidate in discovery_candidates or []:
+        drafted = _draft_competitor_from_discovery_candidate(
+            candidate=candidate,
+            identity=identity,
+            pipeline_rows=pipeline_rows,
+            source=source,
+        )
+        if drafted is None:
+            rejected_candidates += 1
+            continue
+        key = (drafted["company"], drafted["asset_name"])
+        if key in seen:
+            continue
+        seen.add(key)
+        competitors.append(drafted)
+        accepted_candidates += 1
+        if len(competitors) >= 16:
+            break
 
     return {
         "company": identity.company,
@@ -438,6 +486,19 @@ def draft_competitor_assets(
         "generated_by": "auto_inputs.target_overlap_seed",
         "generated_extractor_version": COMPETITOR_EXTRACTOR_VERSION,
         "needs_human_review": True,
+        "generation_strategy": [
+            "deterministic_target_overlap_seed",
+            "review_gated_global_discovery_candidates",
+        ],
+        "discovery_requests": discovery_requests,
+        "candidate_ingest": {
+            "accepted": accepted_candidates,
+            "rejected": rejected_candidates,
+            "notes": (
+                "Discovery candidates must include source URL/date, evidence "
+                "text, and a target family matching the pipeline asset."
+            ),
+        },
         "competitors": competitors,
     }
 
@@ -453,6 +514,187 @@ def _competitor_seeds_for_target(target: str) -> tuple[dict[str, str], ...]:
             seen.add(seed_key)
             seeds.append(seed)
     return tuple(seeds)
+
+
+def _competitor_discovery_request(
+    row: dict[str, Any],
+    target: str,
+) -> dict[str, Any]:
+    asset_name = str(row.get("name") or "").strip()
+    modality = str(row.get("modality") or "").strip()
+    target_query = target.replace("/", " ")
+    terms = [
+        f'"{target}" competitor clinical trial',
+        f'"{target}" {modality} pipeline'.strip(),
+        f'"{target_query}" biotech asset phase',
+    ]
+    return {
+        "pipeline_asset": asset_name,
+        "target": target,
+        "modality": modality or None,
+        "queries": list(dict.fromkeys(terms)),
+        "candidate_schema": {
+            "required": [
+                "company",
+                "asset_name",
+                "target",
+                "source_url",
+                "source_date",
+                "evidence_snippet",
+                "why_comparable",
+            ]
+        },
+    }
+
+
+def _draft_competitor_from_discovery_candidate(
+    *,
+    candidate: dict[str, Any],
+    identity: CompanyIdentity,
+    pipeline_rows: list[dict[str, Any]],
+    source: SourceDocument,
+) -> dict[str, Any] | None:
+    if not isinstance(candidate, dict):
+        return None
+    company = _candidate_text(candidate, "company")
+    asset_name = _candidate_text(candidate, "asset_name")
+    candidate_target = _candidate_text(candidate, "target")
+    source_url = _candidate_text(candidate, "source_url") or _candidate_text(
+        candidate, "evidence_url"
+    )
+    source_date = _candidate_text(candidate, "source_date")
+    evidence_snippet = _candidate_text(candidate, "evidence_snippet")
+    why_comparable = _candidate_text(candidate, "why_comparable")
+    if not (
+        company
+        and asset_name
+        and candidate_target
+        and source_url
+        and source_date
+        and evidence_snippet
+        and why_comparable
+    ):
+        return None
+    if _same_compact_text(company, identity.company):
+        return None
+    pipeline_row = _matching_pipeline_row(candidate_target, pipeline_rows)
+    if pipeline_row is None:
+        return None
+    pipeline_target = str(pipeline_row.get("target") or "").strip()
+    confidence = _candidate_confidence(candidate.get("confidence"), default=0.45)
+    pipeline_asset = str(pipeline_row.get("name") or "").strip()
+    claim = (
+        f"Global discovery candidate for {pipeline_asset or pipeline_target}: "
+        f"{why_comparable} Evidence snippet: {evidence_snippet}"
+    )
+    return {
+        "company": company,
+        "asset_name": asset_name,
+        "aliases": _candidate_aliases(candidate.get("aliases")),
+        "target": pipeline_target,
+        "mechanism": _candidate_text(candidate, "mechanism"),
+        "indication": _candidate_text(candidate, "indication") or "to_verify",
+        "phase": _candidate_text(candidate, "phase") or "to_verify",
+        "geography": _candidate_text(candidate, "geography") or "global",
+        "differentiation": (
+            "Review-gated global discovery candidate; verify ownership, "
+            "phase, indication, and true competitive proximity before use."
+        ),
+        "generated_by_llm": bool(candidate.get("generated_by_llm", True)),
+        "source_query": _candidate_text(candidate, "source_query"),
+        "matched_pipeline_asset": pipeline_asset or None,
+        "evidence": [
+            {
+                "claim": claim,
+                "source": source_url,
+                "source_date": source_date,
+                "retrieved_at": _candidate_text(candidate, "retrieved_at"),
+                "confidence": min(confidence, 0.65),
+                "is_inferred": True,
+            },
+            {
+                "claim": (
+                    "Candidate accepted by deterministic target-family gate "
+                    f"against {pipeline_target} from {source.title}."
+                ),
+                "source": source.url,
+                "source_date": source.publication_date,
+                "confidence": 0.35,
+                "is_inferred": True,
+            },
+        ],
+    }
+
+
+def _matching_pipeline_row(
+    candidate_target: str,
+    pipeline_rows: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for row in pipeline_rows:
+        pipeline_target = str(row.get("target") or "").strip()
+        if _target_family_matches(candidate_target, pipeline_target):
+            return row
+    return None
+
+
+def _candidate_text(candidate: dict[str, Any], key: str) -> str | None:
+    value = candidate.get(key)
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _candidate_aliases(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    return [
+        item.strip()
+        for item in value
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _candidate_confidence(value: Any, *, default: float) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return default
+    if confidence < 0:
+        return default
+    if confidence > 1:
+        return 1.0
+    return confidence
+
+
+def _target_family_matches(candidate_target: str, pipeline_target: str) -> bool:
+    candidate_compact = _compact_target_key(candidate_target)
+    pipeline_compact = _compact_target_key(pipeline_target)
+    if candidate_compact and candidate_compact == pipeline_compact:
+        return True
+    candidate_tokens = _target_tokens(candidate_target)
+    pipeline_tokens = _target_tokens(pipeline_target)
+    return bool(candidate_tokens) and candidate_tokens == pipeline_tokens
+
+
+def _target_tokens(value: str) -> tuple[str, ...]:
+    normalized = re.sub(r"\s+(?:x|X)\s+", "/", value)
+    normalized = normalized.replace("×", "/")
+    parts = re.split(r"/+", normalized)
+    tokens = [
+        _compact_target_key(part)
+        for part in parts
+        if _compact_target_key(part)
+    ]
+    return tuple(sorted(dict.fromkeys(tokens)))
+
+
+def _same_compact_text(left: str, right: str | None) -> bool:
+    if not left or not right:
+        return False
+    return _compact_target_key(left) == _compact_target_key(right)
 
 
 def _target_seed_keys(target: str) -> tuple[str, ...]:
@@ -1752,6 +1994,25 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_competitor_discovery_file(
+    path: Path,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if not path.exists():
+        return [], None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - degrade candidate ingestion.
+        return [], f"competitor discovery candidate file unreadable: {exc}"
+    rows = payload.get("candidates") if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return [], "competitor discovery candidate file must contain candidates list"
+    candidates = [row for row in rows if isinstance(row, dict)]
+    skipped = len(rows) - len(candidates)
+    if skipped:
+        return candidates, f"ignored {skipped} non-object discovery candidates"
+    return candidates, None
 
 
 def _pipeline_draft_needs_refresh(path: Path) -> bool:

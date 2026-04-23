@@ -307,6 +307,89 @@ class AutoInputsTest(unittest.TestCase):
         for row in payload["competitors"]:
             self.assertEqual(row["indication"], "to_verify")
 
+    def test_drafts_competitor_assets_ingests_discovery_candidates(self) -> None:
+        identity = CompanyIdentity(company="Leads Biolabs", ticker="09887.HK")
+        source = _leads_source()
+        pipeline_payload = draft_pipeline_assets(
+            identity=identity,
+            text=LEADS_SAMPLE_TEXT,
+            source=source,
+        )
+        candidates = [
+            {
+                "company": "Regeneron",
+                "asset_name": "Linvoseltamab",
+                "target": "GPRC5D x CD3",
+                "modality": "bispecific antibody",
+                "indication": "multiple myeloma",
+                "phase": "Phase 3",
+                "geography": "global",
+                "source_url": "https://clinicaltrials.gov/study/NCT00000001",
+                "source_date": "2026-01-15",
+                "evidence_snippet": "A GPRC5D x CD3 bispecific antibody.",
+                "why_comparable": "Same GPRC5D/CD3 target family as LBL-034.",
+                "source_query": "GPRC5D CD3 clinical trial",
+                "confidence": 0.72,
+            },
+            {
+                "company": "Leads Biolabs",
+                "asset_name": "LBL-034",
+                "target": "GPRC5D/CD3",
+                "source_url": "https://example.com/self",
+                "source_date": "2026-01-15",
+                "evidence_snippet": "Self asset.",
+                "why_comparable": "Same company should be rejected.",
+            },
+            {
+                "company": "Loose PD-1 Co",
+                "asset_name": "PD-1 asset",
+                "target": "PD-1",
+                "source_url": "https://example.com/pd1",
+                "source_date": "2026-01-15",
+                "evidence_snippet": "PD-1 monotherapy.",
+                "why_comparable": "Loose single-target match should reject.",
+            },
+            {
+                "company": "No Source Bio",
+                "asset_name": "Mystery asset",
+                "target": "DLL3/CD3",
+                "source_date": "2026-01-15",
+                "evidence_snippet": "Missing source URL.",
+                "why_comparable": "Insufficient evidence.",
+            },
+        ]
+
+        payload = draft_competitor_assets(
+            identity=identity,
+            pipeline_assets_payload=pipeline_payload,
+            source=source,
+            discovery_candidates=candidates,
+        )
+
+        pairs = {
+            (row["company"], row["asset_name"], row["target"])
+            for row in payload["competitors"]
+        }
+        self.assertIn(("Regeneron", "Linvoseltamab", "GPRC5D/CD3"), pairs)
+        self.assertNotIn(("Leads Biolabs", "LBL-034", "GPRC5D/CD3"), pairs)
+        self.assertEqual(payload["candidate_ingest"]["accepted"], 1)
+        self.assertEqual(payload["candidate_ingest"]["rejected"], 3)
+        requests = {
+            request["target"]: request
+            for request in payload["discovery_requests"]
+        }
+        self.assertIn("GPRC5D/CD3", requests)
+        self.assertIn("candidate_schema", requests["GPRC5D/CD3"])
+        linvo = next(
+            row
+            for row in payload["competitors"]
+            if row["asset_name"] == "Linvoseltamab"
+        )
+        self.assertTrue(linvo["generated_by_llm"])
+        self.assertEqual(linvo["indication"], "multiple myeloma")
+        self.assertEqual(linvo["evidence"][0]["source_date"], "2026-01-15")
+        self.assertTrue(linvo["evidence"][0]["is_inferred"])
+
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
             identity=CompanyIdentity(company="DualityBio", ticker="09606.HK"),
@@ -382,6 +465,30 @@ class AutoInputsTest(unittest.TestCase):
             root = Path(tmpdir)
             raw_dir = root / "raw_fixture"
             raw_dir.mkdir()
+            generated_dir = root / "generated"
+            generated_dir.mkdir()
+            discovery_path = (
+                generated_dir / "09606_hk_competitor_discovery_candidates.json"
+            )
+            discovery_path.write_text(
+                json.dumps(
+                    {
+                        "generated_by": "llm.global_competitor_discovery",
+                        "candidates": [
+                            {
+                                "company": "Example Global Bio",
+                                "asset_name": "HER2 candidate",
+                                "target": "HER2",
+                                "source_url": "https://example.com/her2",
+                                "source_date": "2026-01-15",
+                                "evidence_snippet": "HER2-directed asset.",
+                                "why_comparable": "Same target as DB-1303.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             source = _source(
                 file_path=raw_dir / "results.pdf",
                 text_path=raw_dir / "results.txt",
@@ -406,7 +513,7 @@ class AutoInputsTest(unittest.TestCase):
                                 company="DualityBio",
                                 ticker="09606.HK",
                             ),
-                            input_dir=root / "generated",
+                            input_dir=generated_dir,
                             output_dir=root / "out",
                         )
 
@@ -428,10 +535,15 @@ class AutoInputsTest(unittest.TestCase):
 
             self.assertEqual(pipeline["assets"][0]["name"], "DB-1303")
             self.assertGreaterEqual(len(competitors["competitors"]), 1)
+            self.assertEqual(competitors["candidate_ingest"]["accepted"], 1)
             self.assertEqual(financials["cash_and_equivalents"], 3324529000)
             self.assertEqual(conference["catalysts"][0]["category"], "conference")
             self.assertIn("pipeline_assets", manifest["generated_inputs"])
             self.assertIn("competitors", manifest["generated_inputs"])
+            self.assertIn(
+                "competitor_discovery_candidates",
+                manifest["generated_inputs"],
+            )
             self.assertIn("competitors", manifest["validation"])
 
     def test_generate_auto_inputs_reuses_existing_pipeline_payload(self) -> None:
