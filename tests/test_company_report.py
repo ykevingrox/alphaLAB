@@ -157,6 +157,55 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("company-report", payload["rerun_command"])
             self.assertNotIn("--auto-inputs", payload["rerun_command"])
 
+    def test_company_report_can_write_hkexnews_updates_artifact(self) -> None:
+        rss_text = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>HKEXnews</title>
+    <item>
+      <title>09606 - Voluntary Announcement</title>
+      <link>https://www.hkexnews.hk/abc</link>
+      <guid>hkex-abc</guid>
+      <pubDate>Thu, 23 Apr 2026 10:00:00 +0800</pubDate>
+      <category>Announcement</category>
+    </item>
+  </channel>
+</rss>
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            feed_path = root / "hkex_feed.xml"
+            state_path = root / "hkex_seen.json"
+            feed_path.write_text(rss_text, encoding="utf-8")
+            result = run_company_report(
+                company="DualityBio",
+                ticker="09606.HK",
+                input_dir=root / "input",
+                output_dir=root / "out",
+                limit=1,
+                client=FakeClinicalTrialsClient(),
+                now=datetime(2026, 4, 21, tzinfo=UTC),
+                hkexnews_feed_file=feed_path,
+                hkexnews_state_file=state_path,
+            )
+            self.assertIsNotNone(result.hkexnews_updates_path)
+            assert result.hkexnews_updates_path is not None
+            hkex_payload = json.loads(
+                Path(result.hkexnews_updates_path).read_text(encoding="utf-8")
+            )
+            self.assertEqual(hkex_payload["new_count"], 1)
+            self.assertEqual(hkex_payload["ticker_filter"], "09606.HK")
+            summary = company_report_summary(result)
+            self.assertEqual(
+                summary["hkexnews_updates_path"],
+                str(result.hkexnews_updates_path),
+            )
+            manifest = json.loads(
+                Path(result.research_result.artifacts.manifest_json).read_text()
+            )
+            self.assertIn("hkexnews_updates", manifest["artifacts"])
+            self.assertEqual(manifest["hkexnews_updates"]["new_count"], 1)
+
     def test_saved_memo_includes_llm_addendum(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             client = FakeClinicalTrialsClient()

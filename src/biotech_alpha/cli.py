@@ -306,6 +306,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--hkexnews-feed-url",
+        help="Optional HKEXnews RSS URL for change tracking artifacts.",
+    )
+    company_report_parser.add_argument(
+        "--hkexnews-feed-file",
+        help="Optional local HKEXnews RSS XML file path for offline tracking.",
+    )
+    company_report_parser.add_argument(
+        "--hkexnews-state-file",
+        default="data/cache/hkexnews/seen_guids.json",
+        help="Path to persist seen HKEXnews GUID state across runs.",
+    )
+    company_report_parser.add_argument(
         "--no-asset-queries",
         action="store_true",
         help="Do not run extra ClinicalTrials.gov searches for asset names/aliases.",
@@ -419,6 +432,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="Print the compact machine-readable JSON summary.",
+    )
+    quick_report_parser.add_argument(
+        "--hkexnews-feed-url",
+        help="Optional HKEXnews RSS URL for change tracking artifacts.",
+    )
+    quick_report_parser.add_argument(
+        "--hkexnews-feed-file",
+        help="Optional local HKEXnews RSS XML file path for offline tracking.",
+    )
+    quick_report_parser.add_argument(
+        "--hkexnews-state-file",
+        default="data/cache/hkexnews/seen_guids.json",
+        help="Path to persist seen HKEXnews GUID state across runs.",
     )
 
     template_parser = subparsers.add_parser(
@@ -813,6 +839,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_client=llm_client,
             llm_trace_path=getattr(args, "llm_trace_path", None),
             macro_signals_provider=macro_signals_provider,
+            hkexnews_feed_url=getattr(args, "hkexnews_feed_url", None),
+            hkexnews_feed_file=getattr(args, "hkexnews_feed_file", None),
+            hkexnews_state_file=getattr(
+                args,
+                "hkexnews_state_file",
+                "data/cache/hkexnews/seen_guids.json",
+            ),
         )
         print(json.dumps(company_report_summary(result), ensure_ascii=False, indent=2))
         return 0
@@ -900,6 +933,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_client=llm_client,
             llm_trace_path=None,
             macro_signals_provider=macro_signals_provider,
+            hkexnews_feed_url=getattr(args, "hkexnews_feed_url", None),
+            hkexnews_feed_file=getattr(args, "hkexnews_feed_file", None),
+            hkexnews_state_file=getattr(
+                args,
+                "hkexnews_state_file",
+                "data/cache/hkexnews/seen_guids.json",
+            ),
         )
         summary = company_report_summary(result)
         if args.json:

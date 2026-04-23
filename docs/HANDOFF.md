@@ -592,6 +592,14 @@ Use this shape:
     CLI integration (`tests/test_hkexnews.py`, `tests/test_cli.py`).
   - Boundary: this is the ingestion/change-tracking baseline only; it does not
     yet auto-map announcements into memo catalysts or valuation deltas.
+- P2.10 integration step landed:
+  - `company-report` / quick `report` now accept optional HKEXnews feed inputs
+    and persist a run-scoped `hkexnews_updates` artifact.
+  - Saved manifest now includes `artifacts.hkexnews_updates` plus compact
+    `hkexnews_updates` counters (`item_count`, `new_count`, `ticker_filter`).
+  - Summary payload now exposes `hkexnews_updates_path` for downstream tools.
+  - Boundary: announcement items are tracked and persisted, but event typing and
+    memo/catalyst threading are still pending.
 
 ## Current Repo State
 
@@ -886,10 +894,10 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Wire `hkexnews-track` outputs into report ingestion path so saved runs carry
-   structured announcement-change artifacts.
-2. Add deterministic event typing for common HKEX announcement classes
+1. Add deterministic event typing for common HKEX announcement classes
    (clinical, regulatory, financing, corporate) with review flags.
+2. Thread typed HKEXnews events into catalyst/memo sections with clear
+   review-gated labels.
 3. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
 

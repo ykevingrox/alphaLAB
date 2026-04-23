@@ -10,6 +10,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from biotech_alpha.hkexnews import (
+    fetch_hkex_rss,
+    filter_hkex_items_by_ticker,
+    parse_hkex_rss,
+    track_hkex_news_updates,
+)
 from biotech_alpha.research import (
     ClinicalTrialsSource,
     SingleCompanyResearchResult,
@@ -68,6 +74,7 @@ class CompanyReportResult:
     auto_input_artifacts: Any | None = None
     llm_agent_result: Any | None = None
     llm_trace_path: Path | None = None
+    hkexnews_updates_path: Path | None = None
 
 
 INPUT_SUFFIXES = {
@@ -169,6 +176,9 @@ def run_company_report(
     llm_client: Any | None = None,
     llm_trace_path: str | Path | None = None,
     macro_signals_provider: Callable[[str], dict[str, Any] | None] | None = None,
+    hkexnews_feed_url: str | None = None,
+    hkexnews_feed_file: str | Path | None = None,
+    hkexnews_state_file: str | Path = "data/cache/hkexnews/seen_guids.json",
 ) -> CompanyReportResult:
     """Run a company report from a company name or ticker.
 
@@ -294,6 +304,14 @@ def run_company_report(
         llm_agent_result=llm_agent_result,
         llm_trace_path=resolved_llm_trace_path,
     )
+    if save and (hkexnews_feed_url or hkexnews_feed_file):
+        report_result = write_hkexnews_updates_report(
+            output_dir=output_dir,
+            result=report_result,
+            feed_url=hkexnews_feed_url,
+            feed_file=hkexnews_feed_file,
+            state_file=hkexnews_state_file,
+        )
     if save:
         report_result = write_extraction_audit_report(
             output_dir=output_dir,
@@ -1456,6 +1474,50 @@ def write_extraction_audit_report(
     return result
 
 
+def write_hkexnews_updates_report(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+    feed_url: str | None = None,
+    feed_file: str | Path | None = None,
+    state_file: str | Path = "data/cache/hkexnews/seen_guids.json",
+) -> CompanyReportResult:
+    """Save HKEXnews updates and attach artifact metadata to manifest."""
+
+    if not feed_url and not feed_file:
+        return result
+    xml_text = (
+        Path(feed_file).read_text(encoding="utf-8")
+        if feed_file
+        else fetch_hkex_rss(feed_url or "")
+    )
+    items = parse_hkex_rss(xml_text)
+    filtered = filter_hkex_items_by_ticker(items, ticker=result.identity.ticker)
+    payload = track_hkex_news_updates(items=filtered, state_path=state_file)
+    payload["ticker_filter"] = result.identity.ticker
+    payload["feed_url"] = feed_url
+
+    output_path = _hkexnews_updates_report_path(output_dir=output_dir, result=result)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _update_manifest_with_extra_artifact(
+        result=result,
+        artifact_key="hkexnews_updates",
+        artifact_path=output_path,
+        payload_key="hkexnews_updates",
+        payload_value={
+            "item_count": payload.get("item_count"),
+            "new_count": payload.get("new_count"),
+            "ticker_filter": payload.get("ticker_filter"),
+            "state_path": payload.get("state_path"),
+        },
+    )
+    return replace(result, hkexnews_updates_path=output_path)
+
+
 def extraction_audit_payload(result: CompanyReportResult) -> dict[str, Any]:
     """Return the persisted JSON shape for extraction audit artifacts."""
 
@@ -1490,6 +1552,25 @@ def _extraction_audit_report_path(
     )
 
 
+def _hkexnews_updates_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_hkexnews_updates.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_hkexnews_updates.json"
+    )
+
+
 def _update_manifest_with_extraction_audit(
     *,
     result: CompanyReportResult,
@@ -1514,6 +1595,32 @@ def _update_manifest_with_extraction_audit(
         "source_excerpt": audit.get("source_excerpt"),
         "top_review_assets": audit.get("top_review_assets"),
     }
+    manifest_path.write_text(
+        json.dumps(_jsonable(payload), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _update_manifest_with_extra_artifact(
+    *,
+    result: CompanyReportResult,
+    artifact_key: str,
+    artifact_path: Path,
+    payload_key: str,
+    payload_value: dict[str, Any],
+) -> None:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest is None:
+        return
+    manifest_path = Path(manifest)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    artifacts = payload.setdefault("artifacts", {})
+    if isinstance(artifacts, dict):
+        artifacts[artifact_key] = str(artifact_path)
+    payload[payload_key] = payload_value
     manifest_path.write_text(
         json.dumps(_jsonable(payload), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -1599,6 +1706,9 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         ),
         "llm_trace_path": (
             str(result.llm_trace_path) if result.llm_trace_path else None
+        ),
+        "hkexnews_updates_path": (
+            str(result.hkexnews_updates_path) if result.hkexnews_updates_path else None
         ),
     }
 
