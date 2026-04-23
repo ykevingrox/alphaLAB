@@ -125,6 +125,8 @@ Quick-mode defaults:
 - Enables `--auto-inputs`.
 - Enables `hk-public` market data auto-draft.
 - Enables macro live-signals (`yahoo-hk`) with cache.
+- Enables ClinicalTrials.gov competitor discovery for generated competitor
+  candidate packs.
 - Enables the full LLM stack by default:
   `pipeline-triage`, `financial-triage`, `competition-triage`,
   `macro-context`, `scientific-skeptic`.

@@ -146,7 +146,8 @@ CTLA-4, FcRn, TSLP, and normalized B7H4/B7-H4 composite matching,
 while still marking generated competitors for human review and keeping
 competitor indication as `to_verify`. Generated competitor drafts now also
 emit source-backed discovery requests and can ingest review-gated global
-discovery candidate packs produced by a future LLM/web runner.
+discovery candidate packs. ClinicalTrials.gov is the first live source wired
+to fill those packs.
 
 - Group assets by target, mechanism, indication, and geography.
 - Compare stage, data maturity, safety, efficacy, and commercialization status.
@@ -426,9 +427,11 @@ and web ingestion out).
   `discovery_requests` and can ingest
   `<slug>_competitor_discovery_candidates.json` rows only when they include
   source URL, source date, evidence text, rationale, non-self company, and a
-  deterministic target-family match. The remaining gap is the live bounded
-  discovery runner that fills those candidate packs with LLM-read evidence
-  from ClinicalTrials.gov, company pages, filings, and other public sources.
+  deterministic target-family match. The first live bounded runner now uses
+  ClinicalTrials.gov only, converts target-family-matching trials into
+  review-gated candidates, and is enabled by default in quick `report`
+  mode. The remaining gap is query quality / recall within CT.gov before
+  adding company pages, filings, or other public sources.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`

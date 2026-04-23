@@ -67,6 +67,8 @@ Quick-mode behavior:
   print the compact machine-readable summary instead.
 - Auto-enables draft input generation (`auto_inputs`).
 - Auto-enables market data (`hk-public`) and macro live signals (`yahoo-hk`).
+- Auto-enables ClinicalTrials.gov competitor discovery for generated
+  competitor candidate packs.
 - Auto-enables all current LLM agents including `competition-triage`.
 - Fails fast when LLM env is missing or invalid (default). To override:
   `--allow-no-llm`.
@@ -99,6 +101,8 @@ This currently:
 - Downloads the source PDF under `data/raw/hkex/`.
 - Extracts text with `pypdf`.
 - Writes draft inputs under `data/input/generated/`.
+- Optionally writes a ClinicalTrials.gov competitor-discovery candidate pack
+  when `--competitor-discovery clinicaltrials` is enabled.
 - Runs `pipeline-validate` and `financial-validate` internally.
 - Runs `conference-validate` internally.
 - Runs the report with those generated inputs.
@@ -219,6 +223,10 @@ Useful options:
 - `--search-term`: override the company-level ClinicalTrials.gov search term.
 - `--no-asset-queries`: search only by company/search term, not asset aliases.
 - `--max-asset-query-terms`: cap extra asset-name and alias searches.
+- `--competitor-discovery clinicaltrials`: fill generated competitor
+  candidate packs from ClinicalTrials.gov target discovery requests.
+- `--competitor-discovery-max-requests`: cap how many target discovery
+  requests are sent to ClinicalTrials.gov.
 - `--output-dir`: write artifacts somewhere other than `data/`.
 - `--no-save`: run without writing artifacts.
 

@@ -9,12 +9,13 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 from urllib.parse import urljoin
 
 import requests
 from pypdf import PdfReader
 
+from biotech_alpha.clinicaltrials import extract_trial_summaries
 from biotech_alpha.company_report import CompanyIdentity
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
@@ -43,6 +44,18 @@ from biotech_alpha.valuation import (
 
 
 MarketDataProvider = Callable[[CompanyIdentity], dict[str, Any] | None]
+
+
+class ClinicalTrialsSearchClient(Protocol):
+    def search_studies(
+        self,
+        term: str,
+        *,
+        page_size: int = 10,
+        page_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Search ClinicalTrials.gov-style records."""
+        ...
 
 
 HKEX_BASE_URL = "https://www1.hkexnews.hk"
@@ -91,6 +104,9 @@ def generate_auto_inputs(
     overwrite: bool = False,
     timeout: int = 30,
     market_data_provider: MarketDataProvider | None = None,
+    competitor_discovery_client: ClinicalTrialsSearchClient | None = None,
+    competitor_discovery_page_size: int = 5,
+    competitor_discovery_max_requests: int = 3,
 ) -> AutoInputArtifacts:
     """Generate draft curated inputs for the current HK biotech MVP.
 
@@ -194,6 +210,42 @@ def generate_auto_inputs(
                 discovery_candidates=discovery_candidates,
             ),
         )
+    if competitor_discovery_client is not None:
+        competitor_payload = _read_json(competitors_path)
+        if (
+            overwrite
+            or not discovery_candidates_path.exists()
+            or _competitor_discovery_needs_refresh(
+                discovery_candidates_path,
+                competitor_payload=competitor_payload,
+                max_requests=competitor_discovery_max_requests,
+            )
+        ):
+            discovery_payload = (
+                draft_competitor_discovery_candidates_from_clinical_trials(
+                    identity=identity,
+                    competitor_draft_payload=competitor_payload,
+                    client=competitor_discovery_client,
+                    page_size=competitor_discovery_page_size,
+                    max_requests=competitor_discovery_max_requests,
+                )
+            )
+            _write_json(discovery_candidates_path, discovery_payload)
+            generation_warnings.extend(discovery_payload.get("warnings", []))
+            discovery_candidates, candidate_warning = (
+                _read_competitor_discovery_file(discovery_candidates_path)
+            )
+            if candidate_warning:
+                generation_warnings.append(candidate_warning)
+            _write_json(
+                competitors_path,
+                draft_competitor_assets(
+                    identity=identity,
+                    pipeline_assets_payload=pipeline_payload,
+                    source=document,
+                    discovery_candidates=discovery_candidates,
+                ),
+            )
     if overwrite or not financials_path.exists():
         _write_json(
             financials_path,
@@ -501,6 +553,197 @@ def draft_competitor_assets(
         },
         "competitors": competitors,
     }
+
+
+def draft_competitor_discovery_candidates_from_clinical_trials(
+    *,
+    identity: CompanyIdentity,
+    competitor_draft_payload: dict[str, Any],
+    client: ClinicalTrialsSearchClient,
+    page_size: int = 5,
+    max_requests: int = 8,
+) -> dict[str, Any]:
+    """Create source-backed competitor candidates from ClinicalTrials.gov.
+
+    This runner is intentionally bounded and conservative: a returned trial is
+    only converted into a candidate when the trial text itself mentions every
+    target token from the pipeline discovery request.
+    """
+
+    requests_payload = competitor_draft_payload.get("discovery_requests")
+    if not isinstance(requests_payload, list):
+        requests_payload = []
+    candidates: list[dict[str, Any]] = []
+    searched: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    request_count = 0
+    for request in requests_payload:
+        if request_count >= max_requests:
+            break
+        if not isinstance(request, dict):
+            continue
+        target = _candidate_text(request, "target")
+        if not target:
+            continue
+        query = _clinical_trials_query_for_competitor_request(request)
+        if not query:
+            continue
+        request_count += 1
+        searched.append(
+            {
+                "pipeline_asset": _candidate_text(request, "pipeline_asset"),
+                "target": target,
+                "query": query,
+            }
+        )
+        try:
+            response = client.search_studies(query, page_size=page_size)
+        except Exception as exc:  # noqa: BLE001 - discovery should degrade.
+            warnings.append(
+                f"ClinicalTrials.gov competitor discovery failed for "
+                f"{target}: {exc}"
+            )
+            continue
+        for trial in extract_trial_summaries(response):
+            candidate = _clinical_trial_competitor_candidate(
+                identity=identity,
+                request=request,
+                target=target,
+                query=query,
+                trial=trial,
+            )
+            if candidate is None:
+                continue
+            key = (
+                _compact_target_key(candidate["company"]),
+                _compact_target_key(candidate["asset_name"]),
+                str(candidate.get("source_url") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+    return {
+        "company": identity.company,
+        "ticker": identity.ticker,
+        "generated_by": "auto_inputs.clinicaltrials_competitor_discovery",
+        "generated_extractor_version": COMPETITOR_EXTRACTOR_VERSION,
+        "source": "ClinicalTrials.gov",
+        "max_requests": max_requests,
+        "requests_searched": searched,
+        "warnings": warnings,
+        "candidates": candidates,
+        "needs_human_review": True,
+    }
+
+
+def _clinical_trials_query_for_competitor_request(
+    request: dict[str, Any],
+) -> str | None:
+    target = _candidate_text(request, "target")
+    if not target:
+        return None
+    modality = _candidate_text(request, "modality") or ""
+    target_query = target.replace("/", " ").replace("×", " ")
+    return " ".join(part for part in (target_query, modality) if part).strip()
+
+
+def _clinical_trial_competitor_candidate(
+    *,
+    identity: CompanyIdentity,
+    request: dict[str, Any],
+    target: str,
+    query: str,
+    trial: Any,
+) -> dict[str, Any] | None:
+    if not _trial_mentions_target(trial, target):
+        return None
+    sponsor = str(getattr(trial, "sponsor", "") or "").strip()
+    if not sponsor or _same_compact_text(sponsor, identity.company):
+        return None
+    source_date = str(getattr(trial, "last_update_posted", "") or "").strip()
+    if not source_date:
+        return None
+    asset_name = _trial_candidate_asset_name(trial)
+    if not asset_name:
+        return None
+    registry_id = str(getattr(trial, "registry_id", "") or "").strip()
+    source_url = _clinicaltrials_study_url(registry_id)
+    if not source_url:
+        return None
+    pipeline_asset = _candidate_text(request, "pipeline_asset") or target
+    snippet = _clinical_trial_evidence_snippet(trial)
+    return {
+        "company": sponsor,
+        "asset_name": asset_name,
+        "aliases": [registry_id] if registry_id else [],
+        "target": target,
+        "modality": _candidate_text(request, "modality"),
+        "indication": _trial_conditions_text(trial) or "to_verify",
+        "phase": str(getattr(trial, "phase", "") or "").strip() or "to_verify",
+        "geography": "global",
+        "source_url": source_url,
+        "source_date": source_date,
+        "evidence_snippet": snippet,
+        "why_comparable": (
+            f"ClinicalTrials.gov record mentions the {target} target family "
+            f"and was discovered from the request for {pipeline_asset}."
+        ),
+        "source_query": query,
+        "confidence": 0.55,
+        "generated_by_llm": False,
+    }
+
+
+def _trial_mentions_target(trial: Any, target: str) -> bool:
+    haystack = _compact_target_key(
+        " ".join(
+            [
+                str(getattr(trial, "title", "") or ""),
+                " ".join(getattr(trial, "conditions", ()) or ()),
+                " ".join(getattr(trial, "interventions", ()) or ()),
+            ]
+        )
+    )
+    tokens = _target_tokens(target)
+    return bool(tokens) and all(token in haystack for token in tokens)
+
+
+def _trial_candidate_asset_name(trial: Any) -> str | None:
+    for intervention in getattr(trial, "interventions", ()) or ():
+        text = str(intervention or "").strip()
+        if text:
+            return text
+    title = str(getattr(trial, "title", "") or "").strip()
+    return title[:80] if title else None
+
+
+def _clinical_trial_evidence_snippet(trial: Any) -> str:
+    parts = [
+        str(getattr(trial, "title", "") or "").strip(),
+        "Interventions: "
+        + "; ".join(getattr(trial, "interventions", ()) or ()),
+        "Conditions: " + "; ".join(getattr(trial, "conditions", ()) or ()),
+        "Phase: " + str(getattr(trial, "phase", "") or "").strip(),
+        "Status: " + str(getattr(trial, "status", "") or "").strip(),
+    ]
+    return " | ".join(part for part in parts if part and not part.endswith(": "))
+
+
+def _trial_conditions_text(trial: Any) -> str | None:
+    conditions = [
+        str(condition).strip()
+        for condition in getattr(trial, "conditions", ()) or ()
+        if str(condition).strip()
+    ]
+    return "; ".join(conditions) if conditions else None
+
+
+def _clinicaltrials_study_url(registry_id: str) -> str | None:
+    if not registry_id:
+        return None
+    return f"https://clinicaltrials.gov/study/{registry_id}"
 
 
 def _competitor_seeds_for_target(target: str) -> tuple[dict[str, str], ...]:
@@ -2013,6 +2256,43 @@ def _read_competitor_discovery_file(
     if skipped:
         return candidates, f"ignored {skipped} non-object discovery candidates"
     return candidates, None
+
+
+def _competitor_discovery_needs_refresh(
+    path: Path,
+    *,
+    competitor_payload: dict[str, Any],
+    max_requests: int,
+) -> bool:
+    try:
+        payload = _read_json(path)
+    except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
+        return True
+    if (
+        payload.get("generated_by")
+        != "auto_inputs.clinicaltrials_competitor_discovery"
+    ):
+        return True
+    if payload.get("generated_extractor_version") != COMPETITOR_EXTRACTOR_VERSION:
+        return True
+    if payload.get("max_requests") != max_requests:
+        return True
+    expected_targets = _request_targets(
+        competitor_payload.get("discovery_requests")
+    )[:max_requests]
+    actual_targets = _request_targets(payload.get("requests_searched"))
+    return expected_targets != actual_targets
+
+
+def _request_targets(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    targets = [
+        str(item.get("target") or "").strip()
+        for item in value
+        if isinstance(item, dict) and str(item.get("target") or "").strip()
+    ]
+    return tuple(dict.fromkeys(targets))
 
 
 def _pipeline_draft_needs_refresh(path: Path) -> bool:

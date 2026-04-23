@@ -14,6 +14,7 @@ from biotech_alpha.auto_inputs import (
     SourceDocument,
     _resolve_hkex_stock_id,
     draft_competitor_assets,
+    draft_competitor_discovery_candidates_from_clinical_trials,
     draft_conference_catalysts,
     draft_financial_snapshot,
     draft_pipeline_assets,
@@ -21,6 +22,22 @@ from biotech_alpha.auto_inputs import (
     generate_auto_inputs,
 )
 from biotech_alpha.company_report import CompanyIdentity
+
+
+class FakeClinicalTrialsClient:
+    def __init__(self, responses: dict[str, dict] | None = None) -> None:
+        self.responses = responses or {}
+        self.queries: list[str] = []
+
+    def search_studies(
+        self,
+        term: str,
+        *,
+        page_size: int = 10,
+        page_token: str | None = None,
+    ) -> dict:
+        self.queries.append(term)
+        return self.responses.get(term, {"studies": []})
 
 
 SAMPLE_TEXT = """
@@ -110,6 +127,52 @@ Abbreviations: IgAN = IgA nephropathy; MM = Multiple myeloma.
 Warning under Rule 18A.08: there is no assurance that LBL-081 will be
 marketed. We plan to submit the first BLA for LBL-024 in China.
 """
+
+
+def _ctgov_response(
+    *,
+    nct_id: str = "NCT00000001",
+    title: str = "Study of a GPRC5D/CD3 Bispecific Antibody",
+    sponsor: str = "Regeneron",
+    phase: str = "PHASE3",
+    conditions: list[str] | None = None,
+    interventions: list[str] | None = None,
+    last_update: str = "2026-01-15",
+) -> dict:
+    return {
+        "studies": [
+            {
+                "protocolSection": {
+                    "identificationModule": {
+                        "nctId": nct_id,
+                        "briefTitle": title,
+                    },
+                    "statusModule": {
+                        "overallStatus": "RECRUITING",
+                        "lastUpdatePostDateStruct": {"date": last_update},
+                    },
+                    "sponsorCollaboratorsModule": {
+                        "leadSponsor": {"name": sponsor},
+                    },
+                    "designModule": {
+                        "phases": [phase],
+                    },
+                    "conditionsModule": {
+                        "conditions": conditions or ["Multiple Myeloma"],
+                    },
+                    "armsInterventionsModule": {
+                        "interventions": [
+                            {"name": item}
+                            for item in (
+                                interventions
+                                or ["Linvoseltamab GPRC5D/CD3 bispecific"]
+                            )
+                        ],
+                    },
+                }
+            }
+        ]
+    }
 
 
 class AutoInputsTest(unittest.TestCase):
@@ -390,6 +453,46 @@ class AutoInputsTest(unittest.TestCase):
         self.assertEqual(linvo["evidence"][0]["source_date"], "2026-01-15")
         self.assertTrue(linvo["evidence"][0]["is_inferred"])
 
+    def test_drafts_ctgov_competitor_discovery_candidates(self) -> None:
+        client = FakeClinicalTrialsClient(
+            {
+                "GPRC5D CD3 bispecific antibody": _ctgov_response(),
+            }
+        )
+        competitor_payload = {
+            "discovery_requests": [
+                {
+                    "pipeline_asset": "LBL-034",
+                    "target": "GPRC5D/CD3",
+                    "modality": "bispecific antibody",
+                }
+            ]
+        }
+
+        payload = draft_competitor_discovery_candidates_from_clinical_trials(
+            identity=CompanyIdentity(company="Leads Biolabs", ticker="09887.HK"),
+            competitor_draft_payload=competitor_payload,
+            client=client,
+        )
+
+        self.assertEqual(payload["generated_by"], (
+            "auto_inputs.clinicaltrials_competitor_discovery"
+        ))
+        self.assertEqual(client.queries, ["GPRC5D CD3 bispecific antibody"])
+        self.assertEqual(len(payload["candidates"]), 1)
+        candidate = payload["candidates"][0]
+        self.assertEqual(candidate["company"], "Regeneron")
+        self.assertEqual(
+            candidate["asset_name"],
+            "Linvoseltamab GPRC5D/CD3 bispecific",
+        )
+        self.assertEqual(candidate["target"], "GPRC5D/CD3")
+        self.assertEqual(
+            candidate["source_url"],
+            "https://clinicaltrials.gov/study/NCT00000001",
+        )
+        self.assertFalse(candidate["generated_by_llm"])
+
     def test_drafts_financial_snapshot_from_source_text(self) -> None:
         payload = draft_financial_snapshot(
             identity=CompanyIdentity(company="DualityBio", ticker="09606.HK"),
@@ -545,6 +648,65 @@ class AutoInputsTest(unittest.TestCase):
                 manifest["generated_inputs"],
             )
             self.assertIn("competitors", manifest["validation"])
+
+    def test_generate_auto_inputs_runs_ctgov_competitor_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            raw_dir = root / "raw_fixture"
+            raw_dir.mkdir()
+            generated_dir = root / "generated"
+            source = _source(
+                file_path=raw_dir / "results.pdf",
+                text_path=raw_dir / "results.txt",
+            )
+            source.file_path.write_bytes(b"%PDF fixture")
+            source.text_path.write_text(SAMPLE_TEXT, encoding="utf-8")
+            client = FakeClinicalTrialsClient(
+                {
+                    "HER2": _ctgov_response(
+                        title="Study of a HER2 ADC",
+                        sponsor="Example Global Bio",
+                        phase="PHASE2",
+                        conditions=["HER2-positive breast cancer"],
+                        interventions=["Example HER2 ADC"],
+                    )
+                }
+            )
+
+            with patch(
+                "biotech_alpha.auto_inputs._resolve_hkex_stock_id",
+                return_value="12345",
+            ), patch(
+                "biotech_alpha.auto_inputs._latest_hkex_annual_result",
+                return_value={"NEWS_ID": "fixture"},
+            ), patch(
+                "biotech_alpha.auto_inputs._download_and_extract_document",
+                return_value=source,
+            ):
+                artifacts = generate_auto_inputs(
+                    identity=CompanyIdentity(
+                        company="DualityBio",
+                        ticker="09606.HK",
+                    ),
+                    input_dir=generated_dir,
+                    output_dir=root / "out",
+                    competitor_discovery_client=client,
+                )
+
+            discovery_path = (
+                generated_dir / "09606_hk_competitor_discovery_candidates.json"
+            )
+            self.assertTrue(discovery_path.exists())
+            self.assertIn("HER2", client.queries)
+            competitors = _read_json(artifacts.competitors)
+            discovery = _read_json(discovery_path)
+            self.assertEqual(len(discovery["candidates"]), 1)
+            self.assertEqual(competitors["candidate_ingest"]["accepted"], 1)
+            pairs = {
+                (row["company"], row["asset_name"])
+                for row in competitors["competitors"]
+            }
+            self.assertIn(("Example Global Bio", "Example HER2 ADC"), pairs)
 
     def test_generate_auto_inputs_reuses_existing_pipeline_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -22,8 +22,13 @@ class ClinicalTrialsError(RuntimeError):
 class ClinicalTrialsClient:
     """Small client for the ClinicalTrials.gov v2 API."""
 
-    def __init__(self, base_url: str = "https://clinicaltrials.gov/api/v2") -> None:
+    def __init__(
+        self,
+        base_url: str = "https://clinicaltrials.gov/api/v2",
+        timeout: float = 20,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
 
     def version(self) -> dict[str, Any]:
         """Return API version metadata, including the data timestamp."""
@@ -64,7 +69,7 @@ class ClinicalTrialsClient:
             },
         )
         try:
-            with urlopen(request, timeout=20) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except Exception as exc:  # noqa: BLE001 - keep stdlib client compact.
             message = f"ClinicalTrials.gov request failed: {url}"

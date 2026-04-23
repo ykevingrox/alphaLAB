@@ -156,6 +156,8 @@ def run_company_report(
     overwrite_auto_inputs: bool = False,
     market_data_provider: Callable[[CompanyIdentity], dict[str, Any] | None]
     | None = None,
+    competitor_discovery_client: ClinicalTrialsSource | None = None,
+    competitor_discovery_max_requests: int = 3,
     include_asset_queries: bool = True,
     max_asset_query_terms: int = 20,
     limit: int = 20,
@@ -195,6 +197,10 @@ def run_company_report(
                 output_dir=output_dir,
                 overwrite=overwrite_auto_inputs,
                 market_data_provider=market_data_provider,
+                competitor_discovery_client=competitor_discovery_client,
+                competitor_discovery_max_requests=(
+                    competitor_discovery_max_requests
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - keep one-command flow resilient.
             auto_input_artifacts = AutoInputArtifacts(

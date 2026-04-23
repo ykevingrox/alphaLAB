@@ -246,6 +246,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--competitor-discovery",
+        choices=("none", "clinicaltrials"),
+        default="none",
+        help=(
+            "Optional source-backed competitor discovery for generated "
+            "competitor drafts. 'clinicaltrials' queries ClinicalTrials.gov "
+            "from generated target discovery requests and writes a review-"
+            "gated competitor discovery candidate pack."
+        ),
+    )
+    company_report_parser.add_argument(
+        "--competitor-discovery-max-requests",
+        type=int,
+        default=3,
+        help=(
+            "Maximum number of generated target discovery requests to send "
+            "to the competitor discovery provider. Defaults to 3."
+        ),
+    )
+    company_report_parser.add_argument(
         "--macro-signals",
         choices=("none", "yahoo-hk"),
         default="none",
@@ -360,6 +380,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--no-llm",
         action="store_true",
         help="Force deterministic-only mode (skip all LLM agents).",
+    )
+    quick_report_parser.add_argument(
+        "--no-competitor-discovery",
+        action="store_true",
+        help="Skip ClinicalTrials.gov competitor discovery in quick mode.",
+    )
+    quick_report_parser.add_argument(
+        "--competitor-discovery-max-requests",
+        type=int,
+        default=3,
+        help=(
+            "Maximum number of generated target discovery requests to send "
+            "to ClinicalTrials.gov in quick mode. Defaults to 3."
+        ),
     )
     quick_report_parser.add_argument(
         "--allow-no-llm",
@@ -663,7 +697,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
-    client = ClinicalTrialsClient()
+    client = ClinicalTrialsClient(timeout=8)
 
     if args.command == "clinical-trials":
         response = client.search_studies(args.term, page_size=args.limit)
@@ -724,6 +758,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             generated_input_dir=args.generated_input_dir,
             overwrite_auto_inputs=args.overwrite_auto_inputs,
             market_data_provider=market_data_provider,
+            competitor_discovery_client=(
+                client if args.competitor_discovery == "clinicaltrials" else None
+            ),
+            competitor_discovery_max_requests=(
+                args.competitor_discovery_max_requests
+            ),
             include_asset_queries=not args.no_asset_queries,
             max_asset_query_terms=args.max_asset_query_terms,
             limit=args.limit,
@@ -789,7 +829,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 3,
                 4,
                 "Run research graph",
-                "auto-inputs, HK market data, macro signals enabled",
+                "auto-inputs, HK market data, macro signals, CT.gov competitors",
             )
         result = run_company_report(
             company=company,
@@ -804,6 +844,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             generated_input_dir="data/input/generated",
             overwrite_auto_inputs=False,
             market_data_provider=market_data_provider,
+            competitor_discovery_client=(
+                None if args.no_competitor_discovery else client
+            ),
+            competitor_discovery_max_requests=(
+                args.competitor_discovery_max_requests
+            ),
             include_asset_queries=True,
             max_asset_query_terms=20,
             limit=20,

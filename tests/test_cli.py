@@ -938,6 +938,35 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertEqual(kwargs["llm_agents"][0], "pipeline-triage")
             self.assertIsNotNone(kwargs["market_data_provider"])
             self.assertIsNotNone(kwargs["macro_signals_provider"])
+            self.assertIsNotNone(kwargs["competitor_discovery_client"])
+
+    def test_report_command_can_skip_competitor_discovery(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client",
+            return_value=object(),
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {"ticker": "09606.HK"}, "status": "ok"},
+        ):
+            run.return_value = object()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "report",
+                        "09606.HK",
+                        "--json",
+                        "--no-save",
+                        "--no-competitor-discovery",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIsNone(
+                run.call_args.kwargs["competitor_discovery_client"]
+            )
 
     def test_quick_report_prints_extraction_audit_artifact_path(self) -> None:
         summary = {
