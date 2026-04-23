@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import unittest
 
 from biotech_alpha.position_action import (
@@ -52,6 +53,7 @@ class PositionActionTest(unittest.TestCase):
 
         self.assertEqual(finding.agent_name, "research_action_plan_agent")
         self.assertIn("entry zone 8.00-10.00 HKD", finding.summary)
+        self.assertIn("guidance_type=research_only", finding.risks)
         self.assertTrue(any("research support only" in risk.lower() for risk in finding.risks))
 
     def test_build_research_action_plan_degrades_when_price_missing(self) -> None:
@@ -80,6 +82,17 @@ class PositionActionTest(unittest.TestCase):
         self.assertIn("research-only action plan", lowered_summary)
         self.assertNotIn("buy", lowered_summary)
         self.assertNotIn("sell", lowered_summary)
+
+    def test_build_research_action_plan_degrades_on_non_finite_inputs(self) -> None:
+        analysis = _analysis(current=math.nan, bear=8.0, base=12.0, bull=math.inf)
+        plan = build_research_action_plan(
+            decision="watchlist",
+            target_price_analysis=analysis,
+        )
+        self.assertEqual(plan.suggested_position_pct, 0.0)
+        self.assertIsNone(plan.entry_zone_low)
+        self.assertIsNone(plan.entry_zone_high)
+        self.assertFalse(any("above bull target" in trigger for trigger in plan.exit_trigger_conditions))
 
 
 def _analysis(*, current: float, bear: float, base: float, bull: float) -> TargetPriceAnalysis:

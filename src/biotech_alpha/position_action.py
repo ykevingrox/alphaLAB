@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from biotech_alpha.models import AgentFinding
 from biotech_alpha.target_price import TargetPriceAnalysis
@@ -40,14 +41,18 @@ def build_research_action_plan(
         # No valid valuation anchor means no sizing signal.
         suggested_position_pct = 0.0
     triggers = [
-        (
-            "De-risk if spot price moves above bull target "
-            f"({target_price_analysis.bull.target_price:.2f} "
-            f"{target_price_analysis.currency}) without matching evidence."
-        ),
         "De-risk on any high-impact catalyst miss or material trial delay.",
         "De-risk if new high-severity contradictory evidence appears.",
     ]
+    if _is_valid_positive_number(target_price_analysis.bull.target_price):
+        triggers.insert(
+            0,
+            (
+                "De-risk if spot price moves above bull target "
+                f"({target_price_analysis.bull.target_price:.2f} "
+                f"{target_price_analysis.currency}) without matching evidence."
+            ),
+        )
     if runway_months is not None:
         triggers.append(
             f"De-risk if cash runway estimate falls below 12 months "
@@ -97,7 +102,11 @@ def research_action_plan_finding(
     return AgentFinding(
         agent_name="research_action_plan_agent",
         summary=summary,
-        risks=(*plan.exit_trigger_conditions, *plan.notes),
+        risks=(
+            f"guidance_type={plan.guidance_type}",
+            *plan.exit_trigger_conditions,
+            *plan.notes,
+        ),
         confidence=0.45,
         needs_human_review=plan.needs_human_review,
     )
@@ -107,10 +116,18 @@ def _entry_zone(analysis: TargetPriceAnalysis) -> tuple[float | None, float | No
     current = analysis.current_share_price
     bear = analysis.bear.target_price
     base = analysis.base.target_price
-    if current <= 0 or bear <= 0 or base <= 0:
+    if (
+        not _is_valid_positive_number(current)
+        or not _is_valid_positive_number(bear)
+        or not _is_valid_positive_number(base)
+    ):
         return None, None
     low = min(current, bear)
     high = min(max(current, bear), base)
     if low > high:
         low, high = high, low
     return (round(low, 2), round(high, 2))
+
+
+def _is_valid_positive_number(value: float) -> bool:
+    return math.isfinite(value) and value > 0

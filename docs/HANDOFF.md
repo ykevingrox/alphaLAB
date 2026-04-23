@@ -571,6 +571,9 @@ Use this shape:
     anchors are incomplete/invalid.
   - Memo action-plan rendering now preserves the explicit
     "research support only" disclaimer even when risk bullets are truncated.
+  - Non-finite valuation anchors (`NaN/inf`) now degrade safely to
+    `entry zone unavailable` + `0.0%` sizing, and findings now include
+    `guidance_type=research_only` for explicit downstream labeling.
 
 ## Current Repo State
 
