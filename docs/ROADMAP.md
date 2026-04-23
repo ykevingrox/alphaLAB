@@ -828,6 +828,9 @@ structure can consume them.
     `normalized_new_records` fields for registry-style trial rows).
   - **Boundary now:** normalization is heuristic/feed-title based and still
     review-gated; no official full CDE schema mirror is implied.
+  - **Contingency (deferred):** add hybrid fallback (rule-first extraction with
+    LLM invoked only for low-confidence leftovers) if deterministic quality
+    drops on future fixtures.
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
   - **Status:** done (phase-1 baseline + report-chain integration landed:

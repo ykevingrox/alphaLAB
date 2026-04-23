@@ -907,6 +907,8 @@ Sprint 5 workstreams first.
    as non-blocking enhancements.
 2. Improve CDE normalization precision with richer field extraction dictionaries
    when prioritized (current version is deterministic + review-gated).
+3. Keep a hybrid extractor fallback (rule-first + LLM-on-low-confidence) as a
+   contingency only; enable it only if deterministic recall/precision degrades.
 
 ### Acceptance Criteria
 
@@ -958,6 +960,7 @@ Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 1. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
    ground-truth expansion, and additional cross-agent merge heuristics.
 2. Deferred data-breadth depth: richer CDE normalization dictionaries.
+3. Contingency backlog: hybrid CDE extraction fallback for difficult titles.
 
 Pre-Sprint 5 backlog retained for later:
 
