@@ -101,9 +101,8 @@ def scorecard_finding(
     """Convert a scorecard into an agent finding."""
 
     risks = tuple(
-        f"{dimension.name}: {dimension.rationale}"
+        f"{dimension.name} ({dimension.score:.1f}): {dimension.rationale}"
         for dimension in scorecard.dimensions
-        if dimension.score < 50
     )
     return AgentFinding(
         agent_name="watchlist_scorecard_agent",

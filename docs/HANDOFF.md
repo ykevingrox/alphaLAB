@@ -526,6 +526,23 @@ Use this shape:
     timing.
   - `ROADMAP.md` bumps the last status-pass stamp to 2026-04-23 and folds
     the Innovent Biologics (`01801.HK`) fixture into Sprint 1 status.
+- Sprint 5 P0.1/P0.2/P0.3 landed in code and tests:
+  - default target-price assumption draft is auto-generated in
+    `data/input/generated/<slug>_target_price_assumptions.json` and consumed
+    by report paths unless a curated override exists.
+  - memo rendering is now investment-first (Executive Verdict -> Investment
+    Thesis -> Core Asset Deep Dive -> Catalyst Roadmap -> Competition ->
+    Financials -> Valuation -> Scorecard Transparency -> Key Risks -> Evidence).
+  - `InvestmentThesisLLMAgent` is wired into the AgentGraph and CLI
+    (`--llm-agents investment-thesis`, quick `report` default stack).
+- Sprint 5 P1 implementation progress:
+  - P1.6 Catalyst Roadmap now includes deterministic time buckets
+    (0-6m / 6-18m / 18m+) and value-weighted ranking by `impact_score`.
+  - P1.7 scorecard transparency is improved via explicit per-dimension score
+    lines in scorecard findings.
+  - P1.8 memo now includes a dedicated `## Research-Only Action Plan` section
+    with sizing tier, entry focus, and de-risk triggers, explicitly labeled as
+    research support only.
 
 ## Current Repo State
 
@@ -808,78 +825,38 @@ Latest smoke result:
 
 ### Current Task
 
-Start **Sprint 5: From Data Sheet To Investment Memo**. The canonical reference
-memo is `data/memos/09887-hk/20260423T095148Z_memo.md`; the sprint is judged on
-turning that style of report into something an investor can act on. See
-`docs/ROADMAP.md` § Sprint 5 for the full plan, design principles, execution
-order, and per-task acceptance criteria.
+Continue **Sprint 5: From Data Sheet To Investment Memo** by closing the next
+high-impact gap after P0.1/P0.2/P0.3 and early P1 progress:
+**P0.4 Core Asset Deep Dive extraction + optional deep-dive agent**.
 
-The first work unit is **Sprint 5 P0.1 — Default rNPV / target-price draft**.
-Goal: every `report` / `company-report` run should produce a bear / base /
-bull / probability-weighted target price range by default, so the memo's
-`Catalyst-Adjusted Valuation` section is never empty. The generated
-assumptions file lives at
-`data/input/generated/<slug>_target_price_assumptions.json`, carries
-`inferred_by: "default_rnpv_v1"` and `needs_human_review: true`, and is
-overridden whenever `data/input/<slug>_target_price_assumptions.json` exists.
-
-Sprint 5 development continues on `qwen3.5-plus` (Bailian free tier) for
-iteration velocity; every new LLM agent must accept a per-agent model
-override so stronger models are a config change.
-
-Recent context (retained from prior handoff): Harbour BioMed / Leads Biolabs
-extraction hardening is closed for the current source-backed scope;
-ClinicalTrials.gov competitor discovery is live; saved markdown memos already
-include a `## LLM Agent Addendum`; macro-signals news-backed non-
-`insufficient_data` path and cache reuse are confirmed; quantitative macro
-subfeeds remain deferred until provider access recovers; the
-`LLMConfig.from_env()` dotenv precedence bug is fixed.
+Current baseline now has target-price defaults, investment-thesis integration,
+value-weighted catalyst ranking, scorecard transparency improvements, and a
+research-only action-plan section. The next checkpoint should improve
+asset-level evidence depth (clinical metrics, regulatory pathway, binary-event
+clarity) so top assets are not still rendered as shallow one-line summaries.
 
 ### Next Action
 
-1. Implement Sprint 5 P0.1 per `docs/ROADMAP.md`:
-   - Add phase→PoS and indication→peak-sales lookup tables to a committed
-     reference file under `src/biotech_alpha/` (name TBD, e.g.
-     `target_price_defaults.py`), with inline citations and conservative
-     defaults.
-   - Add `draft_target_price_assumptions(identity, pipeline_assets,
-     market_snapshot, financial_snapshot)` in
-     `src/biotech_alpha/target_price.py`; return the same dataclass /
-     payload the existing `target-price-validate` accepts.
-   - Wire `auto_inputs.generate_auto_inputs` to write
-     `data/input/generated/<slug>_target_price_assumptions.json` with
-     `inferred_by`, `needs_human_review`, and `generated_extractor_version`
-     metadata; refresh stale generated drafts on version bump.
-   - Extend `run_company_report` / `company_report_summary` to consume
-     the generated file when no curated override exists; preserve manual
-     override precedence and preserve the existing
-     `Catalyst-Adjusted Valuation` memo section contract.
-   - Cover with offline tests: (a) default-only draft generation,
-     (b) manual-over-generated precedence, (c) missing market_snapshot
-     degrades to placeholder instead of exception, (d) phase→PoS lookup
-     coverage for the phases that appear in current HK biotech fixtures.
-2. After P0.1 lands, re-run `report "09887.HK" --no-save` and diff the new
-   memo against `20260423T095148Z_memo.md` to confirm the Valuation
-   section is populated before moving to P0.2 (memo template rewrite).
-3. Keep HK-biotech fixture broadening and remaining pre-Sprint-5 backlog
-   items on pause unless they block Sprint 5.
+1. Start P0.4 extraction layer:
+   - extend auto-input extraction to capture clinical-highlight snippets and
+     normalized clinical metrics for top Phase 2+ assets where source text is
+     explicit.
+2. Add/extend validation and tests so optional `clinical_data` payloads remain
+   backward compatible and curated manual inputs still override generated rows.
+3. Render richer per-asset memo lines in `Core Asset Deep Dive` using those
+   deterministic fields first (before any optional LLM deep-dive pass).
 
 ### Acceptance Criteria
 
-- Sprint 5 P0.1 acceptance (matches `docs/ROADMAP.md`):
-  1. `report "09887.HK" --no-llm --no-save` prints a
-     `probability_weighted_target_price` and bear / base / bull range.
-  2. Memo § Catalyst-Adjusted Valuation shows populated values for
-     `09887.HK`, `09606.HK`, `02142.HK`, and `01801.HK` quick runs,
-     never the "No catalyst-adjusted target price range was generated."
-     placeholder.
-  3. Manual `data/input/<slug>_target_price_assumptions.json` continues
-     to override the generated file; regression test covers this.
-  4. Missing `market_snapshot` or missing pipeline produces a
-     deterministic `needs_human_review=true` placeholder with a clear
-     warning, not an exception.
-  5. All existing deterministic and LLM tests still pass; no change to
-     the compact JSON summary contract or manifest field names.
+- Sprint 5 P0.4 checkpoint acceptance:
+  1. At least one canonical ticker (`09887.HK`) memo deep-dive section includes
+     deterministic clinical-highlight content beyond target/indication/phase.
+  2. Missing clinical highlights degrade gracefully with explicit
+     `needs_human_review` framing; no run-breaking exception.
+  3. Curated `data/input/<slug>_pipeline_assets.json` remains higher priority
+     than generated clinical-data rows.
+  4. Full test suite stays green and compact JSON summary / manifest contracts
+     remain backward compatible.
 - Sprint 5 global invariants (all tasks): deterministic report still
   runs under `--no-llm`; every auto-generated assumption carries
   `needs_human_review=true` until a curated override lands; every new
@@ -911,22 +888,16 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P0.1** Default rNPV / target-price draft (in progress).
-2. **P0.2** Memo template rewrite (Executive Verdict → Thesis → Deep Dive
-   → Catalysts → Competition → Financials → Valuation → Risks →
-   Evidence).
-3. **P1.5** Cross-agent finding merge into main Risks.
-4. **P0.3** `InvestmentThesisLLMAgent`.
-5. **P1.6** Catalyst roadmap with value-weighted ranking.
-6. **P1.7** Scorecard transparency.
-7. **P0.4** Core Asset Deep Dive extraction + optional
-   `AssetDeepDiveLLMAgent`.
-8. **P1.8** Research-only Action Plan (entry zone / sizing / exit
-   triggers, explicitly labeled research-only).
-9. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
+1. **P0.4** Core Asset Deep Dive extraction + optional
+   `AssetDeepDiveLLMAgent` (active).
+2. **P1.7** Scorecard transparency follow-up (manifest/per-dimension
+   contributions and watchlist export columns).
+3. **P1.8** Research-only Action Plan follow-up (`position_action.py`
+   structured outputs + edge-case tests).
+4. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
    events, peer valuation, equity history (pick based on the gap the
    P0 / P1 memo reveals).
-10. **P3.x** Strategic additions: K-line agent, historical memo diff,
+5. **P3.x** Strategic additions: K-line agent, historical memo diff,
     portfolio concentration, bilingual memo, HTML/PDF export.
 
 Pre-Sprint 5 backlog retained for later:

@@ -552,7 +552,7 @@ eventually a technical / K-line agent.
 
 ### Sprint 5: From Data Sheet To Investment Memo
 
-**Sprint status:** planned.
+**Sprint status:** in progress (P0.1/P0.2/P0.3 and early P1 landed; P0.4 active).
 
 **Why this sprint exists.** The current memo reads like a statistics report,
 not an investment recommendation. Reviewing
@@ -594,6 +594,7 @@ Highest ROI: the moment these land, each memo has a target price, a concrete
 thesis, and deep content on the core asset instead of counts.
 
 - **P0.1** — Default rNPV / target-price draft.
+  - **Status:** done.
   - **What:** add `draft_target_price_assumptions(identity, pipeline_assets,
     market_snapshot, financial_snapshot)` in
     `src/biotech_alpha/target_price.py`; write
@@ -625,6 +626,7 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 2-3 days.
 
 - **P0.2** — Memo template rewrite.
+  - **Status:** done.
   - **What:** restructure `src/biotech_alpha/research.py` /
     `company_report.py` markdown builder to the investment-memo order:
     1. Executive Verdict (decision + target-price range + 1-line thesis).
@@ -658,6 +660,7 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 2 days.
 
 - **P0.3** — `InvestmentThesisLLMAgent`.
+  - **Status:** done.
   - **What:** new agent in `src/biotech_alpha/agents_llm.py` that runs
     last in the DAG, reads `pipeline_triage_payload`,
     `financial_triage_payload`, `competition_triage_payload`,
@@ -704,6 +707,7 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 1.5-2 days.
 
 - **P0.4** — Core Asset Deep Dive extraction + agent.
+  - **Status:** active.
   - **What:** broaden HKEX PDF text extraction beyond "Business
     Highlights" into "Clinical Highlights" / "Clinical Update" / "Data
     Highlights" sections (`auto_inputs._extract_clinical_highlights`).
@@ -743,6 +747,8 @@ hand after reading a P0 memo.
 
 - **P1.5** — Cross-agent finding merge into main Risks / Core Asset
   sections.
+  - **Status:** partially done (risk de-dup/severity ordering landed; additional
+    triage merge rules remain).
   - **What:** promote LLM triage findings (pipeline / financial /
     competition) with `severity in {"medium", "high"}` and
     `confidence >= 0.4` into the deterministic risks list, tagged with
@@ -755,6 +761,8 @@ hand after reading a P0 memo.
   - **Estimated size:** 1 day.
 
 - **P1.6** — Catalyst Roadmap with value-weighted ranking.
+  - **Status:** done (deterministic impact score + time buckets + priority sort
+    in memo rendering).
   - **What:** extend `pipeline.py` / `target_price.py` so each
     `clinical_catalyst` carries `expected_pos` (from rNPV PoS) and
     `expected_value_delta_pct` (signed, based on catalyst type: positive
@@ -770,6 +778,8 @@ hand after reading a P0 memo.
   - **Estimated size:** 1 day.
 
 - **P1.7** — Scorecard transparency.
+  - **Status:** partially done (memo now surfaces per-dimension scores in
+    scorecard finding risks; manifest/export expansion remains).
   - **What:** expose `scorecard.dimensions` (dimension, raw score,
     weight, contribution) in manifest and memo. Auto-generate a "Path
     to core candidate" list of the 3 lowest-contribution dimensions
@@ -781,6 +791,8 @@ hand after reading a P0 memo.
   - **Estimated size:** 0.5 day.
 
 - **P1.8** — Research-only Action Plan.
+  - **Status:** partially done (memo section + explicit research-only language
+    landed; standalone structured module and dedicated edge-case tests remain).
   - **What:** new module `src/biotech_alpha/position_action.py` that
     combines `target_price_range`, `current_share_price`, and
     `research_position_limit_pct` into `entry_zone_price_range`,

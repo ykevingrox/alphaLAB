@@ -521,7 +521,7 @@ def memo_to_markdown(
             lines.append(f"- {finding.summary}")
 
     lines.extend(["", "## Catalyst Roadmap", ""])
-    for line in _catalyst_lines(memo.catalysts):
+    for line in _catalyst_lines(memo.catalysts, key_assets=memo.key_assets):
         lines.append(line)
 
     lines.extend(["", "## Competitive Landscape", ""])
@@ -557,6 +557,15 @@ def memo_to_markdown(
                 lines.append(f"  - {risk}")
     else:
         lines.append("- No watchlist scorecard summary was generated.")
+
+    lines.extend(["", "## Research-Only Action Plan", ""])
+    lines.extend(
+        _research_only_action_plan_lines(
+            decision=memo.decision,
+            valuation_findings=tuple(valuation_findings),
+            scorecard_findings=tuple(scorecard_findings),
+        )
+    )
 
     lines.extend(["", "## Key Risks & Falsification", ""])
     lines.extend(_finding_risk_lines(tuple(all_findings)))
@@ -1464,25 +1473,172 @@ def _findings_for(
     return tuple(selected)
 
 
-def _catalyst_lines(catalysts: tuple[Catalyst, ...]) -> list[str]:
+def _catalyst_lines(
+    catalysts: tuple[Catalyst, ...],
+    *,
+    key_assets: tuple[PipelineAsset, ...] = (),
+) -> list[str]:
     if not catalysts:
         return ["- No catalysts were captured."]
+    phase_by_asset = {
+        asset.name.casefold(): asset.phase for asset in key_assets if asset.name
+    }
     ordered = sorted(
-        catalysts,
-        key=lambda item: (
-            item.expected_date.isoformat() if item.expected_date else "9999-12-31",
-            item.expected_window or "ZZZ",
-            item.title,
+        _catalyst_rank_rows(catalysts, phase_by_asset=phase_by_asset),
+        key=lambda row: (
+            _catalyst_bucket_rank(row["bucket"]),
+            -row["impact_score"],
+            row["date_sort"],
+            row["window_sort"],
+            row["title_sort"],
         ),
     )
     lines: list[str] = []
-    for catalyst in ordered:
+    for row in ordered:
+        catalyst = row["catalyst"]
+        expected_pos = row["expected_pos"]
+        expected_delta = row["expected_delta"]
+        bucket = row["bucket"]
+        impact_score = row["impact_score"]
+        when = row["when"]
+        asset = row["asset_suffix"]
+        lines.append(
+            f"- [{bucket}; impact_score={impact_score:.1f}] {when}: "
+            f"{catalyst.title}{asset} "
+            f"(expected_pos {expected_pos:.2f}, "
+            f"expected_value_delta_pct {expected_delta:+.1f}%)"
+        )
+    return lines
+
+
+def _catalyst_rank_rows(
+    catalysts: tuple[Catalyst, ...],
+    *,
+    phase_by_asset: dict[str, str | None],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for catalyst in catalysts:
+        phase = phase_by_asset.get((catalyst.related_asset or "").casefold())
+        expected_pos = _catalyst_expected_pos(catalyst, phase=phase)
+        expected_delta = _catalyst_expected_value_delta_pct(catalyst, phase=phase)
+        bucket = _catalyst_time_bucket(catalyst)
         when = catalyst.expected_date.isoformat() if catalyst.expected_date else "TBD"
         if catalyst.expected_window:
             when = catalyst.expected_window
-        asset = f" ({catalyst.related_asset})" if catalyst.related_asset else ""
-        lines.append(f"- {when}: {catalyst.title}{asset}")
-    return lines
+        rows.append(
+            {
+                "catalyst": catalyst,
+                "expected_pos": expected_pos,
+                "expected_delta": expected_delta,
+                "bucket": bucket,
+                "impact_score": abs(expected_delta) * expected_pos,
+                "date_sort": (
+                    catalyst.expected_date.isoformat()
+                    if catalyst.expected_date
+                    else "9999-12-31"
+                ),
+                "window_sort": catalyst.expected_window or "ZZZ",
+                "title_sort": catalyst.title,
+                "when": when,
+                "asset_suffix": (
+                    f" ({catalyst.related_asset})"
+                    if catalyst.related_asset
+                    else ""
+                ),
+            }
+        )
+    return rows
+
+
+def _phase_success_default(phase: str | None) -> float:
+    lowered = (phase or "").casefold()
+    if "bla under review" in lowered or "bla accepted" in lowered:
+        return 0.85
+    if "bla" in lowered:
+        return 0.7
+    if "phase 3" in lowered or "phase iii" in lowered:
+        return 0.55
+    if "phase 2" in lowered or "phase ii" in lowered:
+        return 0.3
+    if "phase 1" in lowered or "phase i" in lowered:
+        return 0.12
+    if "ind" in lowered:
+        return 0.08
+    if "pcc" in lowered:
+        return 0.03
+    if "preclinical" in lowered:
+        return 0.01
+    return 0.2
+
+
+def _catalyst_expected_pos(catalyst: Catalyst, *, phase: str | None) -> float:
+    base = _phase_success_default(phase)
+    category = catalyst.category
+    if category == "conference":
+        base *= 0.8
+    elif category == "regulatory":
+        base = min(base + 0.1, 0.9)
+    elif category == "financial":
+        base *= 0.7
+    elif category == "clinical":
+        base *= 1.0
+    return max(0.05, min(base, 0.9))
+
+
+def _catalyst_expected_value_delta_pct(
+    catalyst: Catalyst, *, phase: str | None
+) -> float:
+    category_base = {
+        "regulatory": 25.0,
+        "clinical": 18.0,
+        "conference": 8.0,
+        "financial": 10.0,
+        "commercial": 12.0,
+        "corporate": 10.0,
+        "unknown": 6.0,
+    }.get(catalyst.category, 6.0)
+    phase_weight = {
+        "late": 1.0,
+        "mid": 0.7,
+        "early": 0.45,
+        "pre": 0.25,
+        "unknown": 0.5,
+    }[_phase_weight_bucket(phase)]
+    return category_base * phase_weight
+
+
+def _phase_weight_bucket(phase: str | None) -> str:
+    lowered = (phase or "").casefold()
+    if any(term in lowered for term in ("bla", "phase 3", "phase iii")):
+        return "late"
+    if "phase 2" in lowered or "phase ii" in lowered:
+        return "mid"
+    if "phase 1" in lowered or "phase i" in lowered:
+        return "early"
+    if any(term in lowered for term in ("ind", "pcc", "preclinical")):
+        return "pre"
+    return "unknown"
+
+
+def _catalyst_time_bucket(catalyst: Catalyst) -> str:
+    if catalyst.expected_date is None:
+        return "timing_tbd"
+    delta_days = (catalyst.expected_date - date.today()).days
+    if delta_days <= 180:
+        return "near_term_0_6m"
+    if delta_days <= 540:
+        return "mid_term_6_18m"
+    return "long_term_18m_plus"
+
+
+def _catalyst_bucket_rank(bucket: str) -> int:
+    if bucket == "near_term_0_6m":
+        return 0
+    if bucket == "mid_term_6_18m":
+        return 1
+    if bucket == "long_term_18m_plus":
+        return 2
+    return 3
 
 
 def _finding_risk_lines(findings: tuple[AgentFinding, ...]) -> list[str]:
@@ -1505,3 +1661,44 @@ def _risk_sort_key(risk: str) -> tuple[int, str]:
     else:
         rank = 3
     return (rank, lowered)
+
+
+def _research_only_action_plan_lines(
+    *,
+    decision: str,
+    valuation_findings: tuple[AgentFinding, ...],
+    scorecard_findings: tuple[AgentFinding, ...],
+) -> list[str]:
+    plan: list[str] = []
+    sizing_map = {
+        "core_candidate": "2.0% to 4.0%",
+        "watchlist": "0.5% to 1.5%",
+        "avoid": "0.0%",
+        "insufficient_data": "0.0%",
+    }
+    plan.append(
+        f"- Suggested research position sizing tier: {sizing_map.get(decision, '0.0%')}."
+    )
+    if valuation_findings:
+        plan.append(
+            "- Entry focus: only add risk after reviewing bear/base/bull valuation "
+            "ranges and missing-assumption warnings."
+        )
+    else:
+        plan.append(
+            "- Entry focus: do not form a valuation-based position until a "
+            "target-price range is available."
+        )
+    if scorecard_findings:
+        plan.append(
+            "- Upgrade path to higher conviction: improve the lowest scorecard "
+            "dimensions listed above before increasing sizing."
+        )
+    plan.extend(
+        [
+            "- Exit/de-risk triggers: high-impact catalyst miss, material runway "
+            "deterioration, or new high-severity evidence conflicts.",
+            "- This section is research support only, not a trading instruction.",
+        ]
+    )
+    return plan
