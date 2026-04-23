@@ -56,6 +56,7 @@ from biotech_alpha.pipeline import (
     validation_report_as_dict,
 )
 from biotech_alpha.position_action import (
+    ResearchActionPlan,
     build_research_action_plan,
     research_action_plan_finding,
 )
@@ -153,6 +154,7 @@ class SingleCompanyResearchResult:
     scorecard: WatchlistScorecard
     input_validation: dict[str, Any]
     clinical_trial_finding: AgentFinding
+    action_plan: ResearchActionPlan | None
     memo: InvestmentMemo
     api_version: dict[str, Any]
     artifacts: ResearchArtifacts
@@ -323,6 +325,18 @@ def run_single_company_research(
         input_warning_count=_input_warning_count(input_validation),
         skeptic_risk_count=len(skeptic_preview.risks),
     )
+    run_decision = "watchlist" if trials or assets else "insufficient_data"
+    action_plan: ResearchActionPlan | None = None
+    if target_price_analysis:
+        action_plan = build_research_action_plan(
+            decision=run_decision,
+            target_price_analysis=target_price_analysis,
+            runway_months=(
+                cash_runway_estimate.runway_months
+                if cash_runway_estimate is not None
+                else None
+            ),
+        )
     memo = _build_clinical_first_memo(
         context=context,
         trials=trials,
@@ -367,6 +381,7 @@ def run_single_company_research(
             target_price_assumptions=target_price_assumptions,
             target_price_analysis=target_price_analysis,
             scorecard=scorecard,
+            action_plan=action_plan,
             input_validation=input_validation,
             memo=memo,
         )
@@ -390,6 +405,7 @@ def run_single_company_research(
         scorecard=scorecard,
         input_validation=input_validation,
         clinical_trial_finding=clinical_finding,
+        action_plan=action_plan,
         memo=memo,
         api_version=api_version,
         artifacts=artifacts,
@@ -445,6 +461,7 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
         "watchlist_score": result.scorecard.total_score,
         "watchlist_bucket": result.scorecard.bucket,
         "scorecard_dimensions": _scorecard_dimensions_payload(result.scorecard),
+        "research_action_plan": _action_plan_payload(result.action_plan),
         "input_warning_count": _input_warning_count(result.input_validation),
         "catalyst_count": len(result.memo.catalysts),
         "needs_human_review": any(
@@ -910,6 +927,7 @@ def _build_clinical_first_memo(
         )
 
     decision = "watchlist" if trials or pipeline_assets else "insufficient_data"
+    action_plan: ResearchActionPlan | None = None
     if target_price_analysis:
         action_plan = build_research_action_plan(
             decision=decision,
@@ -1218,6 +1236,7 @@ def _write_research_artifacts(
     target_price_assumptions: TargetPriceAssumptions | None,
     target_price_analysis: TargetPriceAnalysis | None,
     scorecard: WatchlistScorecard,
+    action_plan: ResearchActionPlan | None,
     input_validation: dict[str, Any],
     memo: InvestmentMemo,
 ) -> ResearchArtifacts:
@@ -1417,6 +1436,7 @@ def _write_research_artifacts(
                 "evidence": len(memo.evidence),
             },
             "scorecard_dimensions": _scorecard_dimensions_payload(scorecard),
+            "research_action_plan": _action_plan_payload(action_plan),
             "artifacts": _jsonable(asdict(artifacts)),
         },
     )
@@ -1482,6 +1502,20 @@ def _scorecard_dimensions_payload(scorecard: WatchlistScorecard) -> list[dict[st
             }
         )
     return rows
+
+
+def _action_plan_payload(action_plan: ResearchActionPlan | None) -> dict[str, Any] | None:
+    if action_plan is None:
+        return None
+    return {
+        "guidance_type": action_plan.guidance_type,
+        "suggested_position_pct": round(action_plan.suggested_position_pct, 2),
+        "entry_zone_low": action_plan.entry_zone_low,
+        "entry_zone_high": action_plan.entry_zone_high,
+        "exit_trigger_conditions": list(action_plan.exit_trigger_conditions),
+        "notes": list(action_plan.notes),
+        "needs_human_review": action_plan.needs_human_review,
+    }
 
 
 def _write_json(path: Path, payload: Any) -> None:

@@ -305,6 +305,11 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(summary["watchlist_bucket"], "watchlist")
             self.assertTrue(summary["scorecard_dimensions"])
             self.assertIn("contribution", summary["scorecard_dimensions"][0])
+            self.assertIsNotNone(summary["research_action_plan"])
+            self.assertEqual(
+                summary["research_action_plan"]["guidance_type"],
+                "research_only",
+            )
             self.assertEqual(summary["input_warning_count"], 1)
             self.assertEqual(summary["catalyst_count"], 2)
 
@@ -405,6 +410,10 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertTrue(manifest["scorecard_dimensions"])
             self.assertIn("weight", manifest["scorecard_dimensions"][0])
             self.assertEqual(
+                manifest["research_action_plan"]["guidance_type"],
+                "research_only",
+            )
+            self.assertEqual(
                 manifest["quality_gate"]["level"],
                 "research_ready_with_review",
             )
@@ -451,6 +460,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             "No curated pipeline asset input was provided",
             result.memo.findings[1].risks,
         )
+        summary = result_summary(result)
+        self.assertIsNone(summary["research_action_plan"])
         self.assertEqual(result.artifacts.memo_json, None)
 
     def test_asset_queries_find_trials_not_found_by_company_query(self) -> None:

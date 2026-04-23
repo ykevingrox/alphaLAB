@@ -795,9 +795,10 @@ hand after reading a P0 memo.
   - **Estimated size:** 0.5 day.
 
 - **P1.8** — Research-only Action Plan.
-  - **Status:** mostly done (memo section + explicit research-only language +
-    standalone `position_action.py` structured module + dedicated unit tests;
-    now promoted as the next active checkpoint for edge-case hardening).
+  - **Status:** done (memo section + explicit research-only language +
+    standalone `position_action.py` structured module + dedicated unit tests +
+    edge-case hardening for missing/non-finite anchors + structured summary/
+    manifest payload with `guidance_type` labeling).
   - **What:** new module `src/biotech_alpha/position_action.py` that
     combines `target_price_range`, `current_share_price`, and
     `research_position_limit_pct` into `entry_zone_price_range`,

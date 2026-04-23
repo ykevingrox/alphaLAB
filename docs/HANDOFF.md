@@ -574,6 +574,9 @@ Use this shape:
   - Non-finite valuation anchors (`NaN/inf`) now degrade safely to
     `entry zone unavailable` + `0.0%` sizing, and findings now include
     `guidance_type=research_only` for explicit downstream labeling.
+  - `result_summary` and saved manifest now include a structured
+    `research_action_plan` payload, preserving `guidance_type`,
+    entry-zone bounds, trigger list, and review flags.
 
 ## Current Repo State
 
@@ -857,8 +860,8 @@ Latest smoke result:
 ### Current Task
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** by closing the next
-high-impact gap after P0.1/P0.2/P0.3 and early P1 progress:
-**P1.8 Research-only Action Plan follow-up (edge-case hardening)**.
+high-impact gap after P0.1/P0.2/P0.3 and completed P1.8:
+**P1.7 Scorecard transparency follow-up (minor UX/documentation polish)**.
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -868,24 +871,24 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Harden `position_action.py` for edge scenarios and keep strict
-   research-only framing visible in downstream finding output.
-2. Extend tests for low-information or malformed valuation inputs to ensure the
-   action-plan section degrades gracefully and never reads as execution advice.
-3. Keep P0.4 benchmark expansion in queue as a later checkpoint.
+1. Finish remaining P1.7 polish for operator UX (dimension naming/readability
+   and consistency across memo/summary/watchlist exports).
+2. Keep P0.4 benchmark expansion deferred until after low-friction polish tasks.
+3. Re-open P0.4 source-like ground-truth expansion only when time budget allows
+   dedicated cleanup work.
 
 ### Acceptance Criteria
 
-- Sprint 5 P1.8 checkpoint acceptance:
-  1. `position_action.py` handles absent or invalid valuation anchors without
-     producing an execution-like recommendation tone.
-  2. Suggested sizing degrades conservatively when entry-zone anchors are not
-     available.
-  3. Memo/action-plan finding text keeps explicit research-only framing.
-  4. Unit tests cover absent share price, inverted ranges, and non-signal
-     language guardrails.
-  5. Full test suite stays green and compact JSON summary / manifest contracts
-     remain backward compatible.
+- Sprint 5 P1.8 checkpoint acceptance: done.
+  1. `position_action.py` handles absent/invalid/non-finite anchors with
+     conservative degradation.
+  2. Suggested sizing falls back to `0.0%` when entry-zone anchors are
+     unavailable.
+  3. Memo/finding text keeps explicit research-only framing and
+     `guidance_type=research_only`.
+  4. Unit tests cover absent share price, inverted ranges, non-signal language,
+     and non-finite valuation inputs.
+  5. Summary/manifest now expose structured `research_action_plan` payload.
 - Sprint 5 global invariants (all tasks): deterministic report still
   runs under `--no-llm`; every auto-generated assumption carries
   `needs_human_review=true` until a curated override lands; every new
@@ -917,18 +920,16 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P1.8** Research-only Action Plan follow-up (active: edge-case hardening
-   + framing consistency).
-2. **P1.7** Scorecard transparency follow-up (completed for manifest +
+1. **P1.7** Scorecard transparency follow-up (completed for manifest +
    `watchlist-rank` dimension expansion; keep for minor UX/documentation
    cleanup only).
-3. **P0.4** Core Asset Deep Dive extraction + optional
+2. **P0.4** Core Asset Deep Dive extraction + optional
    `AssetDeepDiveLLMAgent` (ground-truth expansion intentionally deferred one
    slot).
-4. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
+3. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
    events, peer valuation, equity history (pick based on the gap the
    P0 / P1 memo reveals).
-5. **P3.x** Strategic additions: K-line agent, historical memo diff,
+4. **P3.x** Strategic additions: K-line agent, historical memo diff,
     portfolio concentration, bilingual memo, HTML/PDF export.
 
 Pre-Sprint 5 backlog retained for later:
