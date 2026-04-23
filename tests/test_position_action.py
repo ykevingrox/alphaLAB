@@ -54,6 +54,33 @@ class PositionActionTest(unittest.TestCase):
         self.assertIn("entry zone 8.00-10.00 HKD", finding.summary)
         self.assertTrue(any("research support only" in risk.lower() for risk in finding.risks))
 
+    def test_build_research_action_plan_degrades_when_price_missing(self) -> None:
+        analysis = _analysis(current=0.0, bear=8.0, base=12.0, bull=16.0)
+        plan = build_research_action_plan(
+            decision="core_candidate",
+            target_price_analysis=analysis,
+        )
+        self.assertEqual(plan.suggested_position_pct, 0.0)
+        self.assertIsNone(plan.entry_zone_low)
+        self.assertIsNone(plan.entry_zone_high)
+        self.assertTrue(any("keep sizing at 0.0%" in note for note in plan.notes))
+
+    def test_research_action_plan_finding_keeps_non_signal_language(self) -> None:
+        analysis = _analysis(current=0.0, bear=8.0, base=12.0, bull=16.0)
+        plan = build_research_action_plan(
+            decision="watchlist",
+            target_price_analysis=analysis,
+        )
+        finding = research_action_plan_finding(
+            company="Example Biotech",
+            plan=plan,
+            currency="HKD",
+        )
+        lowered_summary = finding.summary.lower()
+        self.assertIn("research-only action plan", lowered_summary)
+        self.assertNotIn("buy", lowered_summary)
+        self.assertNotIn("sell", lowered_summary)
+
 
 def _analysis(*, current: float, bear: float, base: float, bull: float) -> TargetPriceAnalysis:
     return TargetPriceAnalysis(

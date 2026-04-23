@@ -850,36 +850,32 @@ Latest smoke result:
 
 Continue **Sprint 5: From Data Sheet To Investment Memo** by closing the next
 high-impact gap after P0.1/P0.2/P0.3 and early P1 progress:
-**P0.4 Core Asset Deep Dive extraction + optional deep-dive agent**.
+**P1.8 Research-only Action Plan follow-up (edge-case hardening)**.
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
-research-only action planning, and deep-dive clinical datapoint rendering. The
-next checkpoint should improve remaining P0.4 asset-level evidence depth
-(regulatory pathway + binary-event specificity) so deep dives become
-decision-ready without depending on addendum context.
+research-only action planning, and deep-dive clinical datapoint rendering. P0.4
+ground-truth expansion is now intentionally deprioritized to unblock other
+Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Expand ground-truth coverage from synthetic canonical phrasing to source-like
-   disclosure snippets (HKEX phrasing variants, mixed punctuation/newline noise,
-   and negative traps) while preserving precision.
-2. Keep deterministic extraction upgrades gated by the P0.4 evaluator script
-   thresholds before broad rollout.
-3. Keep the optional `AssetDeepDiveLLMAgent` as a separate follow-up after the
-   deterministic deep-dive contract is stable and benchmarked.
+1. Harden `position_action.py` for edge scenarios and keep strict
+   research-only framing visible in downstream finding output.
+2. Extend tests for low-information or malformed valuation inputs to ensure the
+   action-plan section degrades gracefully and never reads as execution advice.
+3. Keep P0.4 benchmark expansion in queue as a later checkpoint.
 
 ### Acceptance Criteria
 
-- Sprint 5 P0.4 checkpoint acceptance:
-  1. At least one canonical ticker (`09887.HK`) memo deep-dive section includes
-     deterministic clinical-highlight content beyond target/indication/phase.
-  2. Missing clinical highlights degrade gracefully with explicit
-     `needs_human_review` framing; no run-breaking exception.
-  3. Curated `data/input/<slug>_pipeline_assets.json` remains higher priority
-     than generated clinical-data rows.
-  4. Deep-dive section includes at least one explicit regulatory/binary-event
-     line when source text contains that information.
+- Sprint 5 P1.8 checkpoint acceptance:
+  1. `position_action.py` handles absent or invalid valuation anchors without
+     producing an execution-like recommendation tone.
+  2. Suggested sizing degrades conservatively when entry-zone anchors are not
+     available.
+  3. Memo/action-plan finding text keeps explicit research-only framing.
+  4. Unit tests cover absent share price, inverted ranges, and non-signal
+     language guardrails.
   5. Full test suite stays green and compact JSON summary / manifest contracts
      remain backward compatible.
 - Sprint 5 global invariants (all tasks): deterministic report still
@@ -913,13 +909,14 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P0.4** Core Asset Deep Dive extraction + optional
-   `AssetDeepDiveLLMAgent` (active).
+1. **P1.8** Research-only Action Plan follow-up (active: edge-case hardening
+   + framing consistency).
 2. **P1.7** Scorecard transparency follow-up (completed for manifest +
    `watchlist-rank` dimension expansion; keep for minor UX/documentation
    cleanup only).
-3. **P1.8** Research-only Action Plan follow-up (structured module landed;
-   continue edge-case hardening as needed).
+3. **P0.4** Core Asset Deep Dive extraction + optional
+   `AssetDeepDiveLLMAgent` (ground-truth expansion intentionally deferred one
+   slot).
 4. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
    events, peer valuation, equity history (pick based on the gap the
    P0 / P1 memo reveals).

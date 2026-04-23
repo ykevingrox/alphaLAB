@@ -36,6 +36,9 @@ def build_research_action_plan(
         "insufficient_data": 0.0,
     }.get(decision, 0.0)
     low, high = _entry_zone(target_price_analysis)
+    if low is None or high is None:
+        # No valid valuation anchor means no sizing signal.
+        suggested_position_pct = 0.0
     triggers = [
         (
             "De-risk if spot price moves above bull target "
@@ -58,7 +61,10 @@ def build_research_action_plan(
         ),
     ]
     if low is None or high is None:
-        notes.append("Entry zone unavailable due to incomplete target-price inputs.")
+        notes.append(
+            "Entry zone unavailable due to incomplete/invalid target-price inputs; "
+            "keep sizing at 0.0% until anchors are restored."
+        )
     return ResearchActionPlan(
         guidance_type="research_only",
         suggested_position_pct=suggested_position_pct,

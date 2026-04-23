@@ -707,7 +707,7 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 1.5-2 days.
 
 - **P0.4** — Core Asset Deep Dive extraction + agent.
-  - **Status:** active (deterministic deep-dive ranking + structured clinical
+  - **Status:** active but intentionally deprioritized for now (deterministic deep-dive ranking + structured clinical
     datapoints landed; regulatory/binary-event enrichment plus ground-truth
     benchmark harness landed; broader source-like coverage and optional
     deep-dive LLM agent remain).
@@ -797,7 +797,7 @@ hand after reading a P0 memo.
 - **P1.8** — Research-only Action Plan.
   - **Status:** mostly done (memo section + explicit research-only language +
     standalone `position_action.py` structured module + dedicated unit tests;
-    additional edge-case hardening can continue incrementally).
+    now promoted as the next active checkpoint for edge-case hardening).
   - **What:** new module `src/biotech_alpha/position_action.py` that
     combines `target_price_range`, `current_share_price`, and
     `research_position_limit_pct` into `entry_zone_price_range`,
