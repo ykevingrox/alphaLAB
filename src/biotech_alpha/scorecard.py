@@ -24,6 +24,7 @@ class ScoreDimension:
     name: str
     score: float
     rationale: str
+    weight: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -99,9 +100,12 @@ def scorecard_finding(
     scorecard: WatchlistScorecard,
 ) -> AgentFinding:
     """Convert a scorecard into an agent finding."""
-
+    total_weight = sum(max(dimension.weight, 0.0) for dimension in scorecard.dimensions) or 1.0
     risks = tuple(
-        f"{dimension.name} ({dimension.score:.1f}): {dimension.rationale}"
+        f"{dimension.name} (score={dimension.score:.1f}, "
+        f"weight={dimension.weight:.2f}, "
+        f"contribution={dimension.score * (dimension.weight / total_weight):.1f}): "
+        f"{dimension.rationale}"
         for dimension in scorecard.dimensions
     )
     return AgentFinding(
