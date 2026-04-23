@@ -444,6 +444,7 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
         ),
         "watchlist_score": result.scorecard.total_score,
         "watchlist_bucket": result.scorecard.bucket,
+        "scorecard_dimensions": _scorecard_dimensions_payload(result.scorecard),
         "input_warning_count": _input_warning_count(result.input_validation),
         "catalyst_count": len(result.memo.catalysts),
         "needs_human_review": any(
@@ -1411,6 +1412,7 @@ def _write_research_artifacts(
                 "catalysts": len(memo.catalysts),
                 "evidence": len(memo.evidence),
             },
+            "scorecard_dimensions": _scorecard_dimensions_payload(scorecard),
             "artifacts": _jsonable(asdict(artifacts)),
         },
     )
@@ -1457,6 +1459,25 @@ def _quality_gate_from_run(
         "input_warning_count": warning_count,
         "needs_human_review": needs_human_review,
     }
+
+
+def _scorecard_dimensions_payload(scorecard: WatchlistScorecard) -> list[dict[str, Any]]:
+    total_weight = (
+        sum(max(dimension.weight, 0.0) for dimension in scorecard.dimensions) or 1.0
+    )
+    rows: list[dict[str, Any]] = []
+    for dimension in scorecard.dimensions:
+        normalized_weight = max(dimension.weight, 0.0) / total_weight
+        rows.append(
+            {
+                "name": dimension.name,
+                "score": round(dimension.score, 2),
+                "weight": round(dimension.weight, 4),
+                "contribution": round(dimension.score * normalized_weight, 2),
+                "rationale": dimension.rationale,
+            }
+        )
+    return rows
 
 
 def _write_json(path: Path, payload: Any) -> None:

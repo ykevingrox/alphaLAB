@@ -301,6 +301,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIsNotNone(summary["target_price_summary"])
             self.assertEqual(summary["watchlist_score"], result.scorecard.total_score)
             self.assertEqual(summary["watchlist_bucket"], "watchlist")
+            self.assertTrue(summary["scorecard_dimensions"])
+            self.assertIn("contribution", summary["scorecard_dimensions"][0])
             self.assertEqual(summary["input_warning_count"], 1)
             self.assertEqual(summary["catalyst_count"], 2)
 
@@ -390,6 +392,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertEqual(manifest["counts"]["valuation"], 1)
             self.assertEqual(manifest["counts"]["target_price"], 1)
             self.assertEqual(manifest["counts"]["scorecard"], 1)
+            self.assertTrue(manifest["scorecard_dimensions"])
+            self.assertIn("weight", manifest["scorecard_dimensions"][0])
             self.assertEqual(
                 manifest["quality_gate"]["level"],
                 "research_ready_with_review",
