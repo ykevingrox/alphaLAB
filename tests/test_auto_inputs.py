@@ -141,37 +141,58 @@ def _ctgov_response(
 ) -> dict:
     return {
         "studies": [
-            {
-                "protocolSection": {
-                    "identificationModule": {
-                        "nctId": nct_id,
-                        "briefTitle": title,
-                    },
-                    "statusModule": {
-                        "overallStatus": "RECRUITING",
-                        "lastUpdatePostDateStruct": {"date": last_update},
-                    },
-                    "sponsorCollaboratorsModule": {
-                        "leadSponsor": {"name": sponsor},
-                    },
-                    "designModule": {
-                        "phases": [phase],
-                    },
-                    "conditionsModule": {
-                        "conditions": conditions or ["Multiple Myeloma"],
-                    },
-                    "armsInterventionsModule": {
-                        "interventions": [
-                            {"name": item}
-                            for item in (
-                                interventions
-                                or ["Linvoseltamab GPRC5D/CD3 bispecific"]
-                            )
-                        ],
-                    },
-                }
-            }
+            _ctgov_study(
+                nct_id=nct_id,
+                title=title,
+                sponsor=sponsor,
+                phase=phase,
+                conditions=conditions,
+                interventions=interventions,
+                last_update=last_update,
+            )
         ]
+    }
+
+
+def _ctgov_study(
+    *,
+    nct_id: str,
+    title: str,
+    sponsor: str,
+    phase: str = "PHASE3",
+    conditions: list[str] | None = None,
+    interventions: list[str] | None = None,
+    last_update: str = "2026-01-15",
+) -> dict:
+    return {
+        "protocolSection": {
+            "identificationModule": {
+                "nctId": nct_id,
+                "briefTitle": title,
+            },
+            "statusModule": {
+                "overallStatus": "RECRUITING",
+                "lastUpdatePostDateStruct": {"date": last_update},
+            },
+            "sponsorCollaboratorsModule": {
+                "leadSponsor": {"name": sponsor},
+            },
+            "designModule": {
+                "phases": [phase],
+            },
+            "conditionsModule": {
+                "conditions": conditions or ["Multiple Myeloma"],
+            },
+            "armsInterventionsModule": {
+                "interventions": [
+                    {"name": item}
+                    for item in (
+                        interventions
+                        or ["Linvoseltamab GPRC5D/CD3 bispecific"]
+                    )
+                ],
+            },
+        }
     }
 
 
@@ -456,7 +477,36 @@ class AutoInputsTest(unittest.TestCase):
     def test_drafts_ctgov_competitor_discovery_candidates(self) -> None:
         client = FakeClinicalTrialsClient(
             {
-                "GPRC5D CD3 bispecific antibody": _ctgov_response(),
+                "GPRC5D CD3 bispecific antibody": {
+                    "studies": [
+                        _ctgov_study(
+                            nct_id="NCT00000001",
+                            title="Study of a GPRC5D/CD3 Bispecific Antibody",
+                            sponsor="Regeneron",
+                        ),
+                        _ctgov_study(
+                            nct_id="NCT00000002",
+                            title="Study of a GPRC5D Antibody",
+                            sponsor="Loose Target Bio",
+                            interventions=["GPRC5D antibody"],
+                        ),
+                        _ctgov_study(
+                            nct_id="NCT00000003",
+                            title="Study of LBL-034 GPRC5D/CD3",
+                            sponsor="Leads Biolabs",
+                            interventions=["LBL-034 GPRC5D/CD3"],
+                        ),
+                        _ctgov_study(
+                            nct_id="NCT00000004",
+                            title="GPRC5D/CD3 Maintenance After Transplant",
+                            sponsor="Generic Maintenance Study Group",
+                            interventions=[
+                                "Autologous Hematopoietic Stem Cell Transplantation",
+                                "GPRC5D/CD3 BiTEs",
+                            ],
+                        ),
+                    ]
+                },
             }
         )
         competitor_payload = {
@@ -480,6 +530,14 @@ class AutoInputsTest(unittest.TestCase):
         ))
         self.assertEqual(client.queries, ["GPRC5D CD3 bispecific antibody"])
         self.assertEqual(len(payload["candidates"]), 1)
+        self.assertEqual(
+            payload["rejection_summary"],
+            {
+                "target_family_not_mentioned": 1,
+                "self_company": 1,
+                "generic_target_intervention": 1,
+            },
+        )
         candidate = payload["candidates"][0]
         self.assertEqual(candidate["company"], "Regeneron")
         self.assertEqual(

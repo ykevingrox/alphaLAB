@@ -528,7 +528,9 @@ Latest result:
   from ClinicalTrials.gov. Offline tests cover accepting a source-backed
   GPRC5D/CD3 global candidate for Leads Biolabs, rejecting self-company /
   loose-target / no-source candidates, and turning a CT.gov HER2 trial into a
-  review-gated competitor candidate.
+  review-gated competitor candidate. Candidate packs also carry
+  `rejection_summary`, including generic-target-intervention rejections so
+  background therapies such as HSCT are not mistaken for competitor assets.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same full-test validation baseline.
@@ -576,13 +578,15 @@ Latest result:
   audit `10/12 supported`, `2 need review`, `0 missing anchors`. The remaining
   review assets are `LBL-056` and `LBL-082`, both missing target/mechanism
   because the source gives modality descriptions but not molecular targets.
-  After the ClinicalTrials.gov competitor-discovery runner landed, a narrow
+  After the ClinicalTrials.gov competitor-discovery runner landed, a broader
   smoke using `company-report --ticker 09887.HK --auto-inputs
-  --competitor-discovery clinicaltrials --competitor-discovery-max-requests 1
-  --no-asset-queries --limit 1 --no-save` completed in 6.1 s, accepted
-  ABL Bio `ABL503` from NCT04762641 as a PD-L1/4-1BB candidate, and refreshed
-  the generated competitor draft to 2 rows with
-  `candidate_ingest = 1 accepted / 0 rejected`.
+  --overwrite-auto-inputs --competitor-discovery clinicaltrials
+  --competitor-discovery-max-requests 3 --no-asset-queries --limit 1
+  --no-save` completed in 8.8 s. It accepted ABL Bio `ABL503`
+  (NCT04762641), Janssen `Talquetamab` (NCT04773522), and `QLS32015`
+  as review-gated CT.gov candidates; rejected 5 non-target-family records
+  and 2 generic target interventions; and refreshed the generated competitor
+  draft to 4 rows with `candidate_ingest = 3 accepted / 0 rejected`.
   Full quick-report LLM smoke (`report "09887.HK" --json --no-save`) completed
   6/6 graph steps OK with 17,371 total LLM tokens. Pipeline triage now says the
   snapshot largely aligns with source text; remaining issues are real research
@@ -778,8 +782,9 @@ The latest 09887 run moved the next quality gap from extraction fidelity to
 competitive intelligence. The system can now source-ground most Leads Biolabs
 pipeline fields and safely ingest evidence-backed global discovery candidates,
 with ClinicalTrials.gov as the first live source. The latest CT.gov smoke found
-ABL503 for LBL-024; the remaining discovery gap is query quality / recall
-within that single source before adding any more public databases.
+ABL503 for LBL-024 and Talquetamab / QLS32015 for LBL-034 while rejecting HSCT
+style background interventions. The remaining discovery gap is query quality /
+recall within that single source before adding any more public databases.
 
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
@@ -788,9 +793,9 @@ access recovers.
 
 ### Next Action
 
-1. Tighten ClinicalTrials.gov competitor discovery quality for `09887.HK`:
-   inspect accepted/rejected candidates beyond the first request, improve query
-   generation if needed, and keep the deterministic target-family gate strict.
+1. Run `09887.HK` with the full LLM stack after CT.gov competitor discovery
+   so `competition-triage` can assess the new ABL503 / Talquetamab / QLS32015
+   candidate set.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -840,9 +845,9 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Run a broader `09887.HK` ClinicalTrials.gov competitor-discovery pass and
-   confirm competition-triage improves without treating generated candidates as
-   curated truth.
+1. Run full LLM `report "09887.HK"` with the refreshed CT.gov competitor set
+   and confirm competition-triage improves without treating generated
+   candidates as curated truth.
 2. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
    end behavior needs validation.
 3. Re-check quantitative macro feeds from a fresh network or after

@@ -576,6 +576,7 @@ def draft_competitor_discovery_candidates_from_clinical_trials(
     candidates: list[dict[str, Any]] = []
     searched: list[dict[str, Any]] = []
     warnings: list[str] = []
+    rejections: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     request_count = 0
     for request in requests_payload:
@@ -606,7 +607,7 @@ def draft_competitor_discovery_candidates_from_clinical_trials(
             )
             continue
         for trial in extract_trial_summaries(response):
-            candidate = _clinical_trial_competitor_candidate(
+            candidate, rejection = _clinical_trial_competitor_candidate(
                 identity=identity,
                 request=request,
                 target=target,
@@ -614,6 +615,8 @@ def draft_competitor_discovery_candidates_from_clinical_trials(
                 trial=trial,
             )
             if candidate is None:
+                if rejection is not None and len(rejections) < 30:
+                    rejections.append(rejection)
                 continue
             key = (
                 _compact_target_key(candidate["company"]),
@@ -621,6 +624,14 @@ def draft_competitor_discovery_candidates_from_clinical_trials(
                 str(candidate.get("source_url") or ""),
             )
             if key in seen:
+                if len(rejections) < 30:
+                    rejections.append(
+                        _trial_rejection(
+                            trial=trial,
+                            target=target,
+                            reason="duplicate_candidate",
+                        )
+                    )
                 continue
             seen.add(key)
             candidates.append(candidate)
@@ -633,6 +644,8 @@ def draft_competitor_discovery_candidates_from_clinical_trials(
         "max_requests": max_requests,
         "requests_searched": searched,
         "warnings": warnings,
+        "rejections": rejections,
+        "rejection_summary": _rejection_summary(rejections),
         "candidates": candidates,
         "needs_human_review": True,
     }
@@ -656,22 +669,39 @@ def _clinical_trial_competitor_candidate(
     target: str,
     query: str,
     trial: Any,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if not _trial_mentions_target(trial, target):
-        return None
+        return None, _trial_rejection(
+            trial=trial,
+            target=target,
+            reason="target_family_not_mentioned",
+        )
     sponsor = str(getattr(trial, "sponsor", "") or "").strip()
     if not sponsor or _same_compact_text(sponsor, identity.company):
-        return None
+        reason = "missing_sponsor" if not sponsor else "self_company"
+        return None, _trial_rejection(trial=trial, target=target, reason=reason)
     source_date = str(getattr(trial, "last_update_posted", "") or "").strip()
     if not source_date:
-        return None
-    asset_name = _trial_candidate_asset_name(trial)
+        return None, _trial_rejection(
+            trial=trial,
+            target=target,
+            reason="missing_source_date",
+        )
+    asset_name, asset_rejection = _trial_candidate_asset_name(trial, target)
     if not asset_name:
-        return None
+        return None, _trial_rejection(
+            trial=trial,
+            target=target,
+            reason=asset_rejection or "missing_asset_name",
+        )
     registry_id = str(getattr(trial, "registry_id", "") or "").strip()
     source_url = _clinicaltrials_study_url(registry_id)
     if not source_url:
-        return None
+        return None, _trial_rejection(
+            trial=trial,
+            target=target,
+            reason="missing_registry_id",
+        )
     pipeline_asset = _candidate_text(request, "pipeline_asset") or target
     snippet = _clinical_trial_evidence_snippet(trial)
     return {
@@ -693,7 +723,31 @@ def _clinical_trial_competitor_candidate(
         "source_query": query,
         "confidence": 0.55,
         "generated_by_llm": False,
+    }, None
+
+
+def _trial_rejection(
+    *,
+    trial: Any,
+    target: str,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "reason": reason,
+        "target": target,
+        "registry_id": str(getattr(trial, "registry_id", "") or "").strip()
+        or None,
+        "title": str(getattr(trial, "title", "") or "").strip()[:120] or None,
+        "sponsor": str(getattr(trial, "sponsor", "") or "").strip() or None,
     }
+
+
+def _rejection_summary(rejections: list[dict[str, Any]]) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    for rejection in rejections:
+        reason = str(rejection.get("reason") or "unknown")
+        summary[reason] = summary.get(reason, 0) + 1
+    return summary
 
 
 def _trial_mentions_target(trial: Any, target: str) -> bool:
@@ -710,13 +764,68 @@ def _trial_mentions_target(trial: Any, target: str) -> bool:
     return bool(tokens) and all(token in haystack for token in tokens)
 
 
-def _trial_candidate_asset_name(trial: Any) -> str | None:
-    for intervention in getattr(trial, "interventions", ()) or ():
-        text = str(intervention or "").strip()
-        if text:
-            return text
+def _trial_candidate_asset_name(
+    trial: Any,
+    target: str,
+) -> tuple[str | None, str | None]:
+    interventions = [
+        str(intervention or "").strip()
+        for intervention in getattr(trial, "interventions", ()) or ()
+        if str(intervention or "").strip()
+    ]
+    target_interventions = [
+        intervention
+        for intervention in interventions
+        if _text_mentions_target(intervention, target)
+    ]
+    if target_interventions:
+        for intervention in target_interventions:
+            if not _generic_target_intervention(intervention, target):
+                return intervention, None
+        return None, "generic_target_intervention"
+    for intervention in interventions:
+        if not _background_intervention(intervention):
+            return intervention, None
     title = str(getattr(trial, "title", "") or "").strip()
-    return title[:80] if title else None
+    return (title[:80], None) if title else (None, "missing_asset_name")
+
+
+def _text_mentions_target(text: str, target: str) -> bool:
+    haystack = _compact_target_key(text)
+    tokens = _target_tokens(target)
+    return bool(tokens) and all(token in haystack for token in tokens)
+
+
+def _generic_target_intervention(intervention: str, target: str) -> bool:
+    compact = _compact_target_key(intervention)
+    target_compact = _compact_target_key(target)
+    generic_terms = (
+        "bites",
+        "bite",
+        "bispecific",
+        "antibody",
+        "antibodies",
+        "tcellengager",
+        "tce",
+    )
+    if target_compact not in compact:
+        return False
+    remainder = compact.replace(target_compact, "")
+    for term in generic_terms:
+        remainder = remainder.replace(term, "")
+    return len(remainder) < 4
+
+
+def _background_intervention(intervention: str) -> bool:
+    compact = _compact_target_key(intervention)
+    background_terms = (
+        "hematopoieticstemcelltransplantation",
+        "stemcelltransplantation",
+        "autologous",
+        "placebo",
+        "standardofcare",
+    )
+    return any(term in compact for term in background_terms)
 
 
 def _clinical_trial_evidence_snippet(trial: Any) -> str:

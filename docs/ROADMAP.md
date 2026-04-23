@@ -430,8 +430,11 @@ and web ingestion out).
   deterministic target-family match. The first live bounded runner now uses
   ClinicalTrials.gov only, converts target-family-matching trials into
   review-gated candidates, and is enabled by default in quick `report`
-  mode. The remaining gap is query quality / recall within CT.gov before
-  adding company pages, filings, or other public sources.
+  mode. Candidate packs include `rejection_summary`, and generic target-class
+  interventions are rejected so background therapies are not mistaken for
+  competitor assets. The remaining gap is using the refreshed CT.gov candidate
+  set in full LLM competition-triage runs before adding company pages, filings,
+  or other public sources.
 
 - **Done (opt-in)** — Keep memo outputs deterministic-first while introducing
   a bounded, auditable scientific critique layer. `ScientificSkepticLLMAgent`
