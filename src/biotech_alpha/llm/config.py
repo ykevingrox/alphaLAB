@@ -52,6 +52,11 @@ class LLMConfig:
 
         Environment variables consumed:
 
+        When ``environ`` is omitted, values are loaded from ``os.environ`` and
+        then overlaid with ``.env`` in the current working directory.
+        Passing ``environ`` keeps tests and callers fully deterministic and
+        does not read ``.env``.
+
         * ``BIOTECH_ALPHA_LLM_PROVIDER`` -- optional, one of
           ``openai-compatible`` (default) or ``anthropic``.
         * ``BIOTECH_ALPHA_LLM_API_KEY`` -- primary. Falls back to
@@ -83,7 +88,7 @@ class LLMConfig:
           trace ``extra`` field, not in ``response_text``.
         """
 
-        env = environ if environ is not None else os.environ
+        env = environ if environ is not None else _merged_dotenv_and_environ()
         provider = _parse_provider(
             env.get("BIOTECH_ALPHA_LLM_PROVIDER"),
             fallback=DEFAULT_PROVIDER,
@@ -159,6 +164,44 @@ def _clean(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _merged_dotenv_and_environ() -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(_read_dotenv(Path(".env")))
+    return env
+
+
+def _read_dotenv(path: Path) -> dict[str, str]:
+    """Read simple KEY=VALUE lines from a local .env file."""
+
+    if not path.exists():
+        return {}
+
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+            if "=" not in line:
+                continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = _strip_dotenv_value(value.strip())
+    return values
+
+
+def _strip_dotenv_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    comment_index = value.find(" #")
+    if comment_index >= 0:
+        value = value[:comment_index].rstrip()
+    return value
 
 
 def _parse_float(value: str | None, *, fallback: float, name: str) -> float:

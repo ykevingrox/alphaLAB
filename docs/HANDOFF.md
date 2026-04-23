@@ -786,6 +786,21 @@ ABL503 for LBL-024 and Talquetamab / QLS32015 for LBL-034 while rejecting HSCT
 style background interventions. The remaining discovery gap is query quality /
 recall within that single source before adding any more public databases.
 
+Latest saved Leads Biolabs (`09887.HK`) quick report:
+`report 09887.HK` completed with run id `20260423T094315Z`, quality gate
+`research_ready_with_review`, decision `watchlist`, 12 assets, 22 trials,
+4 competitors, 17 catalysts, extraction audit 10 supported / 2 review, and
+LLM graph 6/6 OK with 18,219 total tokens. Outputs:
+`data/memos/09887-hk/20260423T094315Z_memo.md`,
+`data/memos/20260423T094315Z_llm_findings.json`, and
+`data/traces/20260423T094315Z.jsonl`.
+
+The report run exposed and fixed a config bug: `LLMConfig.from_env()` used to
+read only `os.environ`, so a stale shell `DASHSCOPE_API_KEY` could beat the
+project `.env`. It now auto-loads `.env` and lets `.env` override shell env
+when no explicit env dict is passed, while tests can still pass an explicit
+env for deterministic isolation.
+
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
 quantitative chart/HIBOR subfeeds still need a follow-up when provider
@@ -793,9 +808,9 @@ access recovers.
 
 ### Next Action
 
-1. Run `09887.HK` with the full LLM stack after CT.gov competitor discovery
-   so `competition-triage` can assess the new ABL503 / Talquetamab / QLS32015
-   candidate set.
+1. Decide whether LLM findings should be folded into the markdown memo as an
+   explicit addendum, instead of living only in
+   `data/memos/<run_id>_llm_findings.json`.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -836,7 +851,6 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
   $(git ls-files '*.py' '*.md' '*.toml')
 
 # Live LLM smoke (requires .env with BIOTECH_ALPHA_LLM_API_KEY)
-set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs --market-data hk-public \
   --llm-agents pipeline-triage financial-triage competition-triage \
@@ -845,9 +859,9 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Run full LLM `report "09887.HK"` with the refreshed CT.gov competitor set
-   and confirm competition-triage improves without treating generated
-   candidates as curated truth.
+1. Consider a deterministic post-processor that turns LLM findings into an
+   `InvestmentMemo.llm_addendum` so memo downstream consumers do not need to
+   parse `data/memos/*_llm_findings.json` separately.
 2. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
    end behavior needs validation.
 3. Re-check quantitative macro feeds from a fresh network or after

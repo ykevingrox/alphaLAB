@@ -7,6 +7,7 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from biotech_alpha.llm import (
     AnthropicLLMClient,
@@ -25,6 +26,38 @@ from biotech_alpha.llm.trace import TraceEntry, hash_prompt
 
 
 class LLMConfigFromEnvTest(unittest.TestCase):
+    def test_loads_project_dotenv_when_environ_omitted(self) -> None:
+        old_cwd = os.getcwd()
+        with TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "BIOTECH_ALPHA_LLM_API_KEY": "shell-project-key",
+                "DASHSCOPE_API_KEY": "shell-fallback-key",
+            },
+            clear=True,
+        ):
+            os.chdir(tmp)
+            try:
+                Path(".env").write_text(
+                    "\n".join(
+                        [
+                            "BIOTECH_ALPHA_LLM_API_KEY=project-key",
+                            "BIOTECH_ALPHA_LLM_BASE_URL=https://example.com/v1",
+                            "BIOTECH_ALPHA_LLM_MODEL=qwen-test",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+
+                config = LLMConfig.from_env()
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(config.api_key, "project-key")
+        self.assertEqual(config.base_url, "https://example.com/v1")
+        self.assertEqual(config.model, "qwen-test")
+
     def test_uses_explicit_environ_values(self) -> None:
         env = {
             "BIOTECH_ALPHA_LLM_API_KEY": "k",
