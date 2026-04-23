@@ -222,10 +222,11 @@ Status: partially implemented. A custom lightweight `AgentGraph` runtime is
 in place (`src/biotech_alpha/agent_runtime.py`) with a thread-safe
 `FactStore`, topological layer scheduling, same-layer parallelism, and
 per-agent error isolation. An OpenAI-compatible LLM adapter targets
-Alibaba Bailian's `/compatible-mode/v1` endpoint with `qwen3.6-plus` as the
-default model. A first LLM agent, `ScientificSkepticLLMAgent`, is wired
-behind `company-report --llm-agents scientific-skeptic`. All LLM calls are
-JSONL-traced with token counts, latency, and a run-level cost summary.
+Alibaba Bailian's `/compatible-mode/v1` endpoint with `qwen3.5-plus` as the
+lower-cost development/test default model. Five LLM agents are wired through
+`company-report --llm-agents ...` and the quick `report "<company|ticker>"`
+command enables the full stack by default. All LLM calls are JSONL-traced
+with token counts, latency, and a run-level cost summary.
 
 - **Done** — LLM adapter layer (config, client, trace, prompt templating,
   lightweight JSON-schema validation). Supports `DASHSCOPE_API_KEY` fallback
@@ -431,13 +432,13 @@ and web ingestion out).
 
 ### Sprint 4: Multi-LLM Agent Collaboration
 
-**Sprint status:** four-agent collaboration landed on 2026-04-22.
-Pipeline-triage, financial-triage, and macro-context all run in
-parallel in the same AgentGraph layer; the scientific-skeptic waits
-and consumes all three payloads through the FactStore. Per-agent LLM
-budget caps and `--market-data-freshness-days` landed in the same
-pass. Sprint continues with enriching macro signals, adding a Claude
-adapter, and starting a technical / K-line agent.
+**Sprint status:** five-agent collaboration is live. Pipeline-triage,
+financial-triage, competition-triage, and macro-context run before the
+scientific-skeptic, which consumes their payloads through the FactStore.
+Per-agent LLM budget caps, `--market-data-freshness-days`, Anthropic
+adapter support, and the productized quick `report` command are in place.
+Sprint continues with competitor-seed depth, provider smoke discipline, and
+eventually a technical / K-line agent.
 
 - **Done** — LLM + Agent runtime skeleton (config, client, trace, prompt,
   schema, FactStore, AgentGraph, opt-in CLI flag).
@@ -449,7 +450,7 @@ adapter, and starting a technical / K-line agent.
   debugging.
 - **Done** — Second LLM agent: `PipelineTriageLLMAgent` with
   `source_text_excerpt` fact and in-graph chaining into the skeptic.
-  Validated end-to-end via live Bailian Qwen3.6 dual-agent smoke
+  Validated end-to-end via historical live Bailian Qwen dual-agent smoke
   (7298 total tokens, 2/2 calls OK, findings for both agents).
 - **Done** — Multi-anchor `source_text_excerpt`: stitches one window per
   asset name, exposes `anchor_assets` / `missing_assets`, and the
@@ -473,7 +474,7 @@ adapter, and starting a technical / K-line agent.
   on live DualityBio run at 3/3 OK and 10515 tokens combined.
 - **Done** — `MacroContextLLMAgent`: stub-based macro regime read with
   `macro_regime` enum, `sector_drivers[]`, `sector_headwinds[]`. Four
-  LLM agents now compose cleanly (pipeline + financial + macro ->
+  LLM agents composed cleanly (pipeline + financial + macro ->
   skeptic) and the skeptic's prompt renders all three upstream
   payloads. Live smoke on 09606.HK: 4/4 OK at 11919 tokens.
 - **Done** — Per-agent LLM call budget cap via
@@ -505,6 +506,9 @@ adapter, and starting a technical / K-line agent.
   `--llm-agents competition-triage`) audits deterministic competitor
   matching outputs and feeds structured findings into the skeptic when
   chained in the same AgentGraph run.
+- **Done** — Lower the openai-compatible development/test default model from
+  `qwen3.6-plus` to `qwen3.5-plus` to conserve quota. Stronger model ids
+  remain available through `BIOTECH_ALPHA_LLM_MODEL`.
 - **Done** — Ultra-simple CLI entry `report "<company|ticker>"` for
   operator UX. It auto-enables auto-inputs, market-data, macro-signals,
   and the full LLM stack by default; missing LLM env now fails fast unless

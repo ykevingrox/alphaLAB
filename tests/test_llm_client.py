@@ -78,7 +78,7 @@ class LLMConfigFromEnvTest(unittest.TestCase):
             config.base_url,
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
-        self.assertEqual(config.model, "qwen3.6-plus")
+        self.assertEqual(config.model, "qwen3.5-plus")
         self.assertFalse(config.enable_thinking)
 
     def test_falls_back_to_dashscope_api_key(self) -> None:

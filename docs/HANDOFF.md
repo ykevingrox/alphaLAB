@@ -145,7 +145,7 @@ Use this shape:
 - Multi-LLM-agent runtime skeleton (M1) is live:
   - `src/biotech_alpha/llm/` exposes `LLMConfig` (env-driven,
     `BIOTECH_ALPHA_LLM_API_KEY` with `DASHSCOPE_API_KEY` fallback,
-    default model `qwen3.6-plus`, opt-in `enable_thinking`),
+    default model `qwen3.5-plus`, opt-in `enable_thinking`),
     `OpenAICompatibleLLMClient` (targets Bailian's
     `/compatible-mode/v1`; auto-sends `extra_body.enable_thinking` only on
     Bailian so OpenAI itself stays compatible), `FakeLLMClient`,
@@ -315,7 +315,7 @@ Use this shape:
   - `--llm-agents macro-context` registers the agent, composable with
     the other three. Skeptic `depends_on` it when requested and
     renders a `macro_context` block in its prompt.
-- Live Bailian Qwen four-agent smoke validated on 2026-04-22:
+- Historical Bailian Qwen four-agent smoke validated on 2026-04-22:
   - `company-report --ticker 09606.HK --auto-inputs --market-data
     hk-public --llm-agents pipeline-triage financial-triage
     macro-context scientific-skeptic`: 4 LLM calls, 4 OK, 9571 prompt
@@ -330,6 +330,13 @@ Use this shape:
     a distinct medium-severity risk: "Macro regime is undefined due
     to missing interest rate and regulatory data, increasing
     uncertainty around cost of capital and approval pathways".
+- Fifth LLM agent `CompetitionTriageLLMAgent` is live:
+  - `--llm-agents competition-triage` audits deterministic competitor
+    matching outputs and writes `competition_triage_llm_finding`.
+  - When chained with `scientific-skeptic`, the skeptic consumes
+    competition findings alongside pipeline, financial, and macro payloads.
+  - The quick `report "<company|ticker>"` path now enables all five LLM
+    agents by default unless `--no-llm` is passed.
 - Macro-signals live feed (M4c) is live:
   - New module `src/biotech_alpha/macro_signals_providers.py` with a
     `MacroSignalsProvider` protocol (`provider(market) -> dict|None`)
@@ -478,10 +485,12 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-23 after Leads Biolabs (`09887.HK`) fixture
-hardening, extraction-audit persistence, repeated-anchor source excerpt
-ranking, and ClinicalTrials.gov failure degradation. Extractor versions:
-`PIPELINE_EXTRACTOR_VERSION = 9` and `COMPETITOR_EXTRACTOR_VERSION = 4`:
+Last validated on 2026-04-23 after switching the development/test Bailian
+default to `qwen3.5-plus`, cleaning up LLM-agent documentation drift, Leads
+Biolabs (`09887.HK`) fixture hardening, extraction-audit persistence,
+repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
+degradation. Extractor versions: `PIPELINE_EXTRACTOR_VERSION = 9` and
+`COMPETITOR_EXTRACTOR_VERSION = 4`:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -552,9 +561,12 @@ Latest result:
   snapshot largely aligns with source text; remaining issues are real research
   gaps: LBL-024 non-standard phase wording / competitive context, LBL-056 and
   LBL-082 null targets, and sparse competitor benchmarking.
-- LLM ping `scripts/llm_smoke.py` (Bailian `/compatible-mode/v1`,
-  `qwen3.6-plus`, `enable_thinking=False`): 1 call, 28 completion tokens,
-  3.0 s latency, schema satisfied, trace recorded.
+- LLM default model is now `qwen3.5-plus` for lower-cost development and
+  smoke testing. The previous LLM ping (`scripts/llm_smoke.py`, Bailian
+  `/compatible-mode/v1`, `qwen3.6-plus`, `enable_thinking=False`) used
+  1 call, 28 completion tokens, 3.0 s latency, satisfied the schema, and
+  recorded a trace. A live `qwen3.5-plus` smoke is intentionally deferred
+  until quota pressure eases.
 - LLM end-to-end `company-report --ticker 09606.HK --auto-inputs
   --market-data hk-public --llm-agents scientific-skeptic`: 1 LLM call,
   1615 prompt + 734 completion tokens, 15.5 s latency, `AgentRunResult`
@@ -571,21 +583,21 @@ Latest smoke commands:
   --ticker 09606.HK --auto-inputs --overwrite-auto-inputs \
   --market-data hk-public
 
-# LLM + agent runtime opt-in (four agent)
+# LLM + agent runtime opt-in (five agents)
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
-  --llm-agents pipeline-triage financial-triage macro-context \
-    scientific-skeptic
+  --llm-agents pipeline-triage financial-triage competition-triage \
+    macro-context scientific-skeptic
 
 # Same as above, plus live HSI / USD-HKD feed for macro-context
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs \
   --market-data hk-public \
   --macro-signals yahoo-hk \
-  --llm-agents pipeline-triage financial-triage macro-context \
-    scientific-skeptic
+  --llm-agents pipeline-triage financial-triage competition-triage \
+    macro-context scientific-skeptic
 
 # Tuning Tencent staleness without code changes
 .venv/bin/python -m biotech_alpha.cli company-report \
@@ -604,8 +616,8 @@ Latest smoke result:
 - LLM agent pipeline writes `data/memos/<run_id>_llm_findings.json` and
   `data/traces/<run_id>.jsonl`. The trace JSONL captures timestamp, agent,
   model, prompt_hash, token counts, latency, retries, and `ok`/`error`.
-- Four-agent DualityBio smoke (`pipeline-triage` + `financial-triage`
-  + `macro-context` + `scientific-skeptic`):
+- Historical four-agent DualityBio smoke (`pipeline-triage` +
+  `financial-triage` + `macro-context` + `scientific-skeptic`):
   - 4 LLM calls, 4 OK, 9571 prompt + 2348 completion tokens (11919
     total), 52.4 s combined latency (financial 8 s, macro 5.8 s,
     pipeline 22 s ran in parallel in the same DAG layer; skeptic
@@ -625,6 +637,9 @@ Latest smoke result:
 - Qwen3's default implicit thinking remains actively suppressed via
   `extra_body.enable_thinking=False` on Bailian; that continues to keep
   completion token usage low.
+- Current development/test default is `qwen3.5-plus`. Use
+  `BIOTECH_ALPHA_LLM_MODEL=qwen3.6-plus` only for stronger live research
+  runs where the extra quota cost is acceptable.
 - `--macro-signals yahoo-hk` is wired end-to-end and now shares a
   single fetch across every company in the same market through
   `CachingMacroSignalsProvider`. Because macro signals (HSI,
@@ -729,6 +744,11 @@ persistence are closed for the current source-backed scope. Remaining
 deterministic warnings should stay review-gated unless the source text
 clearly resolves them.
 
+LLM quota conservation is now part of the operating posture: the default
+Bailian model for development and smoke testing is `qwen3.5-plus`, and live
+LLM smoke should be skipped unless it is needed to validate behavior that
+offline tests cannot cover.
+
 The latest 09887 run moved the next quality gap from extraction fidelity to
 competitive intelligence. The system can now source-ground most Leads Biolabs
 pipeline fields, but only auto-drafts one competitor seed, so LLM skeptic
@@ -772,7 +792,7 @@ access recovers.
   `macro_context.live_signals` keys.
 - Anthropic implementation remains test-covered offline; online smoke
   is deferred until an API key is available.
-- No regression on the existing four-agent Qwen smoke or on the
+- No regression on the existing quick-report full-stack Qwen smoke or on the
   macro-signals offline tests.
 
 ### Validation
@@ -788,8 +808,8 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 set -a; source .env; set +a
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs --market-data hk-public \
-  --llm-agents pipeline-triage financial-triage macro-context \
-    scientific-skeptic
+  --llm-agents pipeline-triage financial-triage competition-triage \
+    macro-context scientific-skeptic
 ```
 
 ### Queue
@@ -797,18 +817,20 @@ set -a; source .env; set +a
 1. Expand conservative competitor seeds for Leads/IO2.0-style targets and
    rerun `report "09887.HK"` to confirm competition-triage improves without
    treating generated seeds as curated truth.
-2. Re-check quantitative macro feeds from a fresh network or after
+2. Run one live `qwen3.5-plus` smoke only when quota pressure eases or a
+   provider/model compatibility question must be answered.
+3. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
-3. Keep broadening fixtures across representative HK biotech disclosure
+4. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-4. Tighten validator checks for stale placeholders and weak evidence
+5. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-5. Add a US-market sibling market-data provider, so the auto-draft path
+6. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-6. Consider a deterministic post-processor that turns LLM findings into
+7. Consider a deterministic post-processor that turns LLM findings into
    an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
    need to parse `data/memos/*_llm_findings.json` separately.
-7. Consider a `K-line technical agent` (name TBD) that reads a
+8. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.

@@ -12,7 +12,7 @@ DEFAULT_PROVIDER: Literal["openai-compatible", "anthropic"] = (
     "openai-compatible"
 )
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen3.6-plus"
+DEFAULT_MODEL = "qwen3.5-plus"
 DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
 DEFAULT_TRACE_DIR = Path("data/traces")
@@ -65,7 +65,7 @@ class LLMConfig:
           ``provider=openai-compatible`` and to ``https://api.anthropic.com``
           for ``provider=anthropic``.
         * ``BIOTECH_ALPHA_LLM_MODEL`` -- optional, defaults to
-          ``qwen3.6-plus`` for ``provider=openai-compatible`` and
+          ``qwen3.5-plus`` for ``provider=openai-compatible`` and
           ``claude-3-5-sonnet-latest`` for ``provider=anthropic``.
         * ``BIOTECH_ALPHA_LLM_REQUEST_TIMEOUT`` -- optional float seconds.
         * ``BIOTECH_ALPHA_LLM_CALL_BUDGET`` -- optional positive integer.
