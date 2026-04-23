@@ -577,6 +577,13 @@ Use this shape:
   - `result_summary` and saved manifest now include a structured
     `research_action_plan` payload, preserving `guidance_type`,
     entry-zone bounds, trigger list, and review flags.
+- P0/P1 remaining closures landed in deterministic path:
+  - Scorecard transparency now includes `### Path to Core Candidate` with
+    top-3 lowest-contribution dimensions and concrete evidence-to-improve lines.
+  - Core Asset Deep Dive now adds deterministic competitor-linked
+    differentiation lines when curated competitive matches exist.
+  - Key Risks rendering now tags medium/high LLM triage risks
+    (`confidence >= 0.4`) as `source: llm[agent_name]`.
 
 ## Current Repo State
 
@@ -859,9 +866,9 @@ Latest smoke result:
 
 ### Current Task
 
-Continue **Sprint 5: From Data Sheet To Investment Memo** by closing the next
-high-impact gap after P0.1/P0.2/P0.3 and completed P1.8:
-**P1.7 Scorecard transparency follow-up (minor UX/documentation polish)**.
+Continue **Sprint 5: From Data Sheet To Investment Memo** after deterministic
+P0/P1 closure:
+**P2.x Data breadth (next phase pick by highest memo gap)**.
 
 Current baseline now has target-price defaults, investment-thesis integration,
 value-weighted catalyst ranking, structured scorecard transparency, structured
@@ -871,15 +878,15 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Finish remaining P1.7 polish for operator UX (dimension naming/readability
-   and consistency across memo/summary/watchlist exports).
-2. Keep P0.4 benchmark expansion deferred until after low-friction polish tasks.
-3. Re-open P0.4 source-like ground-truth expansion only when time budget allows
-   dedicated cleanup work.
+1. Start P2 with the highest-impact data gap visible in current memo quality
+   (China CDE or HKEXnews RSS first).
+2. Keep optional `AssetDeepDiveLLMAgent` as a non-blocking enhancement track.
+3. Re-open deeper P0.4 source-like expansion only if deterministic extraction
+   quality regresses on canonical fixtures.
 
 ### Acceptance Criteria
 
-- Sprint 5 P1.8 checkpoint acceptance: done.
+- Sprint 5 P0/P1 deterministic checkpoints: done.
   1. `position_action.py` handles absent/invalid/non-finite anchors with
      conservative degradation.
   2. Suggested sizing falls back to `0.0%` when entry-zone anchors are
@@ -888,7 +895,11 @@ Sprint 5 workstreams first.
      `guidance_type=research_only`.
   4. Unit tests cover absent share price, inverted ranges, non-signal language,
      and non-finite valuation inputs.
-  5. Summary/manifest now expose structured `research_action_plan` payload.
+  5. Summary/manifest expose structured `research_action_plan` payload.
+  6. Scorecard section includes deterministic top-3 lift targets.
+  7. Core asset deep-dive includes deterministic competitor-linked
+     differentiation lines when match evidence exists.
+  8. LLM triage medium/high risks are tagged with source in Key Risks rendering.
 - Sprint 5 global invariants (all tasks): deterministic report still
   runs under `--no-llm`; every auto-generated assumption carries
   `needs_human_review=true` until a curated override lands; every new
@@ -920,17 +931,13 @@ done
 
 Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
-1. **P1.7** Scorecard transparency follow-up (completed for manifest +
-   `watchlist-rank` dimension expansion; keep for minor UX/documentation
-   cleanup only).
-2. **P0.4** Core Asset Deep Dive extraction + optional
-   `AssetDeepDiveLLMAgent` (ground-truth expansion intentionally deferred one
-   slot).
-3. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
+1. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
    events, peer valuation, equity history (pick based on the gap the
    P0 / P1 memo reveals).
-4. **P3.x** Strategic additions: K-line agent, historical memo diff,
+2. **P3.x** Strategic additions: K-line agent, historical memo diff,
     portfolio concentration, bilingual memo, HTML/PDF export.
+3. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
+   ground-truth expansion, and additional cross-agent merge heuristics.
 
 Pre-Sprint 5 backlog retained for later:
 

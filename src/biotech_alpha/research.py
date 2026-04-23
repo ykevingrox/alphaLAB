@@ -498,6 +498,7 @@ def memo_to_markdown(
         "",
     ]
     valuation_findings = _findings_for(all_findings, "target_price")
+    competition_findings = _findings_for(all_findings, "competition")
     if valuation_findings:
         for finding in valuation_findings:
             lines.append(f"- {finding.summary}")
@@ -541,6 +542,11 @@ def memo_to_markdown(
             if asset.clinical_data:
                 for datum in asset.clinical_data[:3]:
                     lines.append(f"  - clinical: {_clinical_data_line(datum)}")
+            for line in _deep_dive_competitive_lines(
+                asset_name=asset.name,
+                competition_findings=tuple(competition_findings),
+            ):
+                lines.append(f"  - {line}")
     else:
         lines.append("- No disclosed pipeline asset input was provided.")
     pipeline_llm = _findings_for(all_findings, "pipeline_triage")
@@ -554,7 +560,6 @@ def memo_to_markdown(
         lines.append(line)
 
     lines.extend(["", "## Competitive Landscape", ""])
-    competition_findings = _findings_for(all_findings, "competition")
     if competition_findings:
         for finding in competition_findings:
             lines.append(f"- {finding.summary}")
@@ -584,6 +589,9 @@ def memo_to_markdown(
             lines.append(f"- {finding.summary}")
             for risk in finding.risks:
                 lines.append(f"  - {risk}")
+        lines.extend(
+            _scorecard_lift_target_lines(tuple(scorecard_findings))
+        )
     else:
         lines.append("- No watchlist scorecard summary was generated.")
 
@@ -1518,6 +1526,62 @@ def _action_plan_payload(action_plan: ResearchActionPlan | None) -> dict[str, An
     }
 
 
+def _deep_dive_competitive_lines(
+    *,
+    asset_name: str,
+    competition_findings: tuple[AgentFinding, ...],
+) -> list[str]:
+    lines: list[str] = []
+    asset_key = asset_name.casefold()
+    for finding in competition_findings:
+        for evidence in finding.evidence:
+            claim = evidence.claim.strip()
+            if not claim:
+                continue
+            if not claim.casefold().startswith(asset_key + " matched competitor"):
+                continue
+            sentence = claim
+            if sentence.endswith("."):
+                sentence = sentence[:-1]
+            lines.append(f"differentiation focus: {sentence}.")
+            if len(lines) >= 1:
+                return lines
+    return lines
+
+
+def _scorecard_lift_target_lines(
+    scorecard_findings: tuple[AgentFinding, ...],
+) -> list[str]:
+    rows: list[tuple[float, str, str]] = []
+    for finding in scorecard_findings:
+        for risk in finding.risks:
+            parsed = _parse_scorecard_dimension_risk(risk)
+            if parsed:
+                rows.append(parsed)
+    if not rows:
+        return []
+    ordered = sorted(rows, key=lambda item: item[0])[:3]
+    lines = ["", "### Path to Core Candidate"]
+    for contribution, name, rationale in ordered:
+        lines.append(
+            f"- {name}: contribution {contribution:.1f}; evidence to improve: {rationale}"
+        )
+    return lines
+
+
+def _parse_scorecard_dimension_risk(text: str) -> tuple[float, str, str] | None:
+    match = re.match(
+        r"^(.+?)\s+\(score=.*?contribution=([0-9]+(?:\.[0-9]+)?)\):\s+(.+)$",
+        text.strip(),
+    )
+    if not match:
+        return None
+    name = match.group(1).strip()
+    contribution = float(match.group(2))
+    rationale = match.group(3).strip()
+    return (contribution, name, rationale)
+
+
 def _write_json(path: Path, payload: Any) -> None:
     path.write_text(
         json.dumps(_jsonable(payload), ensure_ascii=False, indent=2) + "\n",
@@ -1781,10 +1845,18 @@ def _catalyst_bucket_rank(bucket: str) -> int:
 
 
 def _finding_risk_lines(findings: tuple[AgentFinding, ...]) -> list[str]:
-    risks = [risk for finding in findings for risk in finding.risks]
-    if not risks:
+    risk_rows: list[str] = []
+    for finding in findings:
+        for risk in finding.risks:
+            normalized = risk.strip()
+            if not normalized:
+                continue
+            if _should_tag_llm_triage_risk(finding=finding, risk=normalized):
+                normalized = f"{normalized} (source: llm[{finding.agent_name}])"
+            risk_rows.append(normalized)
+    if not risk_rows:
         return ["- No agent-level risks captured yet."]
-    deduped = list(dict.fromkeys(risk.strip() for risk in risks if risk.strip()))
+    deduped = list(dict.fromkeys(risk_rows))
     ordered = sorted(deduped, key=_risk_sort_key)
     return [f"- {risk}" for risk in ordered]
 
@@ -1800,6 +1872,16 @@ def _risk_sort_key(risk: str) -> tuple[int, str]:
     else:
         rank = 3
     return (rank, lowered)
+
+
+def _should_tag_llm_triage_risk(*, finding: AgentFinding, risk: str) -> bool:
+    name = finding.agent_name.casefold()
+    if "triage" not in name:
+        return False
+    if finding.confidence < 0.4:
+        return False
+    lowered = risk.casefold()
+    return "[high]" in lowered or "[medium]" in lowered
 
 
 def _clinical_data_line(datum: Any) -> str:

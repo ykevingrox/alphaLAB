@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from biotech_alpha.models import ClinicalDataPoint, Evidence, PipelineAsset
-from biotech_alpha.research import result_summary, run_single_company_research
+from biotech_alpha.models import AgentFinding, ClinicalDataPoint, Evidence, PipelineAsset
+from biotech_alpha.research import memo_to_markdown, result_summary, run_single_company_research
 
 
 class FakeClinicalTrialsClient:
@@ -44,6 +44,29 @@ class FakeClinicalTrialsClient:
 
 
 class SingleCompanyResearchTest(unittest.TestCase):
+    def test_key_risks_tags_medium_high_llm_triage_sources(self) -> None:
+        memo_text = memo_to_markdown(
+            run_single_company_research(
+                company="Example Biotech",
+                save=False,
+                client=FakeClinicalTrialsClient({"studies": []}),
+                now=datetime(2026, 4, 20, tzinfo=UTC),
+            ).memo,
+            llm_findings=(
+                AgentFinding(
+                    agent_name="pipeline_triage_agent",
+                    summary="triage",
+                    risks=("[medium] phase label mismatch",),
+                    confidence=0.6,
+                    needs_human_review=True,
+                ),
+            ),
+        )
+        self.assertIn(
+            "[medium] phase label mismatch (source: llm[pipeline_triage_agent])",
+            memo_text,
+        )
+
     def test_core_asset_deep_dive_prefers_phase2_plus_assets(self) -> None:
         client = FakeClinicalTrialsClient({"studies": []})
         assets = (
@@ -372,10 +395,17 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Investment Thesis", memo_markdown)
             self.assertIn("## Valuation Detail", memo_markdown)
             self.assertIn("## Catalyst Roadmap", memo_markdown)
+            self.assertIn("## Scorecard Transparency", memo_markdown)
+            self.assertIn("### Path to Core Candidate", memo_markdown)
             self.assertIn("## Research-Only Action Plan", memo_markdown)
             self.assertIn("clinical: ORR 42% (n=58); relapsed disease", memo_markdown)
             self.assertIn("regulatory BLA submission planned", memo_markdown)
             self.assertIn("binary_event BLA submission in Q3 2026", memo_markdown)
+            self.assertIn(
+                "differentiation focus: Example Drug matched competitor",
+                memo_markdown,
+            )
+            self.assertIn("cash_runway: contribution 6.4", memo_markdown)
             self.assertIn("entry zone 1.05-1.27 HKD", memo_markdown)
             self.assertIn(
                 "research support only; not a trading instruction",

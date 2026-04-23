@@ -707,10 +707,10 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 1.5-2 days.
 
 - **P0.4** — Core Asset Deep Dive extraction + agent.
-  - **Status:** active but intentionally deprioritized for now (deterministic deep-dive ranking + structured clinical
-    datapoints landed; regulatory/binary-event enrichment plus ground-truth
-    benchmark harness landed; broader source-like coverage and optional
-    deep-dive LLM agent remain).
+  - **Status:** done for deterministic track (deep-dive ranking + structured
+    clinical datapoints + regulatory/binary-event enrichment + deterministic
+    differentiation-vs-competitor line + ground-truth harness landed). Optional
+    `AssetDeepDiveLLMAgent` remains a non-blocking enhancement.
   - **What:** broaden HKEX PDF text extraction beyond "Business
     Highlights" into "Clinical Highlights" / "Clinical Update" / "Data
     Highlights" sections (`auto_inputs._extract_clinical_highlights`).
@@ -750,8 +750,9 @@ hand after reading a P0 memo.
 
 - **P1.5** — Cross-agent finding merge into main Risks / Core Asset
   sections.
-  - **Status:** partially done (risk de-dup/severity ordering landed; additional
-    triage merge rules remain).
+  - **Status:** done for deterministic merge baseline (risk de-dup/severity
+    ordering landed; medium/high triage risks with confidence gate now carry
+    `source: llm[agent_name]` tags in memo risk rendering).
   - **What:** promote LLM triage findings (pipeline / financial /
     competition) with `severity in {"medium", "high"}` and
     `confidence >= 0.4` into the deterministic risks list, tagged with
@@ -781,9 +782,10 @@ hand after reading a P0 memo.
   - **Estimated size:** 1 day.
 
 - **P1.7** — Scorecard transparency.
-  - **Status:** mostly done (memo + summary + manifest now surface per-dimension
-    score/weight/contribution; `watchlist-rank` can expand per-dimension columns
-    behind `--with-scorecard-dimensions`; optional UX polish remains).
+  - **Status:** done (memo + summary + manifest surface per-dimension
+    score/weight/contribution; `watchlist-rank` expands per-dimension columns
+    behind `--with-scorecard-dimensions`; memo now includes a deterministic
+    "Path to Core Candidate" top-3 lift-target list).
   - **What:** expose `scorecard.dimensions` (dimension, raw score,
     weight, contribution) in manifest and memo. Auto-generate a "Path
     to core candidate" list of the 3 lowest-contribution dimensions
