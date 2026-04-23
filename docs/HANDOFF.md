@@ -905,8 +905,8 @@ Sprint 5 workstreams first.
 
 1. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
-2. Upgrade China CDE baseline from feed-level tracking to structured
-   trial-registry normalization when prioritized.
+2. Improve CDE normalization precision with richer field extraction dictionaries
+   when prioritized (current version is deterministic + review-gated).
 
 ### Acceptance Criteria
 
@@ -957,7 +957,7 @@ Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
 1. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
    ground-truth expansion, and additional cross-agent merge heuristics.
-2. Deferred data-breadth depth: P2.9 structured China CDE normalization.
+2. Deferred data-breadth depth: richer CDE normalization dictionaries.
 
 Pre-Sprint 5 backlog retained for later:
 

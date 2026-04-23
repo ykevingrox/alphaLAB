@@ -177,7 +177,7 @@ class CompanyReportTest(unittest.TestCase):
   <channel>
     <title>CDE</title>
     <item>
-      <title>DualityBio 临床试验申请受理</title>
+      <title>DualityBio CXHL123456 临床试验申请受理 用于肺癌</title>
       <link>https://cde.example.cn/abc</link>
       <guid>cde-abc</guid>
       <pubDate>Thu, 23 Apr 2026 11:00:00 +0800</pubDate>
@@ -227,6 +227,7 @@ class CompanyReportTest(unittest.TestCase):
             )
             self.assertEqual(summary["hkexnews_updates"]["new_count"], 1)
             self.assertTrue(summary["cde_updates"])
+            self.assertTrue(summary["cde_updates"]["normalized_new_records"])
             self.assertTrue(summary["hkexnews_event_impacts"])
             self.assertTrue(summary["hkexnews_dilution_hint"])
             self.assertTrue(summary["peer_valuation"])
@@ -245,6 +246,7 @@ class CompanyReportTest(unittest.TestCase):
             )
             self.assertIn("## HKEXnews Updates", memo_text)
             self.assertIn("## China CDE Updates", memo_text)
+            self.assertIn("### Normalized Trial Registry Draft", memo_text)
             self.assertIn("[corporate] 09606 - Voluntary Announcement", memo_text)
             catalyst_csv = Path(
                 result.research_result.artifacts.catalyst_calendar_csv

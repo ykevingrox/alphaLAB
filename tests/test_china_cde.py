@@ -7,6 +7,7 @@ from pathlib import Path
 from biotech_alpha.china_cde import (
     classify_cde_item,
     filter_cde_items,
+    normalize_cde_trial_records,
     parse_cde_feed,
     track_cde_updates,
 )
@@ -17,7 +18,7 @@ SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
   <channel>
     <title>CDE</title>
     <item>
-      <title>DualityBio 临床试验申请受理</title>
+      <title>DualityBio CXHL123456 临床试验申请受理 用于肺癌</title>
       <link>https://cde.example.cn/123</link>
       <guid>cde-123</guid>
       <pubDate>Thu, 23 Apr 2026 10:00:00 +0800</pubDate>
@@ -45,12 +46,30 @@ class ChinaCdeTest(unittest.TestCase):
             state = Path(tmpdir) / "seen.json"
             first = track_cde_updates(items=filtered, state_path=state)
             self.assertEqual(first["new_count"], 1)
+            self.assertTrue(first["normalized_new_records"])
             second = track_cde_updates(items=filtered, state_path=state)
             self.assertEqual(second["new_count"], 0)
 
     def test_classify(self) -> None:
         item = parse_cde_feed(SAMPLE_FEED)[0]
         self.assertEqual(classify_cde_item(item), "clinical")
+
+    def test_normalize_trial_records(self) -> None:
+        item = parse_cde_feed(SAMPLE_FEED)[0]
+        records = normalize_cde_trial_records(
+            [
+                {
+                    "title": item.title,
+                    "link": item.link,
+                    "published_at": item.published_at,
+                    "event_type": "clinical",
+                }
+            ]
+        )
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].application_no, "CXHL123456")
+        self.assertEqual(records[0].status, "accepted")
+        self.assertEqual(records[0].indication, "肺癌")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -19,6 +20,21 @@ class CdeItem:
     guid: str
     published_at: str | None
     category: str | None = None
+
+
+@dataclass(frozen=True)
+class CdeTrialRecord:
+    title: str
+    company: str | None
+    application_no: str | None
+    phase: str | None
+    indication: str | None
+    status: str
+    event_type: str
+    source_link: str
+    published_at: str | None
+    confidence: float
+    needs_human_review: bool = True
 
 
 def fetch_cde_feed(url: str, *, timeout: int = 8) -> str:
@@ -92,6 +108,12 @@ def track_cde_updates(
         "new_count": len(new_items),
         "new_items": [asdict(item) for item in new_items],
         "typed_new_items": [typed_cde_item_dict(item) for item in new_items],
+        "normalized_new_records": [
+            asdict(record)
+            for record in normalize_cde_trial_records(
+                [typed_cde_item_dict(item) for item in new_items]
+            )
+        ],
         "state_path": str(state_path),
     }
 
@@ -101,6 +123,44 @@ def typed_cde_item_dict(item: CdeItem) -> dict[str, Any]:
     payload["event_type"] = classify_cde_item(item)
     payload["needs_human_review"] = True
     return payload
+
+
+def normalize_cde_trial_records(
+    typed_items: list[dict[str, Any]],
+) -> tuple[CdeTrialRecord, ...]:
+    rows: list[CdeTrialRecord] = []
+    for row in typed_items:
+        title = str(row.get("title") or "").strip()
+        if not title:
+            continue
+        status = _status_from_text(title)
+        event_type = str(row.get("event_type") or "other")
+        app_no = _application_no(title)
+        company = _company_from_title(title)
+        phase = _phase_from_text(title)
+        indication = _indication_from_text(title)
+        confidence = 0.4
+        if app_no:
+            confidence += 0.2
+        if phase:
+            confidence += 0.1
+        if indication:
+            confidence += 0.1
+        rows.append(
+            CdeTrialRecord(
+                title=title,
+                company=company,
+                application_no=app_no,
+                phase=phase,
+                indication=indication,
+                status=status,
+                event_type=event_type,
+                source_link=str(row.get("link") or ""),
+                published_at=row.get("published_at"),
+                confidence=min(confidence, 0.85),
+            )
+        )
+    return tuple(rows)
 
 
 def _node_text(node: ET.Element, tag: str) -> str:
@@ -143,3 +203,45 @@ def _save_seen_ids(path: str | Path, seen_ids: set[str]) -> None:
         json.dumps({"seen_guids": sorted(seen_ids)}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _application_no(text: str) -> str | None:
+    match = re.search(r"\b(CX[HS][A-Z]?\d{5,})\b", text, flags=re.IGNORECASE)
+    return match.group(1).upper() if match else None
+
+
+def _phase_from_text(text: str) -> str | None:
+    lowered = text.casefold()
+    if "iii" in lowered or "phase 3" in lowered or "Ⅲ期" in text:
+        return "Phase 3"
+    if "ii" in lowered or "phase 2" in lowered or "Ⅱ期" in text:
+        return "Phase 2"
+    if "phase 1" in lowered or "i期" in text or "Ⅰ期" in text:
+        return "Phase 1"
+    return None
+
+
+def _indication_from_text(text: str) -> str | None:
+    match = re.search(r"(用于|治疗|适应症为)([^，。;；]{2,30})", text)
+    if not match:
+        return None
+    return match.group(2).strip()
+
+
+def _company_from_title(text: str) -> str | None:
+    cleaned = text.strip()
+    if not cleaned:
+        return None
+    parts = re.split(r"[：: \-]", cleaned, maxsplit=1)
+    first = parts[0].strip()
+    return first if len(first) >= 2 else None
+
+
+def _status_from_text(text: str) -> str:
+    if "受理" in text:
+        return "accepted"
+    if "批准" in text:
+        return "approved"
+    if any(token in text for token in ("补充", "问询", "核查", "整改")):
+        return "under_review"
+    return "other"

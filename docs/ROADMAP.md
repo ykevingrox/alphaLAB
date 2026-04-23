@@ -822,11 +822,12 @@ These tasks are necessary medium-term but only pay off once the P0 / P1
 structure can consume them.
 
 - **P2.9** — China drug clinical trial registry ingestion.
-  - **Status:** done for deterministic baseline (new `cde-track` CLI + feed
-    parser/state tracker + optional `company-report` CDE artifact + memo
-    addendum + summary/manifest threading).
-  - **Boundary now:** this baseline tracks feed-level updates only; it does not
-    yet normalize records into a structured trial registry schema.
+  - **Status:** done for deterministic baseline + normalization draft
+    (`cde-track` CLI + feed parser/state tracker + optional `company-report`
+    CDE artifact + memo addendum + summary/manifest threading + structured
+    `normalized_new_records` fields for registry-style trial rows).
+  - **Boundary now:** normalization is heuristic/feed-title based and still
+    review-gated; no official full CDE schema mirror is implied.
   **Size:** 3-5 days.
 - **P2.10** — HKEXnews announcement RSS and change tracker.
   - **Status:** done (phase-1 baseline + report-chain integration landed:

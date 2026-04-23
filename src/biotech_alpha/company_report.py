@@ -1674,6 +1674,7 @@ def write_cde_updates_report(
             "query": payload.get("query"),
             "state_path": payload.get("state_path"),
             "typed_new_items": payload.get("typed_new_items", []),
+            "normalized_new_records": payload.get("normalized_new_records", []),
         },
     )
     return replace(result, cde_updates_path=output_path)
@@ -1742,6 +1743,8 @@ def _append_cde_memo_section(
 def cde_memo_addendum_markdown(payload: dict[str, Any]) -> str:
     typed = payload.get("typed_new_items")
     rows = typed if isinstance(typed, list) else []
+    normalized = payload.get("normalized_new_records")
+    normalized_rows = normalized if isinstance(normalized, list) else []
     lines = ["## China CDE Updates", ""]
     lines.append(
         f"- New CDE items since last state: {payload.get('new_count', 0)} "
@@ -1759,6 +1762,16 @@ def cde_memo_addendum_markdown(payload: dict[str, Any]) -> str:
         lines.append(f"- [{event_type}] {title} (published {published})")
     if len(rows) > 5:
         lines.append(f"- ... {len(rows) - 5} more update(s)")
+    if normalized_rows:
+        lines.extend(["", "### Normalized Trial Registry Draft"])
+        for row in normalized_rows[:5]:
+            lines.append(
+                "- "
+                f"{row.get('application_no') or 'no-app-no'} | "
+                f"{row.get('status') or 'other'} | "
+                f"{row.get('phase') or 'phase_tbd'} | "
+                f"{row.get('indication') or 'indication_tbd'}"
+            )
     return "\n".join(lines)
 
 

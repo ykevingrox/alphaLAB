@@ -553,7 +553,7 @@ class CliTest(unittest.TestCase):
   <channel>
     <title>CDE</title>
     <item>
-      <title>DualityBio 临床试验申请受理</title>
+      <title>DualityBio CXHL123456 临床试验申请受理 用于肺癌</title>
       <link>https://cde.example.cn/123</link>
       <guid>cde-123</guid>
       <pubDate>Thu, 23 Apr 2026 10:00:00 +0800</pubDate>
@@ -584,6 +584,7 @@ class CliTest(unittest.TestCase):
             self.assertEqual(first_exit, 0)
             self.assertEqual(first_payload["new_count"], 1)
             self.assertEqual(first_payload["typed_new_items"][0]["event_type"], "clinical")
+            self.assertTrue(first_payload["normalized_new_records"])
 
             second_output = io.StringIO()
             with redirect_stdout(second_output):
