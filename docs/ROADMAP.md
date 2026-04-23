@@ -67,15 +67,16 @@ Status: started for pipeline and financial drafts from HKEX annual results.
 ## Milestone D: Validation-Centric Report
 
 Status: started. Quality gates and validation warnings are now present in
-report summaries, and quick reports expose an extraction audit so operators can
-see whether generated fields are source-supported, review-gated, or missing
-source anchors.
+report summaries, and quick reports expose and persist an extraction audit so
+operators can see whether generated fields are source-supported, review-gated,
+or missing source anchors.
 
 - Distinguish official-source facts, model-inferred values, missing inputs, and
   human-review fields in every report.
 - Block or downgrade conclusions when critical inputs are missing.
 - Preserve report reproducibility through manifests and evidence records.
-- Surface extraction support in operator output and JSON summaries.
+- Surface extraction support in operator output, JSON summaries, saved
+  artifacts, and manifests.
 
 ## Phase 0: Repository Foundation
 
@@ -450,9 +451,11 @@ adapter, and starting a technical / K-line agent.
   builder now scores repeated mentions for clinical/regulatory signal
   terms and passes `anchor_signal_scores` into the pipeline-triage prompt.
   `report` terminal output prints `Extraction audit` and `Audit focus`;
-  JSON summaries include the full `extraction_audit.assets[]` table.
-  Harbour BioMed smoke shows 6/12 supported assets, 6 review-gated
-  assets, and 0 missing anchors.
+  JSON summaries include the full `extraction_audit.assets[]` table, and
+  saved runs write `<run_id>_extraction_audit.json` under the processed
+  single-company directory with a manifest artifact pointer. Harbour
+  BioMed smoke shows 6/12 supported assets, 6 review-gated assets, and
+  0 missing anchors.
 - **Done** — `FinancialTriageLLMAgent`: burn-rate / runway / cash-debt
   sanity across `financial_snapshot`, `runway_estimate`,
   `market_snapshot`, `valuation_metrics`. Emits `runway_sanity` enum

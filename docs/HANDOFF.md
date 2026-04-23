@@ -436,13 +436,17 @@ Use this shape:
     source date (e.g. `in 2017` under 2026 evidence context).
   - Validator warns on non-positive evidence confidence and inferred
     evidence entries missing `source_date`.
-- Extraction audit visibility is live for quick reports:
+- Extraction audit visibility and persistence are live for quick reports:
   - `company_report_summary` now includes `extraction_audit`, with per-asset
     source support, missing-field reasons, evidence snippets, source-anchor
     metadata, and top review assets.
   - Quick terminal output prints `Extraction audit` plus `Audit focus`, so an
     operator can see immediately whether extraction was clean, merely
     review-gated, or missing source anchors.
+  - Saved quick reports write
+    `data/processed/single_company/<slug>/<run_id>_extraction_audit.json`,
+    print that path in the terminal artifact list, and attach it to
+    `manifest.artifacts.extraction_audit`.
   - Repeated-asset `source_text_excerpt` selection now ranks every mention and
     prefers phase / IND / BLA / trial-rich windows instead of blindly using the
     first mention. `anchor_details` exposes hit counts and signal scores to the
@@ -463,11 +467,10 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-23 after extraction-audit visibility,
-repeated-anchor source excerpt ranking, and ClinicalTrials.gov
-failure degradation. Harbour BioMed extraction / competitor versions
-remain `PIPELINE_EXTRACTOR_VERSION = 6` and
-`COMPETITOR_EXTRACTOR_VERSION = 4`:
+Last validated on 2026-04-23 after extraction-audit persistence,
+repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
+degradation. Harbour BioMed extraction / competitor versions remain
+`PIPELINE_EXTRACTOR_VERSION = 6` and `COMPETITOR_EXTRACTOR_VERSION = 4`:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
@@ -479,12 +482,12 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 Latest result:
 
-- 256 unit tests ran, 249 passed, 7 skipped (online Yahoo / online
+- 257 unit tests ran, 250 passed, 7 skipped (online Yahoo / online
   Tencent / Bailian Qwen integration tests plus Anthropic online
   self-skips; all guarded behind `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
-  The latest coverage adds extraction-audit summary assertions,
-  repeated-asset excerpt ranking, and ClinicalTrials.gov per-term
-  failure degradation.
+  The latest coverage adds saved extraction-audit artifact wiring,
+  extraction-audit summary assertions, repeated-asset excerpt ranking,
+  and ClinicalTrials.gov per-term failure degradation.
 - Extraction hardening and validator checks are covered by
   `tests/test_auto_inputs.py` and `tests/test_pipeline.py` and
   included in the same full-test validation baseline.
@@ -514,6 +517,10 @@ Latest result:
   6 review-gated, 0 missing anchors, and 12 source anchors. The terminal
   path prints the same signal as:
   `Extraction audit: 6/12 supported, 6 need review, 0 missing anchors`.
+  Saved mode also writes and prints
+  `data/processed/single_company/02142-hk/<run_id>_extraction_audit.json`,
+  and the manifest carries the same path under
+  `artifacts.extraction_audit` plus a compact manifest audit summary.
 - Full 02142 quick-report smoke:
   `report "02142.HK" --json --no-save` completed 6/6 graph steps OK
   on 2026-04-23 with quality gate `research_ready_with_review`, 12
@@ -676,13 +683,14 @@ Latest smoke result:
     source-unsupported warnings: `HAT001` missing indication and phase;
     `HBM2001`, `J9003`, `R2006`, `R7027`, and `HBM1020` missing phase.
 - Extraction-audit UX landed:
-  - `report "02142.HK" --no-llm --no-save` prints four progress stages,
-    the operator result summary, and:
+  - `report "02142.HK" --no-llm` prints four progress stages,
+    the operator result summary, artifact paths, and:
     `Extraction audit: 6/12 supported, 6 need review, 0 missing anchors`.
   - `Audit focus` lists the first review assets and reasons, currently
     `HAT001`, `HBM2001`, and `J9003` for Harbour BioMed.
-  - JSON output carries the full `extraction_audit.assets[]` table for
-    downstream scripts or UI work.
+  - Saved runs write a dedicated extraction-audit artifact and attach it to
+    the manifest. JSON output also carries the full
+    `extraction_audit.assets[]` table for downstream scripts or UI work.
   - Live LLM quick smoke completed 6/6 steps OK after the excerpt-ranking
     change; HBM7020 moved from an excerpt visibility problem to a real
     target/indication consistency review.
@@ -693,16 +701,16 @@ Latest smoke result:
 
 Harbour BioMed extraction hardening, competitor seed expansion, full
 02142 LLM quick-report smoke, repeated-anchor excerpt ranking, and
-operator-facing extraction audit are closed for the current
+operator-facing extraction-audit persistence are closed for the current
 source-backed scope. Remaining deterministic 02142 warnings are
 intentionally unresolved unless a source-backed parser improvement
 appears; do not infer phase from lost PDF table coordinates.
 
-The next quality gap is making the detailed audit easier to consume
-after a saved run. The compact terminal line is now useful, and JSON has
-the full `extraction_audit`; a future checkpoint should decide whether
-to persist a dedicated audit artifact or fold per-field audit rows into
-the memo/manifest.
+The next quality gap is broader fixture coverage and validator depth,
+not audit visibility. The audit file gives operators a durable per-asset
+table; the next parser work should be grounded in another representative
+HK biotech disclosure style rather than inferring unresolved 02142
+fields from weak packed-table text.
 
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
@@ -711,9 +719,8 @@ access recovers.
 
 ### Next Action
 
-1. Add a saved extraction-audit artifact or memo/manifest section so
-   operators can inspect the full per-asset table without reading the
-   compact JSON summary by hand.
+1. Add a third representative HK biotech fixture and use it to catch
+   parser drift before adding more target seeds or phase heuristics.
 2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
@@ -732,9 +739,9 @@ access recovers.
 - Full 02142 quick-report smoke remains 6/6 LLM steps OK, and
   pipeline-triage treats HBM7020 as a field-consistency review rather
   than a missing-source-window issue.
-- Saved-run audit follow-up should expose the same per-asset
-  `extraction_audit.assets[]` table without requiring a user to manually
-  inspect raw JSON.
+- Saved-run audit artifacts remain listed in terminal output and manifest
+  artifacts, with the same per-asset `extraction_audit.assets[]` table as
+  the compact JSON summary.
 - Multi-source fallback path keeps one-command runs resilient under
   single-provider outages and still writes stable
   `macro_context.live_signals` keys.
@@ -762,8 +769,8 @@ set -a; source .env; set +a
 
 ### Queue
 
-1. Add a dedicated saved extraction-audit artifact or memo/manifest
-   section, using the existing `extraction_audit.assets[]` payload.
+1. Add a third representative HK biotech fixture for another disclosure
+   style, then use it to harden parser regressions conservatively.
 2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
 3. Keep broadening fixtures across representative HK biotech disclosure

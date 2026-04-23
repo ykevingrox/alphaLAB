@@ -270,7 +270,7 @@ def run_company_report(
             macro_signals_provider=macro_signals_provider,
         )
 
-    return CompanyReportResult(
+    report_result = CompanyReportResult(
         identity=identity,
         input_paths=input_paths,
         missing_inputs=missing_inputs,
@@ -280,6 +280,12 @@ def run_company_report(
         llm_agent_result=llm_agent_result,
         llm_trace_path=resolved_llm_trace_path,
     )
+    if save:
+        report_result = write_extraction_audit_report(
+            output_dir=output_dir,
+            result=report_result,
+        )
+    return report_result
 
 
 SUPPORTED_LLM_AGENTS = (
@@ -1211,6 +1217,102 @@ def write_missing_inputs_report(
         encoding="utf-8",
     )
     return output_path
+
+
+def write_extraction_audit_report(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> CompanyReportResult:
+    """Write a saved extraction-audit artifact and attach it to manifest."""
+
+    output_path = _extraction_audit_report_path(
+        output_dir=output_dir,
+        result=result,
+    )
+    payload = extraction_audit_payload(result)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    artifacts = replace(
+        result.research_result.artifacts,
+        extraction_audit=output_path,
+    )
+    research_result = replace(result.research_result, artifacts=artifacts)
+    result = replace(result, research_result=research_result)
+    _update_manifest_with_extraction_audit(
+        result=result,
+        output_path=output_path,
+        audit=payload["extraction_audit"],
+    )
+    return result
+
+
+def extraction_audit_payload(result: CompanyReportResult) -> dict[str, Any]:
+    """Return the persisted JSON shape for extraction audit artifacts."""
+
+    audit = _build_extraction_audit(result)
+    return {
+        "run_id": result.research_result.run_id,
+        "identity": _jsonable(asdict(result.identity)),
+        "quality_gate": report_quality_gate(
+            result=result.research_result,
+            missing_inputs=result.missing_inputs,
+        ),
+        "extraction_audit": audit,
+    }
+
+
+def _extraction_audit_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_extraction_audit.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_extraction_audit.json"
+    )
+
+
+def _update_manifest_with_extraction_audit(
+    *,
+    result: CompanyReportResult,
+    output_path: Path,
+    audit: dict[str, Any],
+) -> None:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest is None:
+        return
+    manifest_path = Path(manifest)
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    artifacts = payload.setdefault("artifacts", {})
+    if isinstance(artifacts, dict):
+        artifacts["extraction_audit"] = str(output_path)
+    payload["extraction_audit"] = {
+        "status": audit.get("status"),
+        "asset_count": audit.get("asset_count"),
+        "counts": audit.get("counts"),
+        "source_excerpt": audit.get("source_excerpt"),
+        "top_review_assets": audit.get("top_review_assets"),
+    }
+    manifest_path.write_text(
+        json.dumps(_jsonable(payload), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def missing_inputs_payload(

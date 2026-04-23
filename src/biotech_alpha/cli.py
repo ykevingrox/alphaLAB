@@ -1365,6 +1365,7 @@ def _print_quick_report_artifacts(
 
     _print_path_line("Memo", artifacts.get("memo_markdown"))
     _print_path_line("Manifest", artifacts.get("manifest_json"))
+    _print_path_line("Extraction audit report", artifacts.get("extraction_audit"))
     _print_path_line("Scorecard", artifacts.get("scorecard"))
     _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
     _print_path_line("Missing-input report", summary.get("missing_inputs_report"))

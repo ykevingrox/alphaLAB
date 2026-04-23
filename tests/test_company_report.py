@@ -252,6 +252,25 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(audit["asset_count"], 1)
             self.assertEqual(audit["counts"]["supported"], 1)
             self.assertEqual(audit["source_excerpt"]["anchor_count"], 1)
+            audit_path = result.research_result.artifacts.extraction_audit
+            self.assertIsNotNone(audit_path)
+            audit_payload = json.loads(Path(audit_path).read_text())
+            self.assertEqual(audit_payload["run_id"], "20260421T000000Z")
+            self.assertEqual(
+                audit_payload["extraction_audit"]["counts"]["supported"],
+                1,
+            )
+            manifest = json.loads(
+                Path(result.research_result.artifacts.manifest_json).read_text()
+            )
+            self.assertEqual(
+                manifest["artifacts"]["extraction_audit"],
+                str(audit_path),
+            )
+            self.assertEqual(
+                summary["research"]["artifacts"]["extraction_audit"],
+                str(audit_path),
+            )
             self.assertTrue(
                 any("--auto-inputs" in action for action in summary["next_actions"])
             )

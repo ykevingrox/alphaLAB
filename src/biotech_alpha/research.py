@@ -122,6 +122,7 @@ class ResearchArtifacts:
     event_impact: Path | None = None
     target_price_scenarios: Path | None = None
     target_price_summary_csv: Path | None = None
+    extraction_audit: Path | None = None
     memo_json: Path | None = None
     memo_markdown: Path | None = None
 

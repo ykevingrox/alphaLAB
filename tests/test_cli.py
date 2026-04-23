@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from biotech_alpha.cli import (
+    _print_quick_report_summary,
     _split_company_or_ticker,
     _resolve_macro_signals_provider,
     _resolve_market_data_provider,
@@ -937,6 +938,43 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertEqual(kwargs["llm_agents"][0], "pipeline-triage")
             self.assertIsNotNone(kwargs["market_data_provider"])
             self.assertIsNotNone(kwargs["macro_signals_provider"])
+
+    def test_quick_report_prints_extraction_audit_artifact_path(self) -> None:
+        summary = {
+            "identity": {"company": "DualityBio", "ticker": "09606.HK"},
+            "research": {
+                "run_id": "20260422T000000Z",
+                "decision": "watchlist",
+                "watchlist_bucket": "starter",
+                "watchlist_score": 42,
+                "pipeline_asset_count": 1,
+                "trial_count": 0,
+                "competitor_asset_count": 0,
+                "catalyst_count": 0,
+                "input_warning_count": 0,
+                "artifacts": {
+                    "manifest_json": "data/processed/manifest.json",
+                    "extraction_audit": "data/processed/audit.json",
+                },
+            },
+            "quality_gate": {"level": "decision_ready", "rationale": "ok"},
+            "missing_input_count": 0,
+            "extraction_audit": {
+                "asset_count": 1,
+                "counts": {"supported": 1, "needs_review": 0},
+                "source_excerpt": {"anchor_count": 1, "missing_anchor_count": 0},
+            },
+            "next_actions": [],
+        }
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            _print_quick_report_summary(summary, save=True)
+
+        self.assertIn(
+            "- Extraction audit report: data/processed/audit.json",
+            output.getvalue(),
+        )
 
     def test_report_command_json_keeps_machine_readable_summary(self) -> None:
         fake_summary = {"identity": {"ticker": "09606.HK"}, "status": "ok"}
