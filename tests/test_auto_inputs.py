@@ -128,6 +128,21 @@ Warning under Rule 18A.08: there is no assurance that LBL-081 will be
 marketed. We plan to submit the first BLA for LBL-024 in China.
 """
 
+INNOVENT_SAMPLE_TEXT = """
+FINANCIAL HIGHLIGHTS
+For the year ended 31 December 2025
+HKD'000
+Loss for the year (2,120,331) (1,988,420)
+Cash and cash equivalents 8,765,432 9,123,450
+Borrowings 1,234,567 1,100,000
+
+PIPELINE HIGHLIGHTS
+IBI343 (CLDN18.2 ADC) entered a global Phase 3 clinical trial in gastric cancer.
+IBI363 (PD-1/IL2 bispecific antibody) presented Phase 1b data in NSCLC and melanoma.
+IBI3009 (DLL3 x CD3 BsAb) remains in IND-enabling studies for SCLC.
+IBI355 (anti-LAG-3 mAb) is planned to start in 2027.
+"""
+
 
 def _ctgov_response(
     *,
@@ -609,6 +624,52 @@ class AutoInputsTest(unittest.TestCase):
         lbl081 = _asset_by_name(payload, "LBL-081")
         self.assertEqual(lbl081["phase"], "PCC nomination")
         self.assertEqual(lbl081["next_milestone"], "PCC nomination in H1 2026")
+
+    def test_innovent_fixture_drafts_hkd_financials_and_pipeline(self) -> None:
+        identity = CompanyIdentity(company="Innovent Biologics", ticker="01801.HK")
+        source = _innovent_source()
+        pipeline = draft_pipeline_assets(
+            identity=identity,
+            text=INNOVENT_SAMPLE_TEXT,
+            source=source,
+        )
+        financials = draft_financial_snapshot(
+            identity=identity,
+            text=INNOVENT_SAMPLE_TEXT,
+            source=source,
+        )
+
+        names = [asset["name"] for asset in pipeline["assets"]]
+        self.assertIn("IBI343", names)
+        self.assertIn("IBI363", names)
+        self.assertIn("IBI3009", names)
+        self.assertIn("IBI355", names)
+
+        ibi343 = _asset_by_name(pipeline, "IBI343")
+        self.assertEqual(ibi343["target"], "CLDN18.2")
+        self.assertEqual(ibi343["phase"], "Phase 3")
+        self.assertIn("gastric cancer", ibi343["indication"])
+
+        ibi363 = _asset_by_name(pipeline, "IBI363")
+        self.assertEqual(ibi363["target"], "PD-1")
+        self.assertEqual(ibi363["phase"], "Phase 1b")
+        self.assertIn("NSCLC", ibi363["indication"])
+        self.assertIn("melanoma", ibi363["indication"])
+
+        ibi3009 = _asset_by_name(pipeline, "IBI3009")
+        self.assertEqual(ibi3009["target"], "DLL3/CD3")
+        self.assertEqual(ibi3009["phase"], "IND-enabling")
+        self.assertIn("SCLC", ibi3009["indication"])
+
+        ibi355 = _asset_by_name(pipeline, "IBI355")
+        self.assertEqual(ibi355["target"], "LAG-3")
+        self.assertEqual(ibi355["next_milestone"], "planned to start in 2027")
+
+        self.assertEqual(financials["as_of_date"], "2025-12-31")
+        self.assertEqual(financials["currency"], "HKD")
+        self.assertEqual(financials["cash_and_equivalents"], 8765432000)
+        self.assertEqual(financials["short_term_debt"], 1234567000)
+        self.assertAlmostEqual(financials["quarterly_cash_burn"], 530082750.0)
 
     def test_drafts_conference_catalysts_from_source_text(self) -> None:
         payload = draft_conference_catalysts(
@@ -1264,6 +1325,26 @@ def _leads_source(
         text_path=text_path,
         stock_code="09887",
         stock_name="LEADS BIOLABS-B",
+    )
+
+
+def _innovent_source(
+    *,
+    file_path: Path = Path("innovent_results.pdf"),
+    text_path: Path = Path("innovent_results.txt"),
+) -> SourceDocument:
+    return SourceDocument(
+        source_type="hkex_annual_results",
+        title="Annual Results",
+        url=(
+            "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/"
+            "0328/2026032801123.pdf"
+        ),
+        publication_date="2026-03-28",
+        file_path=file_path,
+        text_path=text_path,
+        stock_code="01801",
+        stock_name="INNOVENT BIO",
     )
 
 
