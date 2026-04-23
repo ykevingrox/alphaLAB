@@ -35,6 +35,7 @@ class WatchlistEntry:
     revenue_multiple: float | None
     targets: tuple[str, ...]
     indications: tuple[str, ...]
+    scorecard_dimensions: tuple[dict[str, Any], ...]
     monitoring_rules: tuple[str, ...]
     memo_markdown: str | None
     manifest_json: str
@@ -156,6 +157,8 @@ def filter_watchlist_entries_by_quality_gate(
 
 def watchlist_entries_as_dicts(
     entries: tuple[WatchlistEntry, ...],
+    *,
+    include_scorecard_dimensions: bool = False,
 ) -> list[dict[str, Any]]:
     """Return JSON-serializable ranked watchlist rows."""
 
@@ -163,8 +166,9 @@ def watchlist_entries_as_dicts(
     market_counts = _optional_value_counts(entry.market for entry in entries)
     target_counts = _concentration_counts(entries, "targets")
     indication_counts = _concentration_counts(entries, "indications")
-    return [
-        {
+    rows: list[dict[str, Any]] = []
+    for index, entry in enumerate(entries, start=1):
+        row = {
             "rank": index,
             **asdict(entry),
             **asdict(
@@ -180,8 +184,12 @@ def watchlist_entries_as_dicts(
             "indications": list(entry.indications),
             "monitoring_rules": list(entry.monitoring_rules),
         }
-        for index, entry in enumerate(entries, start=1)
-    ]
+        if include_scorecard_dimensions:
+            row["scorecard_dimensions"] = list(entry.scorecard_dimensions)
+        else:
+            row.pop("scorecard_dimensions", None)
+        rows.append(row)
+    return rows
 
 
 def build_portfolio_guardrail(
@@ -264,27 +272,45 @@ def build_portfolio_guardrail(
 
 def watchlist_entries_to_csv_text(
     entries: tuple[WatchlistEntry, ...],
+    *,
+    include_scorecard_dimensions: bool = False,
 ) -> str:
     """Render ranked watchlist rows as CSV text."""
 
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=WATCHLIST_CSV_FIELDS)
+    fieldnames = list(WATCHLIST_CSV_FIELDS)
+    if include_scorecard_dimensions:
+        fieldnames.extend(_scorecard_dimension_columns(entries))
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
     writer.writeheader()
-    for row in watchlist_entries_as_dicts(entries):
-        writer.writerow(_csv_row(row))
+    for row in watchlist_entries_as_dicts(
+        entries,
+        include_scorecard_dimensions=include_scorecard_dimensions,
+    ):
+        writer.writerow(
+            _csv_row(
+                row,
+                include_scorecard_dimensions=include_scorecard_dimensions,
+            )
+        )
     return output.getvalue()
 
 
 def write_watchlist_csv(
     path: str | Path,
     entries: tuple[WatchlistEntry, ...],
+    *,
+    include_scorecard_dimensions: bool = False,
 ) -> Path:
     """Write ranked watchlist rows as a CSV file."""
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
-        watchlist_entries_to_csv_text(entries),
+        watchlist_entries_to_csv_text(
+            entries,
+            include_scorecard_dimensions=include_scorecard_dimensions,
+        ),
         encoding="utf-8",
     )
     return output_path
@@ -347,6 +373,7 @@ def _entry_from_manifest(manifest_path: Path) -> WatchlistEntry | None:
         ),
         targets=_asset_field_values(pipeline_payload, "target"),
         indications=_asset_field_values(pipeline_payload, "indication"),
+        scorecard_dimensions=_scorecard_dimensions(scorecard),
         monitoring_rules=_string_tuple(scorecard.get("monitoring_rules")),
         memo_markdown=_artifact_str(manifest_path, artifacts, "memo_markdown"),
         manifest_json=str(manifest_path),
@@ -403,16 +430,85 @@ def _read_json(path: Path) -> Any:
         return None
 
 
-def _csv_row(row: dict[str, Any]) -> dict[str, Any]:
+def _csv_row(
+    row: dict[str, Any],
+    *,
+    include_scorecard_dimensions: bool = False,
+) -> dict[str, Any]:
     csv_row = dict(row)
     csv_row["monitoring_rules"] = "; ".join(row.get("monitoring_rules") or [])
     csv_row["guardrail_flags"] = "; ".join(row.get("guardrail_flags") or [])
     csv_row["targets"] = "; ".join(row.get("targets") or [])
     csv_row["indications"] = "; ".join(row.get("indications") or [])
+    if include_scorecard_dimensions:
+        for item in row.get("scorecard_dimensions") or []:
+            if not isinstance(item, dict):
+                continue
+            name = _normalize_dimension_name(item.get("name"))
+            if not name:
+                continue
+            csv_row[f"dim_{name}_score"] = item.get("score", "")
+            csv_row[f"dim_{name}_weight"] = item.get("weight", "")
+            csv_row[f"dim_{name}_contribution"] = item.get("contribution", "")
+    csv_row.pop("scorecard_dimensions", None)
     for key, value in list(csv_row.items()):
         if value is None:
             csv_row[key] = ""
     return csv_row
+
+
+def _scorecard_dimensions(scorecard: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    rows = scorecard.get("dimensions")
+    if not isinstance(rows, list):
+        return ()
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        output.append(
+            {
+                "name": name,
+                "score": _number_or_none(row.get("score")),
+                "weight": _number_or_none(row.get("weight")),
+                "contribution": _number_or_none(row.get("contribution")),
+                "rationale": row.get("rationale") if isinstance(row.get("rationale"), str) else None,
+            }
+        )
+    return tuple(output)
+
+
+def _scorecard_dimension_columns(entries: tuple[WatchlistEntry, ...]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        for item in entry.scorecard_dimensions:
+            if not isinstance(item, dict):
+                continue
+            normalized = _normalize_dimension_name(item.get("name"))
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            names.append(normalized)
+    columns: list[str] = []
+    for name in names:
+        columns.extend(
+            [
+                f"dim_{name}_score",
+                f"dim_{name}_weight",
+                f"dim_{name}_contribution",
+            ]
+        )
+    return columns
+
+
+def _normalize_dimension_name(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(value.strip().split())
+    return text.casefold().replace(" ", "_")
 
 
 def _company_counts(entries: tuple[WatchlistEntry, ...]) -> dict[str, int]:

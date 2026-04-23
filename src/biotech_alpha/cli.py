@@ -609,6 +609,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=("incomplete", "research_ready_with_review", "decision_ready"),
         help="Keep only entries at or above this quality gate level.",
     )
+    watchlist_parser.add_argument(
+        "--with-scorecard-dimensions",
+        action="store_true",
+        help=(
+            "Include per-dimension score/weight/contribution fields in "
+            "watchlist JSON rows and expanded CSV columns."
+        ),
+    )
 
     alerts_parser = subparsers.add_parser(
         "catalyst-alerts",
@@ -998,7 +1006,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         entries = rank_watchlist_entries(entries)
         if args.format == "csv":
             if args.output:
-                path = write_watchlist_csv(args.output, entries)
+                path = write_watchlist_csv(
+                    args.output,
+                    entries,
+                    include_scorecard_dimensions=args.with_scorecard_dimensions,
+                )
                 print(
                     json.dumps(
                         {
@@ -1013,7 +1025,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 )
             else:
-                print(watchlist_entries_to_csv_text(entries), end="")
+                print(
+                    watchlist_entries_to_csv_text(
+                        entries,
+                        include_scorecard_dimensions=args.with_scorecard_dimensions,
+                    ),
+                    end="",
+                )
             return 0
 
         payload = {
@@ -1021,7 +1039,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "loaded_entry_count": len(loaded_entries),
             "latest_only": args.latest_only,
             "min_quality_gate": args.min_quality_gate,
-            "entries": watchlist_entries_as_dicts(entries),
+            "entries": watchlist_entries_as_dicts(
+                entries,
+                include_scorecard_dimensions=args.with_scorecard_dimensions,
+            ),
         }
         if args.output:
             path = Path(args.output)

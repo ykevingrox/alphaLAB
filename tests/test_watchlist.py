@@ -89,6 +89,29 @@ class WatchlistTest(unittest.TestCase):
             self.assertIn("Check next clinical catalyst; Review data quality", text)
             self.assertIn("PD-1", text)
 
+    def test_csv_output_can_expand_scorecard_dimension_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company"
+            self._write_run(
+                root=root,
+                slug="alpha",
+                run_id="20260420T010000Z",
+                company="Alpha Bio",
+                ticker=None,
+                score=40.0,
+                bucket="low_priority",
+                warnings=[],
+            )
+
+            entries = rank_watchlist_entries(load_watchlist_entries(root))
+            text = watchlist_entries_to_csv_text(
+                entries,
+                include_scorecard_dimensions=True,
+            )
+
+            self.assertIn("dim_clinical_progress_score", text)
+            self.assertIn("dim_data_quality_contribution", text)
+
     def test_concentration_guardrail_caps_high_score_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir) / "single_company"
@@ -178,6 +201,30 @@ class WatchlistTest(unittest.TestCase):
             self.assertEqual(len(filtered), 1)
             self.assertEqual(filtered[0].company, "Beta Bio")
 
+    def test_json_rows_can_include_scorecard_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company"
+            self._write_run(
+                root=root,
+                slug="alpha",
+                run_id="20260420T010000Z",
+                company="Alpha Bio",
+                ticker="1111.HK",
+                score=58.0,
+                bucket="watchlist",
+                warnings=[],
+            )
+            entries = rank_watchlist_entries(load_watchlist_entries(root))
+            rows = watchlist_entries_as_dicts(
+                entries,
+                include_scorecard_dimensions=True,
+            )
+            self.assertTrue(rows[0]["scorecard_dimensions"])
+            self.assertEqual(
+                rows[0]["scorecard_dimensions"][0]["name"],
+                "clinical_progress",
+            )
+
     def _write_run(
         self,
         *,
@@ -209,6 +256,22 @@ class WatchlistTest(unittest.TestCase):
                     "total_score": score,
                     "bucket": bucket,
                     "needs_human_review": bool(warnings),
+                    "dimensions": [
+                        {
+                            "name": "clinical_progress",
+                            "score": 60.0,
+                            "weight": 1.0,
+                            "contribution": 8.6,
+                            "rationale": "phase 2 registry coverage",
+                        },
+                        {
+                            "name": "data_quality",
+                            "score": 90.0,
+                            "weight": 1.0,
+                            "contribution": 12.9,
+                            "rationale": "all curated input types available",
+                        },
+                    ],
                     "monitoring_rules": [
                         "Check next clinical catalyst",
                         "Review data quality",

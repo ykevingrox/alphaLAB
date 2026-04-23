@@ -268,6 +268,69 @@ class CliTest(unittest.TestCase):
             self.assertEqual(payload["entries"][0]["company"], "Alpha Bio")
             self.assertEqual(payload["entries"][0]["market"], "HK")
             self.assertEqual(payload["entries"][0]["watchlist_score"], 61.5)
+            self.assertNotIn("scorecard_dimensions", payload["entries"][0])
+
+    def test_watchlist_rank_can_include_scorecard_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / "single_company" / "alpha"
+            root.mkdir(parents=True)
+            run_id = "20260420T010000Z"
+            scorecard_path = root / f"{run_id}_scorecard.json"
+            manifest_path = root / f"{run_id}_manifest.json"
+            scorecard_path.write_text(
+                json.dumps(
+                    {
+                        "total_score": 61.5,
+                        "bucket": "watchlist",
+                        "needs_human_review": False,
+                        "dimensions": [
+                            {
+                                "name": "clinical_progress",
+                                "score": 60.0,
+                                "weight": 1.0,
+                                "contribution": 8.6,
+                                "rationale": "phase 2 coverage",
+                            }
+                        ],
+                        "monitoring_rules": ["Track readout"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "company": "Alpha Bio",
+                        "ticker": "1111.HK",
+                        "market": "HK",
+                        "retrieved_at": "2026-04-20T01:00:00+00:00",
+                        "input_validation": {},
+                        "counts": {"trials": 2, "pipeline_assets": 1},
+                        "artifacts": {"scorecard": str(scorecard_path)},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "watchlist-rank",
+                        "--processed-dir",
+                        str(Path(tmpdir) / "single_company"),
+                        "--with-scorecard-dimensions",
+                    ]
+                )
+
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(payload["entries"][0]["scorecard_dimensions"])
+            self.assertEqual(
+                payload["entries"][0]["scorecard_dimensions"][0]["name"],
+                "clinical_progress",
+            )
 
     def test_watchlist_rank_latest_only_dedupes_company_runs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
