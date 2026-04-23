@@ -163,6 +163,11 @@ class CompanyReportTest(unittest.TestCase):
             generated.mkdir()
             pipeline = generated / "09606_hk_pipeline_assets.json"
             financials = generated / "09606_hk_financials.json"
+            text_path = root / "results.txt"
+            text_path.write_text(
+                "DB-1303 HER2 ADC Phase 3 in breast cancer.",
+                encoding="utf-8",
+            )
             pipeline.write_text(
                 json.dumps(
                     {
@@ -177,6 +182,8 @@ class CompanyReportTest(unittest.TestCase):
                                     {
                                         "claim": "DB-1303 is disclosed.",
                                         "source": "source.pdf",
+                                        "source_date": "2026-03-23",
+                                        "confidence": 0.8,
                                     }
                                 ],
                             }
@@ -210,7 +217,7 @@ class CompanyReportTest(unittest.TestCase):
                             url="https://example.com/results.pdf",
                             publication_date="2026-03-23",
                             file_path=root / "results.pdf",
-                            text_path=root / "results.txt",
+                            text_path=text_path,
                             stock_code="09606",
                             stock_name="DUALITYBIO-B",
                         ),
@@ -241,6 +248,10 @@ class CompanyReportTest(unittest.TestCase):
             summary = company_report_summary(result)
             self.assertIn("--auto-inputs", payload["rerun_command"])
             self.assertIn("--auto-inputs", summary["rerun_command"])
+            audit = summary["extraction_audit"]
+            self.assertEqual(audit["asset_count"], 1)
+            self.assertEqual(audit["counts"]["supported"], 1)
+            self.assertEqual(audit["source_excerpt"]["anchor_count"], 1)
             self.assertTrue(
                 any("--auto-inputs" in action for action in summary["next_actions"])
             )
@@ -497,6 +508,37 @@ class SourceTextExcerptTest(unittest.TestCase):
             assert excerpt is not None
             self.assertLessEqual(excerpt["excerpt_chars"], 2400)
             self.assertTrue(excerpt["truncated"])
+
+    def test_prefers_phase_rich_repeated_asset_mentions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            text = (
+                "HBM7020 collaboration with Otsuka for autoimmune diseases. "
+                + "filler. " * 500
+                + "HBM7020 obtained IND clearance to commence Phase I trial."
+            )
+            artifacts = self._artifacts_with_text(root, text)
+            pipeline = {
+                "assets": [
+                    {
+                        "name": "HBM7020",
+                        "target": "BCMA/CD3",
+                        "phase": "Phase I",
+                    }
+                ]
+            }
+
+            excerpt = _build_source_text_excerpt(
+                auto_input_artifacts=artifacts,
+                pipeline_snapshot=pipeline,
+                max_chars=900,
+                per_anchor_window=500,
+            )
+
+            assert excerpt is not None
+            self.assertIn("Phase I trial", excerpt["excerpt"])
+            self.assertEqual(excerpt["anchor_details"][0]["hit_count"], 2)
+            self.assertGreater(excerpt["anchor_details"][0]["signal_score"], 0)
 
     def test_build_llm_agent_facts_threads_excerpt_through(self) -> None:
         class _StubResearch:

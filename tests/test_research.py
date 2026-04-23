@@ -36,11 +36,38 @@ class FakeClinicalTrialsClient:
         self.page_size = page_size
         self.page_token = page_token
         if term in self.responses_by_term:
-            return self.responses_by_term[term]
+            response = self.responses_by_term[term]
+            if isinstance(response, Exception):
+                raise response
+            return response
         return self.response or {"studies": []}
 
 
 class SingleCompanyResearchTest(unittest.TestCase):
+    def test_clinical_trial_search_failure_degrades_to_warning(self) -> None:
+        asset = PipelineAsset(name="DB-1303", target="HER2")
+        client = FakeClinicalTrialsClient(
+            responses_by_term={
+                "DualityBio": {"studies": []},
+                "DB-1303": RuntimeError("remote disconnected"),
+            }
+        )
+
+        result = run_single_company_research(
+            company="DualityBio",
+            pipeline_assets=(asset,),
+            client=client,
+            include_asset_queries=True,
+            limit=1,
+            save=False,
+            now=datetime(2026, 4, 20, tzinfo=UTC),
+        )
+
+        report = result.input_validation["clinical_trials"]
+        self.assertEqual(report["failed_search_count"], 1)
+        self.assertIn("DB-1303", report["warnings"][0])
+        self.assertEqual(result.trials, ())
+
     def test_run_single_company_research_writes_artifacts(self) -> None:
         response = {
             "studies": [

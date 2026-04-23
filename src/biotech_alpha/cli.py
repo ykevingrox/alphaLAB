@@ -1272,6 +1272,7 @@ def _print_quick_report_summary(
     missing_count = summary.get("missing_input_count", 0)
     warning_count = research.get("input_warning_count", 0)
     print(f"Review load: {missing_count} missing inputs, {warning_count} warnings")
+    _print_quick_report_extraction_audit(summary)
     _print_quick_report_llm_summary(summary)
     _print_quick_report_artifacts(
         summary=summary,
@@ -1281,6 +1282,45 @@ def _print_quick_report_summary(
         output_dir=output_dir,
     )
     _print_quick_report_next_action(summary)
+
+
+def _print_quick_report_extraction_audit(summary: dict[str, object]) -> None:
+    audit = _dict_value(summary, "extraction_audit")
+    if not audit:
+        return
+    counts = _dict_value(audit, "counts")
+    source = _dict_value(audit, "source_excerpt")
+    asset_count = audit.get("asset_count", 0)
+    supported = counts.get("supported", 0)
+    review = counts.get("needs_review", 0)
+    missing_anchor = counts.get("missing_anchor", 0)
+    source_text = "source unavailable"
+    if source:
+        source_text = (
+            f"{source.get('anchor_count', 0)} anchors, "
+            f"{source.get('missing_anchor_count', 0)} missing anchors"
+        )
+    print(
+        "Extraction audit: "
+        f"{supported}/{asset_count} supported, {review} need review, "
+        f"{missing_anchor} missing anchors ({source_text})"
+    )
+    focus = audit.get("top_review_assets")
+    if not isinstance(focus, list) or not focus:
+        return
+    parts = []
+    for item in focus[:3]:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        reasons = item.get("reasons")
+        reason_text = "review source"
+        if isinstance(reasons, list) and reasons:
+            reason_text = "; ".join(str(reason) for reason in reasons[:2])
+        if name:
+            parts.append(f"{name} ({reason_text})")
+    if parts:
+        print("Audit focus: " + "; ".join(parts))
 
 
 def _print_quick_report_llm_summary(summary: dict[str, object]) -> None:

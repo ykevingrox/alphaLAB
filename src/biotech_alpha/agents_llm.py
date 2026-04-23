@@ -1379,12 +1379,25 @@ def _source_text_block(value: Any) -> str:
             if missing
             else "(all asset names found in text)"
         )
+        details = value.get("anchor_details") or []
+        details_line = "(not available)"
+        if isinstance(details, list) and details:
+            parts = []
+            for item in details[:20]:
+                if not isinstance(item, dict):
+                    continue
+                parts.append(
+                    f"{item.get('asset')}:score={item.get('signal_score')}"
+                )
+            if parts:
+                details_line = ", ".join(parts)
         header = [
             f"title: {value.get('title') or 'unknown'}",
             f"url: {value.get('url') or 'unknown'}",
             f"publication_date: {value.get('publication_date') or 'unknown'}",
             f"anchor_assets: {anchor_line}",
             f"missing_assets: {missing_line}",
+            f"anchor_signal_scores: {details_line}",
             (
                 f"excerpt_chars: {value.get('excerpt_chars')} "
                 f"(of total {value.get('total_chars')}, "

@@ -262,12 +262,25 @@ def run_single_company_research(
     )
 
     trials_client = client or ClinicalTrialsClient()
-    api_version = trials_client.version()
-    raw_responses, trials = _search_and_dedupe_clinical_trials(
+    clinical_warnings: list[str] = []
+    try:
+        api_version = trials_client.version()
+    except Exception as exc:  # noqa: BLE001 - keep report resilient.
+        api_version = {"error": str(exc)}
+        clinical_warnings.append(f"ClinicalTrials.gov version failed: {exc}")
+    raw_responses, trials, search_warnings = _search_and_dedupe_clinical_trials(
         client=trials_client,
         search_terms=search_terms,
         limit=limit,
     )
+    clinical_warnings.extend(search_warnings)
+    if clinical_warnings:
+        input_validation["clinical_trials"] = {
+            "errors": [],
+            "warnings": tuple(clinical_warnings),
+            "search_term_count": len(search_terms),
+            "failed_search_count": len(search_warnings),
+        }
     asset_trial_matches = match_pipeline_assets_to_trials(assets, trials)
 
     context = AgentContext(
@@ -713,17 +726,23 @@ def _search_and_dedupe_clinical_trials(
     client: ClinicalTrialsSource,
     search_terms: tuple[str, ...],
     limit: int,
-) -> tuple[dict[str, dict[str, Any]], tuple[TrialSummary, ...]]:
+) -> tuple[dict[str, dict[str, Any]], tuple[TrialSummary, ...], tuple[str, ...]]:
     raw_responses: dict[str, dict[str, Any]] = {}
     trials_by_key: dict[str, TrialSummary] = {}
+    warnings: list[str] = []
     for term in search_terms:
-        response = client.search_studies(term, page_size=limit)
+        try:
+            response = client.search_studies(term, page_size=limit)
+        except Exception as exc:  # noqa: BLE001 - one failed term should degrade.
+            warnings.append(f"{term}: ClinicalTrials.gov search failed: {exc}")
+            raw_responses[term] = {"studies": [], "error": str(exc)}
+            continue
         raw_responses[term] = response
         for trial in extract_trial_summaries(response):
             key = _trial_dedupe_key(trial)
             if key and key not in trials_by_key:
                 trials_by_key[key] = trial
-    return raw_responses, tuple(trials_by_key.values())
+    return raw_responses, tuple(trials_by_key.values()), tuple(warnings)
 
 
 def _trial_dedupe_key(trial: TrialSummary) -> str:

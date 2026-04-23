@@ -848,20 +848,33 @@ def _build_source_text_excerpt(
     assets = pipeline_snapshot.get("assets") or []
     half_window = max(200, per_anchor_window // 2)
     hits: list[tuple[int, int, str]] = []
+    anchor_details: list[dict[str, Any]] = []
     anchor_assets: list[str] = []
     missing_assets: list[str] = []
     for asset in assets:
         name = (asset.get("name") or "").strip()
         if not name or len(name) < 3:
             continue
-        index = full_text.find(name)
-        if index == -1:
+        hit = _best_source_excerpt_hit(
+            full_text=full_text,
+            asset=asset,
+            name=name,
+            half_window=half_window,
+        )
+        if hit is None:
             missing_assets.append(name)
             continue
-        start = max(0, index - half_window)
-        end = min(len(full_text), index + half_window)
+        start, end, score, hit_count = hit
         hits.append((start, end, name))
         anchor_assets.append(name)
+        anchor_details.append(
+            {
+                "asset": name,
+                "selected_offset": start,
+                "hit_count": hit_count,
+                "signal_score": score,
+            }
+        )
 
     if not hits:
         excerpt = full_text[:max_chars]
@@ -871,6 +884,7 @@ def _build_source_text_excerpt(
             "url": getattr(document, "url", None),
             "publication_date": getattr(document, "publication_date", None),
             "anchor_assets": [],
+            "anchor_details": [],
             "missing_assets": missing_assets,
             "total_chars": len(full_text),
             "excerpt_chars": len(excerpt),
@@ -910,12 +924,71 @@ def _build_source_text_excerpt(
         "url": getattr(document, "url", None),
         "publication_date": getattr(document, "publication_date", None),
         "anchor_assets": anchor_assets,
+        "anchor_details": anchor_details,
         "missing_assets": missing_assets,
         "total_chars": len(full_text),
         "excerpt_chars": len(excerpt),
         "excerpt": excerpt,
         "truncated": truncated,
     }
+
+
+def _best_source_excerpt_hit(
+    *,
+    full_text: str,
+    asset: dict[str, Any],
+    name: str,
+    half_window: int,
+) -> tuple[int, int, int, int] | None:
+    matches = list(re.finditer(re.escape(name), full_text))
+    if not matches:
+        return None
+    scored: list[tuple[int, int, int, int]] = []
+    for match in matches:
+        start = max(0, match.start() - half_window)
+        end = min(len(full_text), match.start() + half_window)
+        window = full_text[start:end]
+        scored.append(
+            (
+                _source_signal_score(window, asset),
+                start,
+                end,
+                match.start(),
+            )
+        )
+    score, start, end, _ = max(scored, key=lambda item: (item[0], item[3]))
+    return start, end, score, len(matches)
+
+
+_SOURCE_SIGNAL_TERMS = (
+    "phase",
+    "trial",
+    "clinical",
+    "BLA",
+    "Biologics License Application",
+    "IND",
+    "approved",
+    "accepted",
+    "under review",
+    "submitted",
+    "NMPA",
+)
+
+
+def _source_signal_score(window: str, asset: dict[str, Any]) -> int:
+    lowered = window.casefold()
+    score = sum(2 for term in _SOURCE_SIGNAL_TERMS if term.casefold() in lowered)
+    for key in ("phase", "target", "indication", "partner"):
+        value = str(asset.get(key) or "").strip()
+        if not value:
+            continue
+        for token in re.split(r"[;/,]|\s+x\s+", value):
+            token = token.strip()
+            if len(token) >= 3 and token.casefold() in lowered:
+                score += 3
+    if "phase 3.0" in lowered:
+        score -= 4
+    return score
 
 
 def _llm_agent_result_payload(result: Any) -> dict[str, Any]:
@@ -1202,6 +1275,7 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             result=result.research_result,
             missing_inputs=result.missing_inputs,
         ),
+        "extraction_audit": _build_extraction_audit(result),
         "rerun_command": company_report_rerun_command(
             result.identity,
             auto_inputs=auto_inputs,
@@ -1220,6 +1294,158 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.llm_trace_path) if result.llm_trace_path else None
         ),
     }
+
+
+def _build_extraction_audit(result: CompanyReportResult) -> dict[str, Any]:
+    assets = result.research_result.pipeline_assets
+    warnings_by_asset, global_warnings = _pipeline_warnings_by_asset(
+        result.research_result.input_validation
+    )
+    pipeline_snapshot = {
+        "assets": [
+            {
+                "name": asset.name,
+                "target": asset.target,
+                "indication": asset.indication,
+                "phase": asset.phase,
+                "partner": asset.partner,
+            }
+            for asset in assets
+        ]
+    }
+    excerpt = _build_source_text_excerpt(
+        auto_input_artifacts=result.auto_input_artifacts,
+        pipeline_snapshot=pipeline_snapshot,
+        max_chars=4000,
+        per_anchor_window=1200,
+    )
+    anchor_assets = set(excerpt.get("anchor_assets", ()) if excerpt else ())
+    missing_assets = set(excerpt.get("missing_assets", ()) if excerpt else ())
+    details = excerpt.get("anchor_details", ()) if excerpt else ()
+    details_by_asset = {
+        str(item.get("asset")): item
+        for item in details
+        if isinstance(item, dict) and item.get("asset")
+    }
+
+    asset_rows = []
+    counts = {
+        "supported": 0,
+        "needs_review": 0,
+        "missing_anchor": 0,
+        "missing_evidence": 0,
+    }
+    for asset in assets:
+        warnings = warnings_by_asset.get(asset.name, [])
+        support = _asset_source_support(
+            asset=asset,
+            warnings=warnings,
+            anchor_assets=anchor_assets,
+            missing_assets=missing_assets,
+            excerpt_available=excerpt is not None,
+        )
+        counts[support] = counts.get(support, 0) + 1
+        evidence = asset.evidence[0] if asset.evidence else None
+        row = {
+            "name": asset.name,
+            "source_support": support,
+            "review_reasons": warnings,
+            "anchor": details_by_asset.get(asset.name),
+            "fields": {
+                "target": _field_audit_status(asset.target, warnings, "target"),
+                "indication": _field_audit_status(
+                    asset.indication,
+                    warnings,
+                    "indication",
+                ),
+                "phase": _field_audit_status(asset.phase, warnings, "phase"),
+                "partner": "present" if asset.partner else "not_provided",
+            },
+            "evidence": (
+                {
+                    "source": evidence.source,
+                    "source_date": evidence.source_date,
+                    "confidence": evidence.confidence,
+                    "is_inferred": evidence.is_inferred,
+                    "claim_excerpt": evidence.claim[:180],
+                }
+                if evidence is not None
+                else None
+            ),
+        }
+        asset_rows.append(row)
+
+    review_assets = [
+        {"name": row["name"], "reasons": row["review_reasons"][:3]}
+        for row in asset_rows
+        if row["review_reasons"] or row["source_support"] != "supported"
+    ]
+    return {
+        "status": "review_required" if review_assets else "clean",
+        "asset_count": len(asset_rows),
+        "counts": counts,
+        "global_warnings": global_warnings,
+        "source_excerpt": (
+            {
+                "available": True,
+                "anchor_count": len(anchor_assets),
+                "missing_anchor_count": len(missing_assets),
+                "truncated": bool(excerpt.get("truncated")),
+                "publication_date": excerpt.get("publication_date"),
+            }
+            if excerpt
+            else {"available": False}
+        ),
+        "top_review_assets": review_assets[:8],
+        "assets": asset_rows,
+    }
+
+
+def _pipeline_warnings_by_asset(
+    input_validation: dict[str, Any],
+) -> tuple[dict[str, list[str]], list[str]]:
+    report = input_validation.get("pipeline_assets")
+    warnings = report.get("warnings", []) if isinstance(report, dict) else []
+    by_asset: dict[str, list[str]] = {}
+    global_warnings: list[str] = []
+    for warning in warnings:
+        text = str(warning)
+        if ":" not in text:
+            global_warnings.append(text)
+            continue
+        asset, detail = text.split(":", 1)
+        by_asset.setdefault(asset.strip(), []).append(detail.strip())
+    return by_asset, global_warnings
+
+
+def _asset_source_support(
+    *,
+    asset: Any,
+    warnings: list[str],
+    anchor_assets: set[str],
+    missing_assets: set[str],
+    excerpt_available: bool,
+) -> str:
+    if not asset.evidence:
+        return "missing_evidence"
+    if excerpt_available and asset.name in missing_assets:
+        return "missing_anchor"
+    if warnings:
+        return "needs_review"
+    if excerpt_available and asset.name not in anchor_assets:
+        return "missing_anchor"
+    return "supported"
+
+
+def _field_audit_status(
+    value: str | None,
+    warnings: list[str],
+    field: str,
+) -> str:
+    marker = f"missing {field}"
+    if any(marker in warning for warning in warnings):
+        return "missing"
+    return "present" if value else "not_provided"
 
 
 def report_quality_gate(

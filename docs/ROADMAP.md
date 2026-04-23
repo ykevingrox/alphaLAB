@@ -66,12 +66,16 @@ Status: started for pipeline and financial drafts from HKEX annual results.
 
 ## Milestone D: Validation-Centric Report
 
-Status: planned.
+Status: started. Quality gates and validation warnings are now present in
+report summaries, and quick reports expose an extraction audit so operators can
+see whether generated fields are source-supported, review-gated, or missing
+source anchors.
 
 - Distinguish official-source facts, model-inferred values, missing inputs, and
   human-review fields in every report.
 - Block or downgrade conclusions when critical inputs are missing.
 - Preserve report reproducibility through manifests and evidence records.
+- Surface extraction support in operator output and JSON summaries.
 
 ## Phase 0: Repository Foundation
 
@@ -240,6 +244,11 @@ JSONL-traced with token counts, latency, and a run-level cost summary.
   window per asset and exposes `anchor_assets` / `missing_assets`; the
   triage prompt tells the LLM to ignore assets absent from the text
   instead of flagging them.
+- **Done** — Repeated-asset source excerpt ranking. When an asset name
+  appears multiple times, `_build_source_text_excerpt` now prefers
+  phase / IND / BLA / trial-rich windows and exposes `anchor_details`
+  hit counts plus signal scores, so pipeline triage sees the same
+  source-backed details used by deterministic extraction.
 - **Done** — Third LLM agent (`FinancialTriageLLMAgent`): cross-checks
   cash / debt / burn rate / deterministic runway / market snapshot /
   currency alignment. Emits `runway_sanity` enum plus per-metric
@@ -365,18 +374,22 @@ resilience and validator tightening remain).
   phase/partner cleanup now also rejects `Phase 3.0 strategic era` as a
   clinical phase, prefers BLA / IND statuses when stated, and prevents
   inline numbered collaboration sections from leaking partners across
-  assets.
+  assets. Repeated source-text anchor selection now prefers evidence-rich
+  mentions, so LLM triage does not miss later phase/IND/BLA evidence when
+  an earlier collaboration-only mention appears first.
 
 - **Partially done** — Extend generated draft inputs with clearer confidence
   tags and explicit `needs_human_review` markers (conference draft JSON from
   annual-results text exists; broader contracts still shallow).
   **Where:** `src/biotech_alpha/auto_inputs.py` (`draft_conference_catalysts`).
 
-- **Not started** — Add stricter validators for placeholder values, stale dates,
-  and missing evidence metadata (beyond current warning-only checks).
+- **Partially done** — Add stricter validators for placeholder values,
+  stale dates, and missing evidence metadata (beyond current warning-only
+  checks).
   Current baseline now flags malformed milestone strings, stale
   milestone years vs evidence dates, non-positive evidence confidence,
-  and inferred evidence missing source dates.
+  inferred evidence missing source dates, and generated quick reports
+  now expose an `extraction_audit` summary with per-asset review reasons.
 
 ### Sprint 3: Research Depth Upgrade
 
@@ -433,6 +446,13 @@ adapter, and starting a technical / K-line agent.
   triage prompt respects them so extractor coverage limits are no
   longer flagged as data-quality issues. Raised triage confidence from
   0.6 to 0.95 on the DualityBio smoke.
+- **Done** — Repeated-anchor ranking and extraction-audit UX. The excerpt
+  builder now scores repeated mentions for clinical/regulatory signal
+  terms and passes `anchor_signal_scores` into the pipeline-triage prompt.
+  `report` terminal output prints `Extraction audit` and `Audit focus`;
+  JSON summaries include the full `extraction_audit.assets[]` table.
+  Harbour BioMed smoke shows 6/12 supported assets, 6 review-gated
+  assets, and 0 missing anchors.
 - **Done** — `FinancialTriageLLMAgent`: burn-rate / runway / cash-debt
   sanity across `financial_snapshot`, `runway_estimate`,
   `market_snapshot`, `valuation_metrics`. Emits `runway_sanity` enum

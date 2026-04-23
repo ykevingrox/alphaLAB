@@ -879,6 +879,24 @@ class QuickReportCliTest(unittest.TestCase):
                 "rationale": "report generated but requires manual review",
             },
             "missing_input_count": 0,
+            "extraction_audit": {
+                "asset_count": 3,
+                "counts": {
+                    "supported": 2,
+                    "needs_review": 1,
+                    "missing_anchor": 0,
+                },
+                "source_excerpt": {
+                    "anchor_count": 3,
+                    "missing_anchor_count": 0,
+                },
+                "top_review_assets": [
+                    {
+                        "name": "DB-1312",
+                        "reasons": ["missing phase"],
+                    }
+                ],
+            },
             "next_actions": ["Review the memo."],
             "llm_agents": {
                 "steps": [
@@ -907,6 +925,11 @@ class QuickReportCliTest(unittest.TestCase):
             self.assertIn("[1/4] Resolve query: 09606.HK", terminal)
             self.assertIn("[4/4] Report complete", terminal)
             self.assertIn("Company: DualityBio (09606.HK)", terminal)
+            self.assertIn(
+                "Extraction audit: 2/3 supported, 1 need review",
+                terminal,
+            )
+            self.assertIn("Audit focus: DB-1312 (missing phase)", terminal)
             self.assertIn("Artifacts", terminal)
             self.assertIn("- Not saved (--no-save)", terminal)
             kwargs = run.call_args.kwargs
