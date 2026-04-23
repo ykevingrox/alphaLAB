@@ -55,6 +55,10 @@ from biotech_alpha.pipeline import (
     validate_pipeline_asset_file,
     validation_report_as_dict,
 )
+from biotech_alpha.position_action import (
+    build_research_action_plan,
+    research_action_plan_finding,
+)
 from biotech_alpha.scorecard import (
     WatchlistScorecard,
     build_watchlist_scorecard,
@@ -562,11 +566,13 @@ def memo_to_markdown(
         lines.append("- No watchlist scorecard summary was generated.")
 
     lines.extend(["", "## Research-Only Action Plan", ""])
+    action_plan_findings = _findings_for(all_findings, "research_action_plan")
     lines.extend(
         _research_only_action_plan_lines(
             decision=memo.decision,
             valuation_findings=tuple(valuation_findings),
             scorecard_findings=tuple(scorecard_findings),
+            action_plan_findings=tuple(action_plan_findings),
         )
     )
 
@@ -899,6 +905,23 @@ def _build_clinical_first_memo(
         )
 
     decision = "watchlist" if trials or pipeline_assets else "insufficient_data"
+    if target_price_analysis:
+        action_plan = build_research_action_plan(
+            decision=decision,
+            target_price_analysis=target_price_analysis,
+            runway_months=(
+                cash_runway_estimate.runway_months
+                if cash_runway_estimate is not None
+                else None
+            ),
+        )
+        findings.append(
+            research_action_plan_finding(
+                company=context.company,
+                plan=action_plan,
+                currency=target_price_analysis.currency,
+            )
+        )
     summary = (
         f"First-pass research found {len(trials)} ClinicalTrials.gov records for "
         f"{context.company}, with {len(pipeline_assets)} disclosed pipeline assets "
@@ -1525,6 +1548,8 @@ def _findings_for(
             selected.append(finding)
         elif kind_key == "investment_thesis" and "investment_thesis" in name:
             selected.append(finding)
+        elif kind_key == "research_action_plan" and "research_action_plan" in name:
+            selected.append(finding)
     return tuple(selected)
 
 
@@ -1739,7 +1764,14 @@ def _research_only_action_plan_lines(
     decision: str,
     valuation_findings: tuple[AgentFinding, ...],
     scorecard_findings: tuple[AgentFinding, ...],
+    action_plan_findings: tuple[AgentFinding, ...],
 ) -> list[str]:
+    if action_plan_findings:
+        lines: list[str] = []
+        for finding in action_plan_findings:
+            lines.append(f"- {finding.summary}")
+            lines.extend(f"  - {risk}" for risk in finding.risks[:4])
+        return lines
     plan: list[str] = []
     sizing_map = {
         "core_candidate": "2.0% to 4.0%",
