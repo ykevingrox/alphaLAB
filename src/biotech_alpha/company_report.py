@@ -13,6 +13,7 @@ from typing import Any, Callable
 from biotech_alpha.research import (
     ClinicalTrialsSource,
     SingleCompanyResearchResult,
+    memo_to_markdown,
     result_summary,
     run_single_company_research,
 )
@@ -275,6 +276,13 @@ def run_company_report(
             auto_input_artifacts=auto_input_artifacts,
             macro_signals_provider=macro_signals_provider,
         )
+        if save:
+            write_llm_memo_addendum(
+                research_result=research_result,
+                llm_agent_result=llm_agent_result,
+                llm_trace_path=resolved_llm_trace_path,
+                output_dir=output_dir,
+            )
 
     report_result = CompanyReportResult(
         identity=identity,
@@ -292,6 +300,165 @@ def run_company_report(
             result=report_result,
         )
     return report_result
+
+
+def write_llm_memo_addendum(
+    *,
+    research_result: SingleCompanyResearchResult,
+    llm_agent_result: Any,
+    llm_trace_path: Path | None,
+    output_dir: str | Path,
+) -> Path | None:
+    """Rewrite the saved markdown memo with an LLM addendum appended."""
+
+    memo_path = research_result.artifacts.memo_markdown
+    if memo_path is None:
+        return None
+
+    memo_path.parent.mkdir(parents=True, exist_ok=True)
+    base = memo_to_markdown(research_result.memo).rstrip()
+    addendum = llm_memo_addendum_markdown(
+        llm_agent_result,
+        llm_trace_path=llm_trace_path,
+        output_dir=output_dir,
+    )
+    memo_path.write_text(f"{base}\n\n{addendum}\n", encoding="utf-8")
+    return memo_path
+
+
+def llm_memo_addendum_markdown(
+    llm_agent_result: Any,
+    *,
+    llm_trace_path: Path | None = None,
+    output_dir: str | Path = "data",
+) -> str:
+    """Render LLM agent output for inclusion in the human memo."""
+
+    findings = tuple(getattr(llm_agent_result, "findings", ()) or ())
+    steps = tuple(getattr(llm_agent_result, "steps", ()) or ())
+    warnings = tuple(getattr(llm_agent_result, "warnings", ()) or ())
+    cost_summary = dict(getattr(llm_agent_result, "cost_summary", {}) or {})
+    ok_steps = sum(1 for step in steps if getattr(step, "ok", False))
+    failed_steps = sum(
+        1
+        for step in steps
+        if getattr(step, "error", None) and not getattr(step, "skipped", False)
+    )
+    skipped_steps = sum(1 for step in steps if getattr(step, "skipped", False))
+
+    lines = [
+        "## LLM Agent Addendum",
+        "",
+        (
+            f"- Run status: {ok_steps}/{len(steps)} steps OK, "
+            f"{failed_steps} failed, {skipped_steps} skipped."
+        ),
+    ]
+    total_tokens = cost_summary.get("total_tokens")
+    calls = cost_summary.get("calls")
+    if total_tokens is not None:
+        call_label = f" across {calls} call(s)" if calls is not None else ""
+        lines.append(f"- Total LLM tokens: {total_tokens}{call_label}.")
+    if llm_trace_path is not None:
+        lines.append(f"- Trace: {_display_path(llm_trace_path, output_dir)}")
+    lines.extend(
+        [
+            "- These findings are model-generated and review-gated.",
+            "",
+        ]
+    )
+
+    if findings:
+        for finding in findings:
+            lines.extend(_llm_finding_markdown_lines(finding))
+    else:
+        lines.append("- No LLM findings were produced.")
+
+    failing_steps = [
+        step
+        for step in steps
+        if getattr(step, "error", None) or getattr(step, "skipped", False)
+    ]
+    if failing_steps:
+        lines.extend(["", "### LLM Step Issues", ""])
+        for step in failing_steps:
+            status = "skipped" if getattr(step, "skipped", False) else "failed"
+            error = str(getattr(step, "error", "") or "no error detail")
+            lines.append(
+                f"- {_llm_agent_label(getattr(step, 'agent_name', 'agent'))}: "
+                f"{status}: {_one_line(error)}"
+            )
+
+    if warnings:
+        lines.extend(["", "### LLM Warnings", ""])
+        for warning in warnings[:10]:
+            lines.append(f"- {_one_line(str(warning))}")
+        if len(warnings) > 10:
+            lines.append(f"- ... {len(warnings) - 10} more warning(s)")
+
+    return "\n".join(lines)
+
+
+def _llm_finding_markdown_lines(finding: Any) -> list[str]:
+    label = _llm_agent_label(getattr(finding, "agent_name", "llm_agent"))
+    summary = _one_line(str(getattr(finding, "summary", "") or "No summary."))
+    confidence = getattr(finding, "confidence", None)
+    try:
+        confidence_text = f"{float(confidence):.2f}"
+    except (TypeError, ValueError):
+        confidence_text = "n/a"
+    needs_review = "yes" if getattr(finding, "needs_human_review", False) else "no"
+
+    lines = [
+        f"### {label}",
+        "",
+        f"- Summary: {summary}",
+        f"- Confidence: {confidence_text}; human review: {needs_review}",
+    ]
+    risks = tuple(getattr(finding, "risks", ()) or ())
+    if risks:
+        lines.append("- Key risks:")
+        for risk in risks[:8]:
+            lines.append(f"  - {_one_line(str(risk))}")
+        if len(risks) > 8:
+            lines.append(f"  - ... {len(risks) - 8} more risk(s)")
+    evidence_items = tuple(getattr(finding, "evidence", ()) or ())
+    if evidence_items:
+        lines.append("- Evidence:")
+        for evidence in evidence_items[:3]:
+            source = str(getattr(evidence, "source", "") or "unknown source")
+            claim = _one_line(str(getattr(evidence, "claim", "") or "Evidence"))
+            ev_confidence = getattr(evidence, "confidence", None)
+            try:
+                ev_confidence_text = f"{float(ev_confidence):.2f}"
+            except (TypeError, ValueError):
+                ev_confidence_text = "n/a"
+            lines.append(
+                f"  - {claim} [{source}], confidence {ev_confidence_text}"
+            )
+        if len(evidence_items) > 3:
+            lines.append(f"  - ... {len(evidence_items) - 3} more evidence item(s)")
+    lines.append("")
+    return lines
+
+
+def _llm_agent_label(agent_name: str) -> str:
+    text = agent_name
+    if text.endswith("_llm_agent"):
+        text = text[: -len("_llm_agent")]
+    text = text.replace("_", " ").strip()
+    return (text.title() if text else "LLM Agent") + " LLM"
+
+
+def _display_path(path: Path, output_dir: str | Path) -> str:
+    try:
+        return str(path.relative_to(Path(output_dir)))
+    except ValueError:
+        return str(path)
+
+
+def _one_line(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 SUPPORTED_LLM_AGENTS = (

@@ -801,6 +801,12 @@ project `.env`. It now auto-loads `.env` and lets `.env` override shell env
 when no explicit env dict is passed, while tests can still pass an explicit
 env for deterministic isolation.
 
+Saved markdown memos now include a `## LLM Agent Addendum` whenever LLM agents
+run. The addendum keeps the deterministic memo body intact, then surfaces LLM
+run status, token count, trace path, per-agent summaries, risks, evidence, and
+step failures/skips. The standalone `data/memos/<run_id>_llm_findings.json`
+artifact remains available for machines.
+
 Macro-signals remain on the same plan: news-backed non-
 `insufficient_data` macro context and cache reuse are confirmed;
 quantitative chart/HIBOR subfeeds still need a follow-up when provider
@@ -808,16 +814,13 @@ access recovers.
 
 ### Next Action
 
-1. Decide whether LLM findings should be folded into the markdown memo as an
-   explicit addendum, instead of living only in
-   `data/memos/<run_id>_llm_findings.json`.
-2. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
+1. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
    operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
    subfeeds later; for now sector news plus cache-hit fallback are
    working.
-3. Broaden fixture coverage across another representative HK biotech
+2. Broaden fixture coverage across another representative HK biotech
    disclosure style before adding more target seeds.
-4. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
+3. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
    one-command with default LLM-on behavior and explicit opt-out only.
 
 ### Acceptance Criteria
@@ -833,6 +836,8 @@ access recovers.
 - Saved-run audit artifacts remain listed in terminal output and manifest
   artifacts, with the same per-asset `extraction_audit.assets[]` table as
   the compact JSON summary.
+- Saved markdown memos include LLM addenda when LLM agents run, while
+  deterministic-only reports remain unchanged.
 - Multi-source fallback path keeps one-command runs resilient under
   single-provider outages and still writes stable
   `macro_context.live_signals` keys.
@@ -859,23 +864,17 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 ### Queue
 
-1. Consider a deterministic post-processor that turns LLM findings into an
-   `InvestmentMemo.llm_addendum` so memo downstream consumers do not need to
-   parse `data/memos/*_llm_findings.json` separately.
-2. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
+1. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
    end behavior needs validation.
-3. Re-check quantitative macro feeds from a fresh network or after
+2. Re-check quantitative macro feeds from a fresh network or after
    provider rate limits recover; no retry/backoff work for now.
-4. Keep broadening fixtures across representative HK biotech disclosure
+3. Keep broadening fixtures across representative HK biotech disclosure
    styles.
-5. Tighten validator checks for stale placeholders and weak evidence
+4. Tighten validator checks for stale placeholders and weak evidence
    metadata.
-6. Add a US-market sibling market-data provider, so the auto-draft path
+5. Add a US-market sibling market-data provider, so the auto-draft path
    is not HK-only.
-7. Consider a deterministic post-processor that turns LLM findings into
-   an `InvestmentMemo.llm_addendum` so memo downstream consumers do not
-   need to parse `data/memos/*_llm_findings.json` separately.
-8. Consider a `K-line technical agent` (name TBD) that reads a
+6. Consider a `K-line technical agent` (name TBD) that reads a
    small window of OHLCV plus a few classic indicators and flags
    technical divergences vs the fundamental / macro read. Useful as
    an entry / exit sanity layer.

@@ -18,6 +18,7 @@ from biotech_alpha.company_report import (
     resolve_company_identity,
     run_company_report,
 )
+from biotech_alpha.llm import FakeLLMClient
 
 
 class FakeClinicalTrialsClient:
@@ -155,6 +156,60 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(payload["quality_gate"]["level"], "incomplete")
             self.assertIn("company-report", payload["rerun_command"])
             self.assertNotIn("--auto-inputs", payload["rerun_command"])
+
+    def test_saved_memo_includes_llm_addendum(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = FakeClinicalTrialsClient()
+            llm = FakeLLMClient(model="fake-qwen")
+            llm.queue(
+                json.dumps(
+                    {
+                        "summary": (
+                            "Pipeline evidence is thin enough that the "
+                            "investment case needs manual review."
+                        ),
+                        "bear_case": ["Registry coverage remains limited."],
+                        "risks": [
+                            {
+                                "description": (
+                                    "No asset-level clinical anchor was found."
+                                ),
+                                "severity": "medium",
+                                "related_asset": None,
+                            }
+                        ],
+                        "confidence": 0.7,
+                    }
+                ),
+                prompt_tokens=20,
+                completion_tokens=10,
+                total_tokens=30,
+            )
+
+            result = run_company_report(
+                company="No Data Bio",
+                input_dir=Path(tmpdir) / "input",
+                output_dir=tmpdir,
+                limit=1,
+                client=client,
+                now=datetime(2026, 4, 21, tzinfo=UTC),
+                llm_agents=("scientific-skeptic",),
+                llm_client=llm,
+            )
+
+            memo_path = result.research_result.artifacts.memo_markdown
+            assert memo_path is not None
+            memo_text = Path(memo_path).read_text(encoding="utf-8")
+            self.assertIn("## LLM Agent Addendum", memo_text)
+            self.assertIn("Run status: 2/2 steps OK", memo_text)
+            self.assertIn("Total LLM tokens: 30", memo_text)
+            self.assertIn("### Scientific Skeptic LLM", memo_text)
+            self.assertIn("Pipeline evidence is thin enough", memo_text)
+            self.assertIn("No asset-level clinical anchor was found", memo_text)
+            findings_path = (
+                Path(tmpdir) / "memos" / "20260421T000000Z_llm_findings.json"
+            )
+            self.assertTrue(findings_path.exists())
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

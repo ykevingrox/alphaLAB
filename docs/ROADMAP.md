@@ -171,7 +171,9 @@ per-risk severity. Deeper multi-agent critique is tracked in Phase 10.
 - Generate a memo with bull case, bear case, evidence table, and watchlist
   decision.
 - Surface LLM findings alongside deterministic ones when they are produced,
-  without changing the default LLM-free behaviour.
+  without changing the default LLM-free behaviour. Saved markdown memos now
+  append an `## LLM Agent Addendum` for LLM runs while preserving the
+  standalone `data/memos/<run_id>_llm_findings.json` artifact.
 
 ## Phase 7: Portfolio Layer
 
@@ -529,6 +531,10 @@ eventually a technical / K-line agent.
   progress stages, a compact operator summary, LLM status, and artifact
   paths by default; `report --json` preserves the machine-readable compact
   summary for scripts.
+- **Done** — Saved markdown memos now include an LLM addendum whenever LLM
+  agents run: run status, token count, trace path, per-agent summaries,
+  risks, evidence, and step issues are visible in the human report without
+  parsing the separate findings JSON.
 - **Done** — Multi-source macro-signals fallback implementation:
   `Yahoo -> Stooq -> stale cache`, preserving current
   `macro_context.live_signals` output contract and audit keys.
