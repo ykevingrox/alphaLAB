@@ -65,8 +65,30 @@ def track_hkex_news_updates(
         "item_count": len(items),
         "new_count": len(new_items),
         "new_items": [asdict(item) for item in new_items],
+        "typed_new_items": [typed_hkex_item_dict(item) for item in new_items],
         "state_path": str(state_path),
     }
+
+
+def typed_hkex_item_dict(item: HkexNewsItem) -> dict[str, Any]:
+    payload = asdict(item)
+    payload["event_type"] = classify_hkex_item(item)
+    payload["needs_human_review"] = True
+    return payload
+
+
+def classify_hkex_item(item: HkexNewsItem) -> str:
+    text = f"{item.title} {item.category or ''}".casefold()
+    if any(token in text for token in ("trial", "clinical", "phase", "asco", "esmo")):
+        return "clinical"
+    if any(token in text for token in ("ind", "nda", "bla", "approval", "accepted")):
+        return "regulatory"
+    if any(
+        token in text
+        for token in ("placing", "subscription", "convertible", "financing", "monthly return")
+    ):
+        return "financing"
+    return "corporate"
 
 
 def filter_hkex_items_by_ticker(

@@ -598,8 +598,10 @@ Use this shape:
   - Saved manifest now includes `artifacts.hkexnews_updates` plus compact
     `hkexnews_updates` counters (`item_count`, `new_count`, `ticker_filter`).
   - Summary payload now exposes `hkexnews_updates_path` for downstream tools.
-  - Boundary: announcement items are tracked and persisted, but event typing and
-    memo/catalyst threading are still pending.
+  - Deterministic event typing now lands in `typed_new_items` with
+    `clinical/regulatory/financing/corporate` labels (all review-gated).
+  - Boundary: memo/catalyst threading is still pending; typed items are exposed
+    in artifact/manifest/summary but not yet merged into memo sections.
 
 ## Current Repo State
 
@@ -894,11 +896,9 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Add deterministic event typing for common HKEX announcement classes
-   (clinical, regulatory, financing, corporate) with review flags.
-2. Thread typed HKEXnews events into catalyst/memo sections with clear
+1. Thread typed HKEXnews events into catalyst/memo sections with clear
    review-gated labels.
-3. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
+2. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
 
 ### Acceptance Criteria

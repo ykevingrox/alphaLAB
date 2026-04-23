@@ -1513,6 +1513,7 @@ def write_hkexnews_updates_report(
             "new_count": payload.get("new_count"),
             "ticker_filter": payload.get("ticker_filter"),
             "state_path": payload.get("state_path"),
+            "typed_new_items": payload.get("typed_new_items", []),
         },
     )
     return replace(result, hkexnews_updates_path=output_path)
@@ -1710,6 +1711,28 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         "hkexnews_updates_path": (
             str(result.hkexnews_updates_path) if result.hkexnews_updates_path else None
         ),
+        "hkexnews_updates": _build_hkexnews_summary(result),
+    }
+
+
+def _build_hkexnews_summary(result: CompanyReportResult) -> dict[str, Any] | None:
+    path = result.hkexnews_updates_path
+    if path is None:
+        return None
+    payload_path = Path(path)
+    if not payload_path.exists():
+        return {"path": str(payload_path), "available": False}
+    try:
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"path": str(payload_path), "available": False}
+    typed = payload.get("typed_new_items")
+    return {
+        "path": str(payload_path),
+        "available": True,
+        "item_count": payload.get("item_count", 0),
+        "new_count": payload.get("new_count", 0),
+        "typed_new_items": typed if isinstance(typed, list) else [],
     }
 
 

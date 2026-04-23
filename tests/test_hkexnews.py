@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from biotech_alpha.hkexnews import (
+    classify_hkex_item,
     filter_hkex_items_by_ticker,
     parse_hkex_rss,
     track_hkex_news_updates,
@@ -49,8 +50,17 @@ class HkexNewsTest(unittest.TestCase):
             state = Path(tmpdir) / "seen.json"
             first = track_hkex_news_updates(items=items, state_path=state)
             self.assertEqual(first["new_count"], 2)
+            self.assertEqual(first["typed_new_items"][0]["event_type"], "corporate")
             second = track_hkex_news_updates(items=items, state_path=state)
             self.assertEqual(second["new_count"], 0)
+
+    def test_classify_hkex_item_by_keywords(self) -> None:
+        clinical = classify_hkex_item(
+            parse_hkex_rss(
+                SAMPLE_RSS.replace("Voluntary Announcement", "Phase 2 Clinical Update")
+            )[0]
+        )
+        self.assertEqual(clinical, "clinical")
 
 
 if __name__ == "__main__":

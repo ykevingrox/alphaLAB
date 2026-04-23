@@ -195,16 +195,23 @@ class CompanyReportTest(unittest.TestCase):
             )
             self.assertEqual(hkex_payload["new_count"], 1)
             self.assertEqual(hkex_payload["ticker_filter"], "09606.HK")
+            self.assertTrue(hkex_payload["typed_new_items"])
+            self.assertEqual(
+                hkex_payload["typed_new_items"][0]["event_type"],
+                "corporate",
+            )
             summary = company_report_summary(result)
             self.assertEqual(
                 summary["hkexnews_updates_path"],
                 str(result.hkexnews_updates_path),
             )
+            self.assertEqual(summary["hkexnews_updates"]["new_count"], 1)
             manifest = json.loads(
                 Path(result.research_result.artifacts.manifest_json).read_text()
             )
             self.assertIn("hkexnews_updates", manifest["artifacts"])
             self.assertEqual(manifest["hkexnews_updates"]["new_count"], 1)
+            self.assertTrue(manifest["hkexnews_updates"]["typed_new_items"])
 
     def test_saved_memo_includes_llm_addendum(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
