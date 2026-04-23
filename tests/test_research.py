@@ -399,8 +399,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("### 路径：提升至核心候选", memo_markdown)
             self.assertIn("## 研究行动计划（非交易指令）", memo_markdown)
             self.assertIn("临床数据: ORR 42% (n=58); relapsed disease", memo_markdown)
-            self.assertIn("regulatory BLA submission planned", memo_markdown)
-            self.assertIn("binary_event BLA submission in Q3 2026", memo_markdown)
+            self.assertIn("监管路径 BLA submission planned", memo_markdown)
+            self.assertIn("二元事件 BLA submission in Q3 2026", memo_markdown)
             self.assertIn(
                 "Example Drug 与竞品",
                 memo_markdown,
@@ -413,7 +413,7 @@ class SingleCompanyResearchTest(unittest.TestCase):
             )
             self.assertIn("输入校验产生 1 条告警", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
-            self.assertIn("Rival Drug 在 target_indication 维度匹配", memo_markdown)
+            self.assertIn("Rival Drug 在 靶点+适应症维度匹配", memo_markdown)
             self.assertIn("企业价值约为 2300 HKD", memo_markdown)
             self.assertIn("现金流可持续期低于 24 个月", memo_markdown)
 

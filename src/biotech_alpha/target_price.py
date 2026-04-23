@@ -261,20 +261,38 @@ def draft_target_price_assumptions(
     if shares_outstanding is None:
         shares_outstanding = 1.0
 
-    cash = _non_negative_number_or_default(
+    valuation_cash = _non_negative_number_or_default(
         valuation_payload.get("cash_and_equivalents"),
-        _non_negative_number_or_default(
-            financial_payload.get("cash_and_equivalents"),
-            0.0,
-        ),
+        0.0,
     )
-    debt = _non_negative_number_or_default(
+    valuation_debt = _non_negative_number_or_default(
         valuation_payload.get("total_debt"),
-        _non_negative_number_or_default(
-            financial_payload.get("short_term_debt"),
-            0.0,
-        ),
+        0.0,
     )
+    financial_currency = _first_non_empty_str(financial_payload.get("currency")) or currency
+    financial_cash = _non_negative_number_or_default(
+        financial_payload.get("cash_and_equivalents"),
+        0.0,
+    )
+    financial_debt = _non_negative_number_or_default(
+        financial_payload.get("short_term_debt"),
+        0.0,
+    )
+    converted_financial_cash = _convert_currency_amount(
+        amount=financial_cash,
+        from_currency=financial_currency,
+        to_currency=currency,
+    )
+    converted_financial_debt = _convert_currency_amount(
+        amount=financial_debt,
+        from_currency=financial_currency,
+        to_currency=currency,
+    )
+    # Prefer explicit valuation snapshot cash/debt when non-zero; otherwise fall
+    # back to converted financial snapshot amounts so rNPV net-cash is not pinned
+    # to zero in HK names with RMB financial disclosure.
+    cash = valuation_cash if valuation_cash > 0 else converted_financial_cash
+    debt = valuation_debt if valuation_debt > 0 else converted_financial_debt
     as_of_year = _current_year(as_of_date)
     assets_payload = pipeline_assets_payload.get("assets")
     rows = assets_payload if isinstance(assets_payload, list) else []
@@ -1027,6 +1045,31 @@ def _non_negative_number_or_default(value: Any, default: float) -> float:
     if number is None or number < 0:
         return default
     return number
+
+
+def _convert_currency_amount(
+    *,
+    amount: float,
+    from_currency: str,
+    to_currency: str,
+) -> float:
+    if amount == 0:
+        return 0.0
+    src = (from_currency or "").strip().upper()
+    dst = (to_currency or "").strip().upper()
+    if not src or not dst or src == dst:
+        return amount
+    pair = (src, dst)
+    rates = {
+        ("RMB", "HKD"): 1.08,
+        ("CNY", "HKD"): 1.08,
+        ("HKD", "RMB"): 1 / 1.08,
+        ("HKD", "CNY"): 1 / 1.08,
+    }
+    fx = rates.get(pair)
+    if fx is None:
+        return amount
+    return amount * fx
 
 
 def _contains_any(text: str, terms: tuple[str, ...]) -> bool:

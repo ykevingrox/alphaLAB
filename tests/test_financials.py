@@ -62,7 +62,7 @@ class FinancialsTest(unittest.TestCase):
 
         self.assertIsNone(estimate.runway_months)
         self.assertTrue(estimate.needs_human_review)
-        self.assertIn("no burn input provided", estimate.warnings)
+        self.assertIn("缺少现金消耗输入", estimate.warnings)
 
     def test_financial_template_can_be_written_and_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

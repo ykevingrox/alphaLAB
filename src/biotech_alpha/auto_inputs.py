@@ -70,7 +70,7 @@ HKEX_ACTIVE_STOCKS_URL = (
 HKEX_TITLE_SEARCH_URL = f"{HKEX_BASE_URL}/search/titleSearchServlet.do"
 PIPELINE_EXTRACTOR_VERSION = 9
 COMPETITOR_EXTRACTOR_VERSION = 5
-TARGET_PRICE_EXTRACTOR_VERSION = 1
+TARGET_PRICE_EXTRACTOR_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -2583,10 +2583,21 @@ def _target_price_draft_needs_refresh(path: Path) -> bool:
     except Exception:  # noqa: BLE001 - invalid generated draft can be refreshed.
         return True
     if payload.get("generated_by") == "auto_inputs.default_rnpv":
-        return (
+        if (
             payload.get("generated_extractor_version")
             != TARGET_PRICE_EXTRACTOR_VERSION
-        )
+        ):
+            return True
+        cash = payload.get("cash_and_equivalents")
+        try:
+            cash_value = float(cash)
+        except (TypeError, ValueError):
+            cash_value = 0.0
+        if cash_value <= 0:
+            # Refresh stale drafts so updated FX/default-cash logic can rehydrate
+            # net-cash for valuation/target-price calculations.
+            return True
+        return False
     return False
 
 

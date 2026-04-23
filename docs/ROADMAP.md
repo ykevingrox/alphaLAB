@@ -325,7 +325,7 @@ daily use with minimal manual prep.
 **Doc discipline:** Each sprint below lists **implementation status** so this
 section stays aligned with the repo. Update statuses when scope changes.
 
-**Last status pass:** 2026-04-23 (match to `git` history for this file when in doubt).
+**Last status pass:** 2026-04-23 (post LLM-first redesign + valuation currency integration checkpoint).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -552,7 +552,8 @@ eventually a technical / K-line agent.
 
 ### Sprint 5: From Data Sheet To Investment Memo
 
-**Sprint status:** in progress (P0.1/P0.2/P0.3 and early P1 landed; P0.4 active).
+**Sprint status:** core objectives closed (P0/P1/P2/P3 baseline landed). Current
+workstream is quality hardening, valuation traceability, and backlog cleanup.
 
 **Why this sprint exists.** The current memo reads like a statistics report,
 not an investment recommendation. Reviewing
@@ -883,7 +884,7 @@ structure can consume them.
     export remains available when `reportlab` is installed).
   **Size:** 3-5 days.
 
-#### Execution order
+#### Execution order (historical, completed baseline)
 
 Target sequence, optimised for earliest "the memo feels investable" moment:
 
@@ -898,8 +899,11 @@ Target sequence, optimised for earliest "the memo feels investable" moment:
 9. P2.* data breadth (pick based on the gap the P0 / P1 memo reveals).
 10. P3.* strategic additions.
 
-After step 4, rerun `report "09887.HK"` as the canonical quality check
-and compare against `data/memos/09887-hk/20260423T095148Z_memo.md`.
+All steps above are completed at baseline level. Ongoing iteration prioritizes:
+
+1. Currency/valuation traceability hardening (FX metadata, shared conversion path).
+2. Chinese-first report quality hardening (residual English cleanup, section consistency).
+3. Backlog depth tasks (higher-fidelity CDE normalization, optional hybrid fallback).
 
 #### Cross-sprint invariants (Do Not Break)
 

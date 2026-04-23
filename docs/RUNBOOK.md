@@ -41,8 +41,9 @@ Quick-report (`report ...`) and full LLM agents require API credentials.
 - `.env` values override shell environment when no explicit env dict is passed
   to `LLMConfig.from_env()`, to keep the project-local config predictable.
 
-When LLM env is missing, `report` and `company-report --llm-agents ...` fail
-fast by default. Pass `--allow-no-llm` to continue in deterministic-only mode.
+When LLM env is missing, quick `report` now auto-degrades to deterministic mode
+by default and prints an explicit fallback note. `company-report --llm-agents`
+continues to support `--allow-no-llm` for deterministic fallback behavior.
 
 ## Sanity Checks
 
@@ -102,8 +103,9 @@ Quick-mode behavior:
 - Auto-enables ClinicalTrials.gov competitor discovery for generated
   competitor candidate packs.
 - Auto-enables all current LLM agents including `competition-triage`.
-- Fails fast when LLM env is missing or invalid (default). To override:
-  `--allow-no-llm`.
+- Includes `valuation-specialist` in the default LLM stack.
+- Auto-degrades to deterministic mode when LLM env is missing or invalid, with
+  explicit terminal fallback output.
 
 Expected behavior:
 

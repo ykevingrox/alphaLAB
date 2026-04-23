@@ -1522,6 +1522,164 @@ class InvestmentThesisLLMAgent(Agent):
         }
 
 
+VALUATION_SPECIALIST_PROMPT = StructuredPrompt(
+    name="valuation_specialist",
+    tags=("valuation", "specialist", "llm"),
+    system=(
+        "你是生物医药投研团队的估值专家。你的任务是基于已给定事实，"
+        "选择并解释合适的估值框架（例如 rNPV、可比估值、分部估值）。"
+        "你必须明确每个框架适用条件、关键假设、以及结果局限性。"
+        "不得编造外部数据。"
+    ),
+    user_template=(
+        "公司: ${company}\n"
+        "代码: ${ticker}\n"
+        "市场: ${market}\n"
+        "日期: ${as_of}\n\n"
+        "估值快照:\n${valuation_snapshot}\n\n"
+        "目标价快照(rNPV场景):\n${target_price_snapshot}\n\n"
+        "财务快照:\n${financials_snapshot}\n\n"
+        "管线分诊:\n${pipeline_triage}\n\n"
+        "竞争分诊:\n${competition_triage}\n\n"
+        "回退上下文:\n${fallback_context}\n\n"
+        "请返回严格 JSON:\n"
+        "{\n"
+        "  \"summary\": \"<2-4句估值结论>\",\n"
+        "  \"primary_method\": \"<rNPV|SOTP|multiples|hybrid>\",\n"
+        "  \"method_rationale\": [\"<理由>\", \"...\"],\n"
+        "  \"valuation_breakdown\": [\"<分项估值说明>\", \"...\"],\n"
+        "  \"key_assumptions\": [\"<关键假设>\", \"...\"],\n"
+        "  \"risks\": [\"<估值风险>\", \"...\"],\n"
+        "  \"confidence\": 0.0\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "summary",
+            "primary_method",
+            "method_rationale",
+            "valuation_breakdown",
+            "key_assumptions",
+            "risks",
+        ],
+        "properties": {
+            "summary": {"type": "string", "min_length": 10},
+            "primary_method": {
+                "type": "string",
+                "enum": ["rNPV", "SOTP", "multiples", "hybrid"],
+            },
+            "method_rationale": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 8,
+            },
+            "valuation_breakdown": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 10,
+            },
+            "key_assumptions": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 10,
+            },
+            "risks": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 3},
+                "max_items": 12,
+            },
+            "confidence": {"type": ["number", "null"]},
+        },
+    },
+)
+
+
+@dataclass
+class ValuationSpecialistLLMAgent(Agent):
+    """估值专用 LLM agent：给出框架、拆解与风险。"""
+
+    llm_client: LLMClient
+    name: str = "valuation_specialist_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "valuation_specialist_llm_finding",
+        "valuation_specialist_payload",
+    )
+    max_tokens: int | None = 1500
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("ValuationSpecialistLLMAgent requires an LLMClient")
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        system, user = VALUATION_SPECIALIST_PROMPT.render(
+            {
+                "company": context.company,
+                "ticker": context.ticker or "n/a",
+                "market": context.market,
+                "as_of": context.as_of_date or "n/a",
+                "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+                "target_price_snapshot": _json_block(store.get("target_price_snapshot")),
+                "financials_snapshot": _json_block(store.get("financials_snapshot")),
+                "pipeline_triage": _json_block(store.get("pipeline_triage_payload")),
+                "competition_triage": _json_block(store.get("competition_triage_payload")),
+                "fallback_context": _json_block(store.get("fallback_context")),
+            }
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+        try:
+            payload = VALUATION_SPECIALIST_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): {call.response_text[:500]}",
+                ),
+            )
+        finding = _valuation_specialist_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "valuation_specialist_llm_finding": finding,
+                "valuation_specialist_payload": payload,
+            },
+        )
+
+
 PROVISIONAL_PIPELINE_PROMPT = StructuredPrompt(
     name="provisional_pipeline",
     tags=("pipeline", "provisional", "llm"),
@@ -1794,6 +1952,65 @@ def _investment_thesis_finding_from_payload(
         Evidence(
             claim=(
                 "Investment thesis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=True,
+    )
+
+
+def _valuation_specialist_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "估值专用LLM已完成估值框架评估。"
+    primary_method = str(payload.get("primary_method") or "").strip()
+    risks: list[str] = []
+    if primary_method:
+        risks.append(f"[method] 主估值框架：{primary_method}")
+    for line in payload.get("method_rationale") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[rationale] {text}")
+    for line in payload.get("valuation_breakdown") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[breakdown] {text}")
+    for line in payload.get("key_assumptions") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[assumption] {text}")
+    for line in payload.get("risks") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[risk] {text}")
+    confidence_raw = payload.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else 0.55
+    except (TypeError, ValueError):
+        confidence = 0.55
+    confidence = max(0.0, min(1.0, confidence))
+    evidence = (
+        Evidence(
+            claim=(
+                "Valuation specialist analysis produced by "
                 f"{model} (prompt_tokens={prompt_tokens}, "
                 f"completion_tokens={completion_tokens})"
             ),

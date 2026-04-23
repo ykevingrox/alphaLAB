@@ -46,6 +46,17 @@ Use this shape:
 
 ## Last Completed
 
+- 2026-04-23 文档收口与估值链路修复（当前权威状态）:
+  - 估值口径已统一：当市场估值快照 `cash/debt` 为空或 0 时，默认使用财务快照现金/短债并做 `RMB/CNY -> HKD` 换算后并入估值与目标价链路。
+  - `report "DualityBio"` 最新报告的 EV 与 rNPV 已反映现金并表，`data/latest/latest-report.md` 中可见：
+    `现金=3.59049e+09 HKD`、`EV=2.44634e+10 HKD`、`rNPV口径净现金=3438150840 HKD`。
+  - 新增 `valuation-specialist` LLM agent，并接入 quick `report` 默认 agent 栈。
+  - 全链路中文化继续推进：LLM prompt 默认中文约束、主要章节与提示文案中文化、公司名错误别名归一化。
+  - 为避免旧缓存复用，`TARGET_PRICE_EXTRACTOR_VERSION` 已升级，且会自动刷新旧版/零现金草稿。
+- 状态基线约定：
+  - `docs/ROADMAP.md` 维护任务级状态（P0/P1/P2/P3、backlog）。
+  - 本文件聚焦“当前任务 + 下一步 + 验证命令”，避免继续堆叠历史流水账。
+
 - LLM-first usability redesign checkpoint (P0/P1/P2) landed:
   - New provisional LLM agents `provisional-pipeline` and
     `provisional-financial` are wired into the report graph and quick
@@ -644,30 +655,20 @@ Use this shape:
 
 ## Latest Validation
 
-Last validated on 2026-04-23 after switching the development/default Bailian
-model to `qwen3.5-plus`, cleaning up LLM-agent documentation drift, Leads
-Biolabs (`09887.HK`) fixture hardening, extraction-audit persistence,
-repeated-anchor source excerpt ranking, and ClinicalTrials.gov failure
-degradation. Extractor versions: `PIPELINE_EXTRACTOR_VERSION = 9` and
-`COMPETITOR_EXTRACTOR_VERSION = 5`:
+Last validated on 2026-04-23 after valuation currency unification and report
+regeneration for DualityBio:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
-.venv/bin/python -m compileall -q src tests
-git diff --check
-awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
-  $(git ls-files '*.py' '*.md' '*.toml')
+PYTHONPATH=src .venv/bin/python -m biotech_alpha.cli report "DualityBio"
 ```
 
 Latest result:
 
-- 262 unit tests ran, 255 passed, 7 skipped (online Yahoo / online
-  Tencent / Bailian Qwen integration tests plus Anthropic online
-  self-skips; all guarded behind `BIOTECH_ALPHA_ONLINE_*_TESTS=1`).
-  The latest coverage adds the Leads Biolabs source-snapshot fixture, saved
-  extraction-audit artifact wiring, extraction-audit summary assertions,
-  repeated-asset excerpt ranking, and ClinicalTrials.gov per-term failure
-  degradation.
+- 290 unit tests ran, 283 passed, 7 skipped.
+- Quick report smoke passed:
+  `report "DualityBio"` completed with 10/10 LLM steps OK and refreshed
+  valuation/target-price outputs.
 - Competitor draft generation now emits `discovery_requests` for each
   pipeline target, ingests local LLM/web discovery candidate packs from
   `*_competitor_discovery_candidates.json`, and can fill that candidate pack
@@ -913,40 +914,23 @@ Latest smoke result:
 
 ### Current Task
 
-Stabilize the LLM-first redesign checkpoint after landing the first full pass
-of P0/P1/P2 usability changes.
-
-Current baseline now has target-price defaults, investment-thesis integration,
-value-weighted catalyst ranking, structured scorecard transparency, structured
-research-only action planning, and deep-dive clinical datapoint rendering. P0.4
-ground-truth expansion is now intentionally deprioritized to unblock other
-Sprint 5 workstreams first.
+Keep the one-command report stable and auditable after the LLM-first redesign,
+with valuation consistency (currency/net-cash), Chinese-first output quality,
+and low-friction operator UX.
 
 ### Next Action
 
-Run live quick-report smoke (`report "DualityBio"`) and compare skip counts,
-fallback-module trace lines, and memo density against the previous baseline.
+Consolidate FX conversion logic into one shared utility and thread explicit
+`fx_source` / `fx_rate` metadata into valuation and target-price artifacts so
+the currency-adjusted EV path is fully traceable.
 
 ### Acceptance Criteria
 
-- Sprint 5 P0/P1 deterministic checkpoints: done.
-  1. `position_action.py` handles absent/invalid/non-finite anchors with
-     conservative degradation.
-  2. Suggested sizing falls back to `0.0%` when entry-zone anchors are
-     unavailable.
-  3. Memo/finding text keeps explicit research-only framing and
-     `guidance_type=research_only`.
-  4. Unit tests cover absent share price, inverted ranges, non-signal language,
-     and non-finite valuation inputs.
-  5. Summary/manifest expose structured `research_action_plan` payload.
-  6. Scorecard section includes deterministic top-3 lift targets.
-  7. Core asset deep-dive includes deterministic competitor-linked
-     differentiation lines when match evidence exists.
-  8. LLM triage medium/high risks are tagged with source in Key Risks rendering.
-- Sprint 5 global invariants (all tasks): deterministic report still
-  runs under `--no-llm`; every auto-generated assumption carries
-  `needs_human_review=true` until a curated override lands; every new
-  LLM agent accepts a per-agent model override.
+- Currency-adjusted EV and target-price net-cash must be consistent in report,
+  saved artifacts, and LLM fact snapshots.
+- No regression in one-command UX (`report "<company|ticker>"`) or deterministic
+  fallback behavior when LLM is unavailable.
+- Chinese-first report output remains the default for quick access paths.
 
 ### Validation
 

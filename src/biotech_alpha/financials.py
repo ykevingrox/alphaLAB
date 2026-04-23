@@ -147,24 +147,24 @@ def estimate_cash_runway(snapshot: FinancialSnapshot) -> CashRunwayEstimate:
     warnings: list[str] = []
     net_cash = snapshot.cash_and_equivalents - snapshot.short_term_debt
     monthly_burn: float | None = None
-    method = "unavailable"
+    method = "不可用"
 
     if snapshot.quarterly_cash_burn is not None:
         monthly_burn = snapshot.quarterly_cash_burn / 3
-        method = "quarterly_cash_burn / 3"
+        method = "季度现金消耗 / 3"
     elif snapshot.operating_cash_flow_ttm is not None:
         if snapshot.operating_cash_flow_ttm < 0:
             monthly_burn = abs(snapshot.operating_cash_flow_ttm) / 12
-            method = "abs(operating_cash_flow_ttm) / 12"
+            method = "abs(过去十二个月经营现金流) / 12"
         else:
-            warnings.append("operating_cash_flow_ttm is non-negative")
+            warnings.append("过去十二个月经营现金流为非负值")
     else:
-        warnings.append("no burn input provided")
+        warnings.append("缺少现金消耗输入")
 
     if net_cash <= 0:
-        warnings.append("net cash is non-positive")
+        warnings.append("净现金为非正值")
     if monthly_burn is not None and monthly_burn <= 0:
-        warnings.append("monthly cash burn is non-positive")
+        warnings.append("月度现金消耗为非正值")
         monthly_burn = None
 
     runway_months = None

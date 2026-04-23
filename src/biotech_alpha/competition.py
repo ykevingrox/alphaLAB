@@ -198,7 +198,7 @@ def competitive_landscape_finding(
             Evidence(
                 claim=(
                     f"{match.asset_name} 与竞品 {match.competitor_company} "
-                    f"{match.competitor_asset} 在 {match.match_scope} 维度匹配。"
+                    f"{match.competitor_asset} 在 {_match_scope_zh(match.match_scope)}维度匹配。"
                 ),
                 source="curated_competitor_input",
                 confidence=match.confidence,
@@ -217,6 +217,16 @@ def competition_validation_report_as_dict(
     """Convert validation reports into JSON-serializable dictionaries."""
 
     return asdict(report)
+
+
+def _match_scope_zh(scope: str) -> str:
+    mapping = {
+        "target": "靶点",
+        "indication": "适应症",
+        "target_indication": "靶点+适应症",
+    }
+    normalized = str(scope or "").strip()
+    return mapping.get(normalized, normalized + " ")
 
 
 def _match_competitor(

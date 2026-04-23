@@ -488,6 +488,7 @@ SUPPORTED_LLM_AGENTS = (
     "competition-triage",
     "macro-context",
     "investment-thesis",
+    "valuation-specialist",
 )
 
 
@@ -519,6 +520,7 @@ def _run_llm_agent_pipeline(
         ProvisionalFinancialLLMAgent,
         ProvisionalPipelineLLMAgent,
         ScientificSkepticLLMAgent,
+        ValuationSpecialistLLMAgent,
     )
 
     unknown = [name for name in llm_agents if name not in SUPPORTED_LLM_AGENTS]
@@ -627,6 +629,13 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "valuation-specialist" in llm_agents:
+        graph.add(
+            ValuationSpecialistLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
 
     result = graph.run(context)
 
@@ -723,8 +732,8 @@ def build_llm_agent_facts(
                 "market_cap": getattr(snap, "market_cap", None),
                 "share_price": getattr(snap, "share_price", None),
                 "shares_outstanding": getattr(snap, "shares_outstanding", None),
-                "cash": getattr(snap, "cash", None),
-                "debt": getattr(snap, "debt", None),
+                "cash": getattr(snap, "cash_and_equivalents", None),
+                "debt": getattr(snap, "total_debt", None),
                 "revenue_ttm": getattr(snap, "revenue_ttm", None),
                 "currency": getattr(snap, "currency", None),
             }
@@ -1071,18 +1080,40 @@ def _build_target_price_snapshot(
     analysis = getattr(research_result, "target_price_analysis", None)
     if analysis is None:
         return None
+    top_assets = sorted(
+        getattr(analysis.base, "asset_rnpv", ()) or (),
+        key=lambda item: getattr(item, "rnpv", 0.0),
+        reverse=True,
+    )[:5]
     return {
         "currency": analysis.currency,
         "current_share_price": analysis.current_share_price,
+        "shares_outstanding": analysis.shares_outstanding,
+        "diluted_shares": analysis.diluted_shares,
+        "current_equity_value": analysis.current_equity_value,
         "bear_target_price": analysis.bear.target_price,
         "base_target_price": analysis.base.target_price,
         "bull_target_price": analysis.bull.target_price,
+        "bear_pipeline_rnpv": analysis.bear.pipeline_rnpv,
+        "base_pipeline_rnpv": analysis.base.pipeline_rnpv,
+        "bull_pipeline_rnpv": analysis.bull.pipeline_rnpv,
         "probability_weighted_target_price": (
             analysis.probability_weighted_target_price
         ),
         "implied_upside_downside_pct": analysis.implied_upside_downside_pct,
         "event_value_delta": analysis.event_value_delta,
         "asset_value_delta": analysis.asset_value_delta,
+        "base_top_asset_rnpv": [
+            {
+                "asset_name": getattr(item, "asset_name", None),
+                "rnpv": getattr(item, "rnpv", None),
+                "probability_of_success": getattr(item, "probability_of_success", None),
+                "peak_sales": getattr(item, "peak_sales", None),
+                "discount_rate": getattr(item, "discount_rate", None),
+                "years_to_launch": getattr(item, "years_to_launch", None),
+            }
+            for item in top_assets
+        ],
         "missing_assumptions": list(analysis.missing_assumptions),
         "needs_human_review": analysis.needs_human_review,
     }

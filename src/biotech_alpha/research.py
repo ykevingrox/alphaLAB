@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -221,6 +221,10 @@ def run_single_company_research(
         load_valuation_snapshot(valuation_path)
         if valuation_path
         else None
+    )
+    valuation_snapshot = _merge_financial_cash_into_valuation_snapshot(
+        valuation_snapshot=valuation_snapshot,
+        financial_snapshot=financial_snapshot,
     )
     target_price_assumptions = (
         load_target_price_assumptions(target_price_assumptions_path)
@@ -471,6 +475,57 @@ def result_summary(result: SingleCompanyResearchResult) -> dict[str, Any]:
     }
 
 
+def _merge_financial_cash_into_valuation_snapshot(
+    *,
+    valuation_snapshot: ValuationSnapshot | None,
+    financial_snapshot: FinancialSnapshot | None,
+) -> ValuationSnapshot | None:
+    if valuation_snapshot is None or financial_snapshot is None:
+        return valuation_snapshot
+    if (
+        valuation_snapshot.cash_and_equivalents > 0
+        or valuation_snapshot.total_debt > 0
+    ):
+        return valuation_snapshot
+    cash = _convert_currency_amount(
+        amount=financial_snapshot.cash_and_equivalents,
+        from_currency=financial_snapshot.currency,
+        to_currency=valuation_snapshot.currency,
+    )
+    debt = _convert_currency_amount(
+        amount=financial_snapshot.short_term_debt,
+        from_currency=financial_snapshot.currency,
+        to_currency=valuation_snapshot.currency,
+    )
+    return replace(
+        valuation_snapshot,
+        cash_and_equivalents=cash,
+        total_debt=debt,
+    )
+
+
+def _convert_currency_amount(
+    *,
+    amount: float,
+    from_currency: str,
+    to_currency: str,
+) -> float:
+    src = (from_currency or "").strip().upper()
+    dst = (to_currency or "").strip().upper()
+    if amount == 0 or not src or not dst or src == dst:
+        return amount
+    rates = {
+        ("RMB", "HKD"): 1.08,
+        ("CNY", "HKD"): 1.08,
+        ("HKD", "RMB"): 1 / 1.08,
+        ("HKD", "CNY"): 1 / 1.08,
+    }
+    fx = rates.get((src, dst))
+    if fx is None:
+        return amount
+    return amount * fx
+
+
 def memo_to_markdown(
     memo: InvestmentMemo,
     *,
@@ -527,17 +582,17 @@ def memo_to_markdown(
         for asset in memo.key_assets[:3]:
             details = []
             if asset.target:
-                details.append(f"target {asset.target}")
+                details.append(f"靶点 {asset.target}")
             if asset.indication:
-                details.append(f"indication {asset.indication}")
+                details.append(f"适应症 {asset.indication}")
             if asset.phase:
-                details.append(f"phase {asset.phase}")
+                details.append(f"阶段 {_phase_label_zh(asset.phase)}")
             if asset.regulatory_pathway:
-                details.append(f"regulatory {asset.regulatory_pathway}")
+                details.append(f"监管路径 {asset.regulatory_pathway}")
             if asset.next_binary_event:
-                details.append(f"binary_event {asset.next_binary_event}")
+                details.append(f"二元事件 {asset.next_binary_event}")
             if asset.next_milestone:
-                details.append(f"milestone {asset.next_milestone}")
+                details.append(f"里程碑 {asset.next_milestone}")
             suffix = f" ({'; '.join(details)})" if details else ""
             lines.append(f"- {asset.name}{suffix}")
             if asset.clinical_data:
@@ -564,6 +619,8 @@ def memo_to_markdown(
     if competition_findings:
         for finding in competition_findings:
             lines.append(f"- {finding.summary}")
+            for risk in finding.risks[:3]:
+                lines.append(f"  - {_format_section_risk(risk)}")
     else:
         lines.append("- 未提供可用的结构化竞品输入。")
 
@@ -572,12 +629,24 @@ def memo_to_markdown(
     if financial_findings:
         for finding in financial_findings:
             lines.append(f"- {finding.summary}")
+            for risk in finding.risks[:3]:
+                lines.append(f"  - {_format_section_risk(risk)}")
     else:
-        lines.append("- 财务与跑道结论暂不可用。")
+        lines.append("- 财务与现金流结论暂不可用。")
 
     lines.extend(["", "## 估值细化", ""])
     if valuation_findings:
         for finding in valuation_findings:
+            lines.append(f"- {finding.summary}")
+            for risk in finding.risks:
+                lines.append(f"  - {risk}")
+        process_findings = _findings_for(all_findings, "valuation_process")
+        for finding in process_findings:
+            lines.append(f"- {finding.summary}")
+            for risk in finding.risks:
+                lines.append(f"  - {risk}")
+        valuation_llm_findings = _findings_for(all_findings, "valuation_specialist")
+        for finding in valuation_llm_findings:
             lines.append(f"- {finding.summary}")
             for risk in finding.risks:
                 lines.append(f"  - {risk}")
@@ -917,6 +986,14 @@ def _build_clinical_first_memo(
                 analysis=target_price_analysis,
             )
         )
+        findings.append(
+            _valuation_process_finding(
+                company=context.company,
+                valuation_snapshot=valuation_snapshot,
+                valuation_metrics=valuation_metrics,
+                target_price_analysis=target_price_analysis,
+            )
+        )
     findings.append(skeptic_finding)
     findings.append(scorecard_finding(company=context.company, scorecard=scorecard))
     evidence = (*trial_evidence, *asset_evidence)
@@ -995,10 +1072,15 @@ def _build_clinical_first_memo(
         market=context.market,
         decision=decision,
         summary=summary,
-        bull_case=(
-            ("已存在至少一条注册库证据，可作为后续深挖锚点。",)
-            if trials
-            else ("当前数据源尚不足以形成注册库支撑的看多论据。",)
+        bull_case=_default_bull_case(
+            company=context.company,
+            trials=trials,
+            pipeline_assets=pipeline_assets,
+            asset_trial_matches=asset_trial_matches,
+            competitor_assets=competitor_assets,
+            competitive_matches=competitive_matches,
+            cash_runway_estimate=cash_runway_estimate,
+            target_price_analysis=target_price_analysis,
         ),
         bear_case=(
             "仅依赖 ClinicalTrials.gov 对港股/中国生物科技覆盖并不完整。",
@@ -1043,6 +1125,113 @@ def _rank_core_assets(
         ),
     )
     return tuple(ranked[:3])
+
+
+def _valuation_process_finding(
+    *,
+    company: str,
+    valuation_snapshot: ValuationSnapshot | None,
+    valuation_metrics: ValuationMetrics | None,
+    target_price_analysis: TargetPriceAnalysis,
+) -> AgentFinding:
+    details: list[str] = [
+        "计算框架：企业价值(EV)=市值+总债务-现金及等价物。",
+    ]
+    if valuation_snapshot is not None:
+        details.append(
+            f"输入快照：市值={getattr(valuation_snapshot, 'market_cap', None)}，"
+            f"债务={valuation_snapshot.total_debt:g}，现金={valuation_snapshot.cash_and_equivalents:g} "
+            f"{valuation_snapshot.currency}。"
+        )
+    if valuation_metrics is not None:
+        details.append(
+            f"结果：EV={valuation_metrics.enterprise_value:g} {valuation_metrics.currency}。"
+        )
+
+    details.append(
+        "目标价框架：概率加权目标价="
+        "(悲观目标价×25%)+(基准目标价×50%)+(乐观目标价×25%)。"
+    )
+    details.append(
+        f"rNPV口径净现金（并入股权价值）={target_price_analysis.base.net_cash:.0f} "
+        f"{target_price_analysis.currency}。"
+    )
+    details.append(
+        f"本次计算：悲观/基准/乐观={target_price_analysis.bear.target_price:.2f}/"
+        f"{target_price_analysis.base.target_price:.2f}/"
+        f"{target_price_analysis.bull.target_price:.2f} "
+        f"{target_price_analysis.currency}，概率加权="
+        f"{target_price_analysis.probability_weighted_target_price:.2f} "
+        f"{target_price_analysis.currency}。"
+    )
+    base_assets = sorted(
+        target_price_analysis.base.asset_rnpv,
+        key=lambda item: item.rnpv,
+        reverse=True,
+    )[:3]
+    for asset in base_assets:
+        details.append(
+            f"rNPV分解（基准）：{asset.asset_name}={asset.rnpv:.0f} "
+            f"{target_price_analysis.currency} "
+            f"(PoS={asset.probability_of_success:.2f}, 峰值销售={asset.peak_sales:.0f}, "
+            f"利润率={asset.operating_margin:.2f}, 折现率={asset.discount_rate:.2f}, "
+            f"距上市年数={asset.years_to_launch})。"
+        )
+
+    return AgentFinding(
+        agent_name="valuation_process_agent",
+        summary=f"{company} 估值过程已拆解为 EV 计算 + rNPV 场景加权目标价。",
+        risks=tuple(details),
+        confidence=0.65,
+        needs_human_review=True,
+    )
+
+
+def _default_bull_case(
+    *,
+    company: str,
+    trials: tuple[TrialSummary, ...],
+    pipeline_assets: tuple[PipelineAsset, ...],
+    asset_trial_matches: tuple[TrialAssetMatch, ...],
+    competitor_assets: tuple[CompetitorAsset, ...],
+    competitive_matches: tuple[CompetitiveMatch, ...],
+    cash_runway_estimate: CashRunwayEstimate | None,
+    target_price_analysis: TargetPriceAnalysis | None,
+) -> tuple[str, ...]:
+    points: list[str] = []
+    if trials:
+        phase2_plus = sum(
+            1
+            for trial in trials
+            if (trial.phase and ("PHASE2" in trial.phase or "PHASE3" in trial.phase))
+        )
+        points.append(
+            f"注册库已覆盖 {len(trials)} 项相关试验，其中二/三期 {phase2_plus} 项，具备持续跟踪锚点。"
+        )
+    if pipeline_assets:
+        matched_assets = {match.asset_name for match in asset_trial_matches}
+        points.append(
+            f"已披露管线 {len(pipeline_assets)} 项，已有 {len(matched_assets)} 项与注册试验形成映射。"
+        )
+    if competitor_assets:
+        points.append(
+            f"竞品输入覆盖 {len(competitor_assets)} 项，并形成 {len(competitive_matches)} 条可比匹配，可用于验证差异化。"
+        )
+    if (
+        cash_runway_estimate is not None
+        and cash_runway_estimate.runway_months is not None
+    ):
+        points.append(
+            f"{company} 现金流可持续期约 {cash_runway_estimate.runway_months:.1f} 个月，具备推进关键里程碑的资金缓冲。"
+        )
+    if target_price_analysis is not None:
+        points.append(
+            f"已形成催化剂调整后的目标价框架（基准 {target_price_analysis.base.target_price:.2f} "
+            f"{target_price_analysis.currency}），便于后续随数据读出动态修正。"
+        )
+    if not points:
+        return ("当前数据源尚不足以形成注册库支撑的看多论据。",)
+    return tuple(points[:4])
 
 
 def _is_phase2_plus(phase: str | None) -> bool:
@@ -1575,6 +1764,38 @@ def _dimension_name_zh(name: str) -> str:
     return mapping.get(name.strip(), name)
 
 
+def _format_section_risk(text: str) -> str:
+    risk = str(text or "").strip()
+    if not risk:
+        return "该风险条目为空，需人工复核。"
+    if "让我重新计算" in risk or "等等" in risk or len(risk) > 220:
+        return "该风险原文过长或质量不稳定，请回看原始来源并人工复核。"
+    replacements = {
+        "revenue_ttm unavailable; revenue multiple not calculated": "营收TTM不可用，无法计算营收倍数",
+        "[runway_sanity] inconsistent": "[runway_sanity] 不一致",
+        "Operating Cash Flow": "经营现金流",
+        "Revenue TTM": "营收TTM",
+        "monthly_cash_burn": "月度现金消耗",
+    }
+    for src, dst in replacements.items():
+        risk = risk.replace(src, dst)
+    return risk
+
+
+def _phase_label_zh(phase: str | None) -> str:
+    text = str(phase or "").strip()
+    lowered = text.casefold()
+    if "phase 3" in lowered or "phase iii" in lowered:
+        return "三期"
+    if "phase 2" in lowered or "phase ii" in lowered:
+        return "二期"
+    if "phase 1" in lowered or "phase i" in lowered:
+        return "一期"
+    if "bla" in lowered:
+        return "BLA阶段"
+    return text or "未披露"
+
+
 def _bucket_zh(bucket: str) -> str:
     mapping = {
         "near_term_0_6m": "近端(0-6个月)",
@@ -1669,6 +1890,10 @@ def _findings_for(
         ):
             selected.append(finding)
         elif kind_key == "target_price" and "target_price" in name:
+            selected.append(finding)
+        elif kind_key == "valuation_process" and "valuation_process" in name:
+            selected.append(finding)
+        elif kind_key == "valuation_specialist" and "valuation_specialist" in name:
             selected.append(finding)
         elif kind_key == "watchlist_scorecard" and "watchlist_scorecard" in name:
             selected.append(finding)
