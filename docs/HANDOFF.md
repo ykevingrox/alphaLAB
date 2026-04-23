@@ -543,6 +543,19 @@ Use this shape:
   - P1.8 memo now includes a dedicated `## Research-Only Action Plan` section
     with sizing tier, entry focus, and de-risk triggers, explicitly labeled as
     research support only.
+- Sprint 5 follow-up implementations landed and are covered by tests:
+  - P0.4 deep dive now supports structured `clinical_data` datapoints
+    (`metric/value/unit/sample_size/context`) with backward-compatible loading
+    for legacy string rows.
+  - Memo `Core Asset Deep Dive` now renders structured clinical datapoints and
+    key assets are ranked by Phase 2+ priority plus trial-match strength.
+  - P1.8 now has a dedicated deterministic module
+    `src/biotech_alpha/position_action.py` and emits a structured
+    `research_action_plan_agent` finding that feeds the memo section.
+  - P1.7 transparency follow-up is now end-to-end:
+    `result_summary` + saved run manifest include per-dimension
+    `score/weight/contribution/rationale`, and `watchlist-rank` supports
+    `--with-scorecard-dimensions` to expand JSON rows and CSV columns.
 
 ## Current Repo State
 
@@ -830,21 +843,21 @@ high-impact gap after P0.1/P0.2/P0.3 and early P1 progress:
 **P0.4 Core Asset Deep Dive extraction + optional deep-dive agent**.
 
 Current baseline now has target-price defaults, investment-thesis integration,
-value-weighted catalyst ranking, scorecard transparency improvements, and a
-research-only action-plan section. The next checkpoint should improve
-asset-level evidence depth (clinical metrics, regulatory pathway, binary-event
-clarity) so top assets are not still rendered as shallow one-line summaries.
+value-weighted catalyst ranking, structured scorecard transparency, structured
+research-only action planning, and deep-dive clinical datapoint rendering. The
+next checkpoint should improve remaining P0.4 asset-level evidence depth
+(regulatory pathway + binary-event specificity) so deep dives become
+decision-ready without depending on addendum context.
 
 ### Next Action
 
-1. Start P0.4 extraction layer:
-   - extend auto-input extraction to capture clinical-highlight snippets and
-     normalized clinical metrics for top Phase 2+ assets where source text is
-     explicit.
-2. Add/extend validation and tests so optional `clinical_data` payloads remain
-   backward compatible and curated manual inputs still override generated rows.
-3. Render richer per-asset memo lines in `Core Asset Deep Dive` using those
-   deterministic fields first (before any optional LLM deep-dive pass).
+1. Extend P0.4 deterministic extraction with explicit regulatory-pathway and
+   next-binary-event fields (submission/acceptance/readout windows) for top
+   assets when source text is explicit.
+2. Add tests for missing/partial deep-dive evidence to ensure graceful
+   degradation and preserved manual-over-generated precedence.
+3. Keep the optional `AssetDeepDiveLLMAgent` as a separate follow-up after the
+   deterministic deep-dive contract is stable.
 
 ### Acceptance Criteria
 
@@ -855,7 +868,9 @@ clarity) so top assets are not still rendered as shallow one-line summaries.
      `needs_human_review` framing; no run-breaking exception.
   3. Curated `data/input/<slug>_pipeline_assets.json` remains higher priority
      than generated clinical-data rows.
-  4. Full test suite stays green and compact JSON summary / manifest contracts
+  4. Deep-dive section includes at least one explicit regulatory/binary-event
+     line when source text contains that information.
+  5. Full test suite stays green and compact JSON summary / manifest contracts
      remain backward compatible.
 - Sprint 5 global invariants (all tasks): deterministic report still
   runs under `--no-llm`; every auto-generated assumption carries
@@ -890,10 +905,11 @@ Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
 
 1. **P0.4** Core Asset Deep Dive extraction + optional
    `AssetDeepDiveLLMAgent` (active).
-2. **P1.7** Scorecard transparency follow-up (manifest/per-dimension
-   contributions and watchlist export columns).
-3. **P1.8** Research-only Action Plan follow-up (`position_action.py`
-   structured outputs + edge-case tests).
+2. **P1.7** Scorecard transparency follow-up (completed for manifest +
+   `watchlist-rank` dimension expansion; keep for minor UX/documentation
+   cleanup only).
+3. **P1.8** Research-only Action Plan follow-up (structured module landed;
+   continue edge-case hardening as needed).
 4. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
    events, peer valuation, equity history (pick based on the gap the
    P0 / P1 memo reveals).

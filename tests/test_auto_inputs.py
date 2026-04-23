@@ -628,6 +628,8 @@ class AutoInputsTest(unittest.TestCase):
         lbl024 = _asset_by_name(payload, "LBL-024")
         self.assertEqual(lbl024["target"], "PD-L1/4-1BB")
         self.assertEqual(lbl024["phase"], "BLA planned")
+        self.assertEqual(lbl024["regulatory_pathway"], "BLA submission planned")
+        self.assertEqual(lbl024["next_binary_event"], "BLA submission in Q3 2026")
         self.assertEqual(lbl024["next_milestone"], "BLA submission in Q3 2026")
         self.assertNotEqual(lbl024["phase"], "preclinical")
         lbl047 = _asset_by_name(payload, "LBL-047")

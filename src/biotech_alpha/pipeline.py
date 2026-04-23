@@ -152,6 +152,8 @@ def pipeline_asset_template(company: str, ticker: str | None = None) -> dict[str
                 "geography": "Example geography",
                 "rights": "Example rights",
                 "partner": "Example partner",
+                "regulatory_pathway": "BLA under review for 3L+ EP-NEC in China",
+                "next_binary_event": "BLA acceptance/update expected in 2026",
                 "next_milestone": "Example expected milestone window",
                 "clinical_data": [
                     {
@@ -236,6 +238,8 @@ def _pipeline_asset_from_dict(row: Any) -> PipelineAsset:
         geography=_optional_str(row.get("geography")),
         rights=_optional_str(row.get("rights")),
         partner=_optional_str(row.get("partner")),
+        regulatory_pathway=_optional_str(row.get("regulatory_pathway")),
+        next_binary_event=_optional_str(row.get("next_binary_event")),
         next_milestone=_optional_str(row.get("next_milestone")),
         clinical_data=_clinical_data_tuple(row.get("clinical_data")),
         evidence=tuple(_evidence_from_dict(item) for item in row.get("evidence", [])),

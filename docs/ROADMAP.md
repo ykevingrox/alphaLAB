@@ -707,7 +707,9 @@ thesis, and deep content on the core asset instead of counts.
   - **Estimated size:** 1.5-2 days.
 
 - **P0.4** — Core Asset Deep Dive extraction + agent.
-  - **Status:** active.
+  - **Status:** active (deterministic deep-dive ranking + structured clinical
+    datapoints landed; regulatory/binary-event enrichment and optional
+    deep-dive LLM agent remain).
   - **What:** broaden HKEX PDF text extraction beyond "Business
     Highlights" into "Clinical Highlights" / "Clinical Update" / "Data
     Highlights" sections (`auto_inputs._extract_clinical_highlights`).
@@ -778,8 +780,9 @@ hand after reading a P0 memo.
   - **Estimated size:** 1 day.
 
 - **P1.7** — Scorecard transparency.
-  - **Status:** partially done (memo now surfaces per-dimension scores in
-    scorecard finding risks; manifest/export expansion remains).
+  - **Status:** mostly done (memo + summary + manifest now surface per-dimension
+    score/weight/contribution; `watchlist-rank` can expand per-dimension columns
+    behind `--with-scorecard-dimensions`; optional UX polish remains).
   - **What:** expose `scorecard.dimensions` (dimension, raw score,
     weight, contribution) in manifest and memo. Auto-generate a "Path
     to core candidate" list of the 3 lowest-contribution dimensions
@@ -791,8 +794,9 @@ hand after reading a P0 memo.
   - **Estimated size:** 0.5 day.
 
 - **P1.8** — Research-only Action Plan.
-  - **Status:** partially done (memo section + explicit research-only language
-    landed; standalone structured module and dedicated edge-case tests remain).
+  - **Status:** mostly done (memo section + explicit research-only language +
+    standalone `position_action.py` structured module + dedicated unit tests;
+    additional edge-case hardening can continue incrementally).
   - **What:** new module `src/biotech_alpha/position_action.py` that
     combines `target_price_range`, `current_share_price`, and
     `research_position_limit_pct` into `entry_zone_price_range`,

@@ -127,6 +127,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             target="Example target",
             indication="Cancer",
             phase="Phase 2",
+            regulatory_pathway="BLA submission planned",
+            next_binary_event="BLA submission in Q3 2026",
             next_milestone="2026 data readout",
             clinical_data=(
                 ClinicalDataPoint(
@@ -366,6 +368,8 @@ class SingleCompanyResearchTest(unittest.TestCase):
             self.assertIn("## Valuation Detail", memo_markdown)
             self.assertIn("## Catalyst Roadmap", memo_markdown)
             self.assertIn("clinical: ORR 42% (n=58); relapsed disease", memo_markdown)
+            self.assertIn("regulatory BLA submission planned", memo_markdown)
+            self.assertIn("binary_event BLA submission in Q3 2026", memo_markdown)
             self.assertIn("Input validation produced 1 warning(s)", memo_markdown)
             self.assertIn("Example Drug matched NCT00000001", memo_markdown)
             self.assertIn("Rival Drug by target_indication", memo_markdown)

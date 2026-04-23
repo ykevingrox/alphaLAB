@@ -1143,6 +1143,13 @@ def _draft_asset_from_context(
     aliases = list(
         dict.fromkeys([*aliases, *_aliases_from_context(local_context, primary)])
     )
+    next_milestone = _milestone_from_context(
+        local_context,
+        as_of_year=source_year,
+    )
+    next_binary_event = _next_binary_event_from_context(local_context)
+    if next_binary_event is None:
+        next_binary_event = next_milestone
     return {
         "name": primary,
         "aliases": aliases,
@@ -1157,10 +1164,9 @@ def _draft_asset_from_context(
         "geography": _geography_from_context(context),
         "rights": None,
         "partner": _partner_from_context(partner_context),
-        "next_milestone": _milestone_from_context(
-            local_context,
-            as_of_year=source_year,
-        ),
+        "regulatory_pathway": _regulatory_pathway_from_context(local_context),
+        "next_binary_event": next_binary_event,
+        "next_milestone": next_milestone,
         "clinical_data": _clinical_data_from_context(local_context),
         "evidence": [
             {
@@ -2085,6 +2091,38 @@ def _clinical_data_from_context(context: str) -> list[dict[str, Any]]:
             if len(points) >= 4:
                 return points
     return points
+
+
+def _regulatory_pathway_from_context(context: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", context)
+    lowered = normalized.casefold()
+    if "bla under review" in lowered:
+        return "BLA under review"
+    if "bla accepted" in lowered:
+        return "BLA accepted"
+    if "bla submission" in lowered or "submit the first bla" in lowered:
+        return "BLA submission planned"
+    if "ind approved" in lowered:
+        return "IND approved"
+    if "ind accepted" in lowered:
+        return "IND accepted"
+    return None
+
+
+def _next_binary_event_from_context(context: str) -> str | None:
+    normalized = re.sub(r"\s+", " ", context)
+    patterns = (
+        r"(BLA submission in Q[1-4]\s+20\d{2})",
+        r"(planned to start in\s+20\d{2})",
+        r"(PCC nomination in H[12]\s+20\d{2})",
+        r"(present updated data at [A-Z]{3,6}\s+20\d{2})",
+        r"(Phase\s+[123][a-z]?\s+readout[^.;]{0,80})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" .;")
+    return None
 
 
 def _term_in_context(*, term: str, context: str) -> bool:

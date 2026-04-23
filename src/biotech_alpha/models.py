@@ -60,6 +60,8 @@ class PipelineAsset:
     geography: str | None = None
     rights: str | None = None
     partner: str | None = None
+    regulatory_pathway: str | None = None
+    next_binary_event: str | None = None
     next_milestone: str | None = None
     clinical_data: tuple["ClinicalDataPoint", ...] = ()
     evidence: tuple[Evidence, ...] = ()

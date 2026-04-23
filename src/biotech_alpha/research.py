@@ -513,6 +513,10 @@ def memo_to_markdown(
                 details.append(f"indication {asset.indication}")
             if asset.phase:
                 details.append(f"phase {asset.phase}")
+            if asset.regulatory_pathway:
+                details.append(f"regulatory {asset.regulatory_pathway}")
+            if asset.next_binary_event:
+                details.append(f"binary_event {asset.next_binary_event}")
             if asset.next_milestone:
                 details.append(f"milestone {asset.next_milestone}")
             suffix = f" ({'; '.join(details)})" if details else ""
