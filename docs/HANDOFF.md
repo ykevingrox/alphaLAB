@@ -491,6 +491,15 @@ Use this shape:
   Phase 3 / Phase 1b / IND-enabling extraction, anti-target parsing
   (`anti-LAG-3`), and milestone phrase normalization (`planned to start in
   2027`). Existing behavior is unchanged; this is regression coverage only.
+- Sprint 5 "From Data Sheet To Investment Memo" planned in
+  `docs/ROADMAP.md`. The plan covers P0.1 default rNPV draft, P0.2 memo
+  template rewrite, P0.3 `InvestmentThesisLLMAgent`, P0.4 Core Asset
+  Deep Dive, P1.5-1.8 cross-agent merge / catalyst ranking / scorecard
+  transparency / action plan, P2 data breadth, and P3 strategic
+  additions. Design principles, acceptance criteria per task, and a
+  concrete execution order are recorded there. `docs/HANDOFF.md`
+  Current Task, Next Action, Acceptance Criteria, Validation, and
+  Queue now all point to Sprint 5 P0.1 as the next work unit.
 - Documentation drift pass on 2026-04-23: `README.md`, `docs/RUNBOOK.md`,
   `docs/DATA_SOURCES.md`, `docs/ARCHITECTURE.md`, `docs/PRD.md`, and
   `docs/ROADMAP.md` were reconciled with the current codebase.
@@ -799,87 +808,82 @@ Latest smoke result:
 
 ### Current Task
 
-Harbour BioMed extraction hardening, Leads Biolabs third-fixture hardening,
-global competitor-discovery candidate ingestion, ClinicalTrials.gov competitor
-discovery, full 02142 / 09887 LLM quick-report smokes, repeated-anchor excerpt
-ranking, and operator-facing extraction-audit persistence are closed for the
-current source-backed scope. Remaining deterministic warnings should stay
-review-gated unless the source text clearly resolves them.
+Start **Sprint 5: From Data Sheet To Investment Memo**. The canonical reference
+memo is `data/memos/09887-hk/20260423T095148Z_memo.md`; the sprint is judged on
+turning that style of report into something an investor can act on. See
+`docs/ROADMAP.md` § Sprint 5 for the full plan, design principles, execution
+order, and per-task acceptance criteria.
 
-Model choice is an execution-quality decision. The default Bailian model is
-currently `qwen3.5-plus`, but live LLM smoke and stronger model overrides
-should be used whenever they improve validation or research quality.
+The first work unit is **Sprint 5 P0.1 — Default rNPV / target-price draft**.
+Goal: every `report` / `company-report` run should produce a bear / base /
+bull / probability-weighted target price range by default, so the memo's
+`Catalyst-Adjusted Valuation` section is never empty. The generated
+assumptions file lives at
+`data/input/generated/<slug>_target_price_assumptions.json`, carries
+`inferred_by: "default_rnpv_v1"` and `needs_human_review: true`, and is
+overridden whenever `data/input/<slug>_target_price_assumptions.json` exists.
 
-The latest 09887 run moved the next quality gap from extraction fidelity to
-competitive intelligence. The system can now source-ground most Leads Biolabs
-pipeline fields and safely ingest evidence-backed global discovery candidates,
-with ClinicalTrials.gov as the first live source. The latest CT.gov smoke found
-ABL503 for LBL-024 and Talquetamab / QLS32015 for LBL-034 while rejecting HSCT
-style background interventions. The remaining discovery gap is query quality /
-recall within that single source before adding any more public databases.
+Sprint 5 development continues on `qwen3.5-plus` (Bailian free tier) for
+iteration velocity; every new LLM agent must accept a per-agent model
+override so stronger models are a config change.
 
-Latest saved Leads Biolabs (`09887.HK`) quick report:
-`report 09887.HK` completed with run id `20260423T094315Z`, quality gate
-`research_ready_with_review`, decision `watchlist`, 12 assets, 22 trials,
-4 competitors, 17 catalysts, extraction audit 10 supported / 2 review, and
-LLM graph 6/6 OK with 18,219 total tokens. Outputs:
-`data/memos/09887-hk/20260423T094315Z_memo.md`,
-`data/memos/20260423T094315Z_llm_findings.json`, and
-`data/traces/20260423T094315Z.jsonl`.
-
-The report run exposed and fixed a config bug: `LLMConfig.from_env()` used to
-read only `os.environ`, so a stale shell `DASHSCOPE_API_KEY` could beat the
-project `.env`. It now auto-loads `.env` and lets `.env` override shell env
-when no explicit env dict is passed, while tests can still pass an explicit
-env for deterministic isolation.
-
-Saved markdown memos now include a `## LLM Agent Addendum` whenever LLM agents
-run. The addendum keeps the deterministic memo body intact, then surfaces LLM
-run status, token count, trace path, per-agent summaries, risks, evidence, and
-step failures/skips. The standalone `data/memos/<run_id>_llm_findings.json`
-artifact remains available for machines.
-
-Macro-signals remain on the same plan: news-backed non-
-`insufficient_data` macro context and cache reuse are confirmed;
-quantitative chart/HIBOR subfeeds still need a follow-up when provider
-access recovers.
+Recent context (retained from prior handoff): Harbour BioMed / Leads Biolabs
+extraction hardening is closed for the current source-backed scope;
+ClinicalTrials.gov competitor discovery is live; saved markdown memos already
+include a `## LLM Agent Addendum`; macro-signals news-backed non-
+`insufficient_data` path and cache reuse are confirmed; quantitative macro
+subfeeds remain deferred until provider access recovers; the
+`LLMConfig.from_env()` dotenv precedence bug is fixed.
 
 ### Next Action
 
-1. Keep Yahoo retry/backoff intentionally out-of-scope for now (per
-   operator preference). Re-check quantitative HSI/HSBIO/USD-HKD/HIBOR
-   subfeeds later; for now sector news plus cache-hit fallback are
-   working.
-2. Innovent Biologics (`01801.HK`) fixture landed. Next, add one more
-   representative HK biotech disclosure-style fixture (distinct from
-   DualityBio, Harbour BioMed, Leads Biolabs, and Innovent) before adding
-   more target seeds, then update `PIPELINE_EXTRACTOR_VERSION` if the
-   extractor changes with it.
-3. Keep quick CLI UX stable: `report "<company|ticker>"` must remain
-   one-command with default LLM-on behavior and explicit opt-out only.
+1. Implement Sprint 5 P0.1 per `docs/ROADMAP.md`:
+   - Add phase→PoS and indication→peak-sales lookup tables to a committed
+     reference file under `src/biotech_alpha/` (name TBD, e.g.
+     `target_price_defaults.py`), with inline citations and conservative
+     defaults.
+   - Add `draft_target_price_assumptions(identity, pipeline_assets,
+     market_snapshot, financial_snapshot)` in
+     `src/biotech_alpha/target_price.py`; return the same dataclass /
+     payload the existing `target-price-validate` accepts.
+   - Wire `auto_inputs.generate_auto_inputs` to write
+     `data/input/generated/<slug>_target_price_assumptions.json` with
+     `inferred_by`, `needs_human_review`, and `generated_extractor_version`
+     metadata; refresh stale generated drafts on version bump.
+   - Extend `run_company_report` / `company_report_summary` to consume
+     the generated file when no curated override exists; preserve manual
+     override precedence and preserve the existing
+     `Catalyst-Adjusted Valuation` memo section contract.
+   - Cover with offline tests: (a) default-only draft generation,
+     (b) manual-over-generated precedence, (c) missing market_snapshot
+     degrades to placeholder instead of exception, (d) phase→PoS lookup
+     coverage for the phases that appear in current HK biotech fixtures.
+2. After P0.1 lands, re-run `report "09887.HK" --no-save` and diff the new
+   memo against `20260423T095148Z_memo.md` to confirm the Valuation
+   section is populated before moving to P0.2 (memo template rewrite).
+3. Keep HK-biotech fixture broadening and remaining pre-Sprint-5 backlog
+   items on pause unless they block Sprint 5.
 
 ### Acceptance Criteria
 
-- `--macro-signals yahoo-hk` live smoke keeps producing non-
-  `insufficient_data` when live sector news is available, and
-  subsequent same-market runs show `cache: hit` in
-  `macro_context.live_signals.notes`.
-- Full 02142 / 09887 quick-report smoke remains 6/6 LLM steps OK, and
-  pipeline-triage treats HBM7020 as a field-consistency review rather
-  than a missing-source-window issue; for 09887 it should treat LBL-056 /
-  LBL-082 as true target-disclosure gaps, not parser drift.
-- Saved-run audit artifacts remain listed in terminal output and manifest
-  artifacts, with the same per-asset `extraction_audit.assets[]` table as
-  the compact JSON summary.
-- Saved markdown memos include LLM addenda when LLM agents run, while
-  deterministic-only reports remain unchanged.
-- Multi-source fallback path keeps one-command runs resilient under
-  single-provider outages and still writes stable
-  `macro_context.live_signals` keys.
-- Anthropic implementation remains test-covered offline; online smoke
-  is deferred until an API key is available.
-- No regression on the existing quick-report full-stack Qwen smoke or on the
-  macro-signals offline tests.
+- Sprint 5 P0.1 acceptance (matches `docs/ROADMAP.md`):
+  1. `report "09887.HK" --no-llm --no-save` prints a
+     `probability_weighted_target_price` and bear / base / bull range.
+  2. Memo § Catalyst-Adjusted Valuation shows populated values for
+     `09887.HK`, `09606.HK`, `02142.HK`, and `01801.HK` quick runs,
+     never the "No catalyst-adjusted target price range was generated."
+     placeholder.
+  3. Manual `data/input/<slug>_target_price_assumptions.json` continues
+     to override the generated file; regression test covers this.
+  4. Missing `market_snapshot` or missing pipeline produces a
+     deterministic `needs_human_review=true` placeholder with a clear
+     warning, not an exception.
+  5. All existing deterministic and LLM tests still pass; no change to
+     the compact JSON summary contract or manifest field names.
+- Sprint 5 global invariants (all tasks): deterministic report still
+  runs under `--no-llm`; every auto-generated assumption carries
+  `needs_human_review=true` until a curated override lands; every new
+  LLM agent accepts a per-agent model override.
 
 ### Validation
 
@@ -890,7 +894,13 @@ git diff --check
 awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
   $(git ls-files '*.py' '*.md' '*.toml')
 
-# Live LLM smoke (requires .env with BIOTECH_ALPHA_LLM_API_KEY)
+# After P0.1 lands, check the canonical tickers for a populated
+# Catalyst-Adjusted Valuation section.
+for ticker in 09887.HK 09606.HK 02142.HK 01801.HK; do
+  .venv/bin/python -m biotech_alpha.cli report "$ticker" --no-llm --no-save
+done
+
+# Live LLM smoke still available (requires .env with BIOTECH_ALPHA_LLM_API_KEY)
 .venv/bin/python -m biotech_alpha.cli company-report \
   --ticker 09606.HK --auto-inputs --market-data hk-public \
   --llm-agents pipeline-triage financial-triage competition-triage \
@@ -899,20 +909,37 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
 
 ### Queue
 
-1. Run live `qwen3.5-plus` smoke when provider/model compatibility or end-to-
-   end behavior needs validation.
-2. Re-check quantitative macro feeds from a fresh network or after
-   provider rate limits recover; no retry/backoff work for now.
-3. Keep broadening fixtures across representative HK biotech disclosure
-   styles.
-4. Tighten validator checks for stale placeholders and weak evidence
-   metadata.
-5. Add a US-market sibling market-data provider, so the auto-draft path
-   is not HK-only.
-6. Consider a `K-line technical agent` (name TBD) that reads a
-   small window of OHLCV plus a few classic indicators and flags
-   technical divergences vs the fundamental / macro read. Useful as
-   an entry / exit sanity layer.
+Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
+
+1. **P0.1** Default rNPV / target-price draft (in progress).
+2. **P0.2** Memo template rewrite (Executive Verdict → Thesis → Deep Dive
+   → Catalysts → Competition → Financials → Valuation → Risks →
+   Evidence).
+3. **P1.5** Cross-agent finding merge into main Risks.
+4. **P0.3** `InvestmentThesisLLMAgent`.
+5. **P1.6** Catalyst roadmap with value-weighted ranking.
+6. **P1.7** Scorecard transparency.
+7. **P0.4** Core Asset Deep Dive extraction + optional
+   `AssetDeepDiveLLMAgent`.
+8. **P1.8** Research-only Action Plan (entry zone / sizing / exit
+   triggers, explicitly labeled research-only).
+9. **P2.x** Data breadth: China CDE registry, HKEXnews RSS, License/BD
+   events, peer valuation, equity history (pick based on the gap the
+   P0 / P1 memo reveals).
+10. **P3.x** Strategic additions: K-line agent, historical memo diff,
+    portfolio concentration, bilingual memo, HTML/PDF export.
+
+Pre-Sprint 5 backlog retained for later:
+
+- Run live `qwen3.5-plus` smoke when provider/model compatibility or
+  end-to-end behavior needs validation.
+- Re-check quantitative macro feeds when provider rate limits recover.
+- Add one more representative HK biotech disclosure-style fixture
+  (distinct from DualityBio, Harbour BioMed, Leads Biolabs, Innovent).
+- Tighten validator checks for stale placeholders and weak evidence
+  metadata.
+- Add a US-market sibling market-data provider so auto-draft is not
+  HK-only.
 
 ## Do Not Break
 
@@ -932,6 +959,11 @@ awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
   run when `--llm-agents <name>` is passed. A failure in any LLM agent must
   not fail the deterministic report — it must surface as an
   `AgentStepResult` with `ok=false`.
+- Sprint 5 adds: auto-generated target-price assumptions, thesis findings,
+  action-plan fields, and any other inferred content must carry
+  `needs_human_review=true` / `inferred_by=...` until a curated override
+  lands. Action-plan / position-plan output must be framed as research
+  support only — never as a trading instruction.
 - `OpenAICompatibleLLMClient` must never read API keys from CLI arguments or
   log them; keys come from env (`BIOTECH_ALPHA_LLM_API_KEY` preferred,
   `DASHSCOPE_API_KEY` fallback) loaded from `.env` (gitignored).

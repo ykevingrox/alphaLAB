@@ -549,3 +549,307 @@ eventually a technical / K-line agent.
 - **Deferred** — Short exponential backoff on Yahoo 429/503 inside
   `hk_macro_signals_yahoo` (operator preference is to rely on Stooq +
   stale-cache fallback for now, then revisit retries later).
+
+### Sprint 5: From Data Sheet To Investment Memo
+
+**Sprint status:** planned.
+
+**Why this sprint exists.** The current memo reads like a statistics report,
+not an investment recommendation. Reviewing
+`data/memos/09887-hk/20260423T095148Z_memo.md` showed the sharpest judgement
+(scientific skeptic, pipeline triage) is buried under "LLM Agent Addendum"
+while the top-of-memo Summary / Bull / Bear sections are generic counts and
+meta-disclaimers. Catalyst-Adjusted Valuation is empty by default because
+`target_price_assumptions.json` is required but never generated. Pipeline
+descriptions stop at target / indication / phase; core products such as
+LBL-024 get one line. This sprint upgrades the memo from "data present" to
+"investment view present, with explicit assumptions and falsifiable
+predictions".
+
+**Design principles for this sprint.**
+
+- Deterministic defaults stay conservative. Every auto-generated assumption
+  (PoS, peak sales, launch year) is sourced from a transparent lookup table
+  that lives in the repo, not inside an LLM prompt.
+- LLM agents do not invent numbers. They explain, compare, and critique
+  deterministic numbers, and they must cite the upstream fact by field name.
+- Every new field is `needs_human_review` until an explicit curated override
+  exists.
+- No change to the `AgentFinding` contract or to manifest / run shapes; all
+  new content threads through existing fields.
+- The memo template change is backwards-compatible: the compact JSON summary
+  shape and `decision` / `quality_gate` / `watchlist_bucket` field names do
+  not change.
+
+**Model strategy during this sprint.** Development continues on
+`qwen3.5-plus` (Bailian free tier) to keep iteration cost low. Every new LLM
+agent must accept a per-agent model override (env + config) so switching to a
+stronger model later is a configuration change, not a code change. Output
+quality differences across models are tracked as a separate "Model Upgrade
+Pass", not as Sprint 5 acceptance gates.
+
+#### P0 — Make the memo investable
+
+Highest ROI: the moment these land, each memo has a target price, a concrete
+thesis, and deep content on the core asset instead of counts.
+
+- **P0.1** — Default rNPV / target-price draft.
+  - **What:** add `draft_target_price_assumptions(identity, pipeline_assets,
+    market_snapshot, financial_snapshot)` in
+    `src/biotech_alpha/target_price.py`; write
+    `data/input/generated/<slug>_target_price_assumptions.json` alongside
+    other generated inputs; make `run_company_report` consume it by default
+    so the memo's `Catalyst-Adjusted Valuation` section is never empty.
+  - **Lookup tables (committed):** phase → PoS (e.g. P1 ~10%, P2 ~15%,
+    P3 ~50%, filed ~85%, oncology vs autoimmune variants); indication →
+    peak sales band (e.g. NSCLC 1L $3-10B, MM $1-4B, SLE $1-3B, EP-NEC
+    $0.3-1B, solid tumor default $1-3B). Both tables live in a single
+    reference file with citations to published benchmarks.
+  - **Economics:** default economics_share = 1.0 for China-only rights,
+    0.1-0.3 royalty for licensed-out programs when the disclosure mentions
+    `licensed`, `out-licensed`, `license agreement`, or similar patterns.
+  - **Launch year:** derived from phase + buffer, floored to current year
+    + 2. Discount rate default 0.12.
+  - **Gating:** manual `data/input/<slug>_target_price_assumptions.json`
+    still wins over the generated file. The generated file carries
+    `inferred_by: "default_rnpv_v1"` and `needs_human_review: true`.
+  - **Done when:**
+    1. `report "09887.HK" --no-llm --no-save` prints a
+       `probability_weighted_target_price` and bear/base/bull range.
+    2. `Catalyst-Adjusted Valuation` section of the memo shows values
+       instead of "No catalyst-adjusted target price range was generated."
+    3. Manual override precedence has a regression test.
+    4. Missing `market_snapshot` or missing pipeline degrades to a
+       deterministic `needs_human_review=true` placeholder, not an
+       exception.
+  - **Estimated size:** 2-3 days.
+
+- **P0.2** — Memo template rewrite.
+  - **What:** restructure `src/biotech_alpha/research.py` /
+    `company_report.py` markdown builder to the investment-memo order:
+    1. Executive Verdict (decision + target-price range + 1-line thesis).
+    2. Investment Thesis (bull drivers, bear drivers, key assumptions,
+       falsification watch).
+    3. Core Asset Deep Dive (top-3 Phase 2+ assets).
+    4. Catalyst Roadmap.
+    5. Competitive Landscape.
+    6. Financials & Runway.
+    7. Valuation Detail.
+    8. Key Risks & Falsification.
+    9. Evidence & Sources (appendix).
+  - **LLM integration rule:** LLM agent findings render into the matching
+    main section, with a `source: llm[agent, confidence]` tag. The current
+    bottom-of-memo `## LLM Agent Addendum` block keeps only token / trace /
+    step-status metadata.
+  - **Confidence gating:** findings with `confidence < 0.3` do not appear
+    in the main sections; they stay in the appendix only.
+  - **Done when:**
+    1. Memo for `09887.HK` shows decision + bear/base/bull target price
+       within the first screen.
+    2. LLM findings appear exactly once (in the relevant main section),
+       not duplicated between main body and addendum.
+    3. `quality_gate`, `watchlist_score`, `decision`, `needs_human_review`
+       field contracts are unchanged in the saved manifest and compact
+       JSON summary.
+    4. Regression tests cover both the full-LLM render path and the
+       deterministic-only render path.
+  - **Depends on:** P0.1 (so Executive Verdict has a target price to
+    render).
+  - **Estimated size:** 2 days.
+
+- **P0.3** — `InvestmentThesisLLMAgent`.
+  - **What:** new agent in `src/biotech_alpha/agents_llm.py` that runs
+    last in the DAG, reads `pipeline_triage_payload`,
+    `financial_triage_payload`, `competition_triage_payload`,
+    `macro_context`, `scorecard_summary`, and the new
+    `target_price_snapshot`, and returns a single structured finding:
+    ```json
+    {
+      "thesis_summary": "...",
+      "bull_drivers": [{"claim": "...", "evidence_refs": [...]}, ...],
+      "bear_drivers": [{"claim": "...", "evidence_refs": [...]}, ...],
+      "key_assumptions": [
+        {"assumption": "...", "falsification": "..."}, ...
+      ],
+      "falsification_watch": [
+        {
+          "observation": "...",
+          "window": "next 6 months",
+          "direction": "bull"
+        },
+        ...
+      ],
+      "decision_rationale": "...",
+      "confidence": 0.0
+    }
+    ```
+  - **CLI:** `--llm-agents investment-thesis` flag; quick `report` path
+    enables it by default alongside the existing five agents.
+  - **Cost guard:** prompt capped at ~6k tokens with structured
+    upstream summaries; completion capped so the agent stays under
+    ~3000 tokens per run on `qwen3.5-plus`. Per-agent budget plugs into
+    existing `BudgetEnforcingLLMClient`.
+  - **Output consumption:** renders into Memo § Investment Thesis and
+    feeds `thesis_summary` into Memo § Executive Verdict.
+  - **Done when:**
+    1. 09887 memo has non-empty, asset-specific bull/bear drivers and at
+       least one falsification observation within a stated window.
+    2. Strict JSON schema validation passes; schema drift raises the same
+       `LLMOutputValidationError` the other agents use.
+    3. Upstream agent failure or missing upstream fact causes this agent
+       to skip with a clear `AgentStepResult(ok=false)` note, never an
+       exception.
+  - **Depends on:** P0.1, P0.2 so Executive Verdict has a slot for the
+    summary.
+  - **Estimated size:** 1.5-2 days.
+
+- **P0.4** — Core Asset Deep Dive extraction + agent.
+  - **What:** broaden HKEX PDF text extraction beyond "Business
+    Highlights" into "Clinical Highlights" / "Clinical Update" / "Data
+    Highlights" sections (`auto_inputs._extract_clinical_highlights`).
+    Add an optional `clinical_data` list to the pipeline asset JSON
+    schema (ORR, DCR, mPFS, OS, n, cutoff date, meeting citation) with
+    validation.
+  - **New agent (optional but recommended):** `AssetDeepDiveLLMAgent`
+    per top-3 Phase 2+ asset. Consumes extracted clinical_data plus the
+    asset's source window plus matched competitor records, returns
+    structured `market_size_note`, `clinical_data_summary`,
+    `regulatory_pathway`, `next_binary_event`,
+    `differentiation_vs_competitors`.
+  - **Ranking:** Top-3 determined by phase, then clinical trial count,
+    then registry-match strength. Ties broken by asset-name order for
+    stability.
+  - **Memo:** § Core Asset Deep Dive renders one sub-section per top-3
+    asset with deterministic fields first, then the LLM agent's text.
+    Non-Top-3 Phase 2+ assets get one-line summaries. Preclinical assets
+    remain in the pipeline table only.
+  - **Done when:**
+    1. 09887 memo's LBL-024 deep dive section includes at least one
+       ORR/DCR data point from source, BLA timeline, and a
+       differentiation sentence against Phase 2+ competitor with the
+       closest target or indication.
+    2. Manual `data/input/<slug>_pipeline_assets.json` with
+       `clinical_data` overrides generated clinical_data rows.
+    3. If no clinical_data is extractable, the section gracefully
+       degrades to `Clinical data not yet extracted from source; see
+       Evidence § ...` and the run still succeeds.
+  - **Depends on:** P0.2.
+  - **Estimated size:** 3-4 days.
+
+#### P1 — Connect judgement to action
+
+Each P1 task sharpens an answer that the user still has to reconstruct by
+hand after reading a P0 memo.
+
+- **P1.5** — Cross-agent finding merge into main Risks / Core Asset
+  sections.
+  - **What:** promote LLM triage findings (pipeline / financial /
+    competition) with `severity in {"medium", "high"}` and
+    `confidence >= 0.4` into the deterministic risks list, tagged with
+    `source: llm[agent_name]`. De-duplicate by `(related_asset, issue
+    description normalized)`.
+  - **Done when:** the `LBL-024 phase mislabeled` pipeline-triage
+    finding appears in Memo § Key Risks. LLM addendum no longer repeats
+    it. Confidence < 0.3 findings still only appear in appendix.
+  - **Depends on:** P0.2, P0.3.
+  - **Estimated size:** 1 day.
+
+- **P1.6** — Catalyst Roadmap with value-weighted ranking.
+  - **What:** extend `pipeline.py` / `target_price.py` so each
+    `clinical_catalyst` carries `expected_pos` (from rNPV PoS) and
+    `expected_value_delta_pct` (signed, based on catalyst type: positive
+    readout +X%, negative -Y%, delay pushes launch year). Sort by
+    `|pos × delta|`; bucket into near-term (0-6M), mid-term (6-18M),
+    long-term (18M+).
+  - **Memo:** § Catalyst Roadmap replaces the flat
+    `Upcoming Clinical Catalysts` list; each bullet shows expected bear
+    / base / bull price movement for the event.
+  - **Done when:** LBL-024 BLA Q3 2026 ranks in the top near-term bucket
+    on 09887's memo; each catalyst shows a signed expected value delta.
+  - **Depends on:** P0.1.
+  - **Estimated size:** 1 day.
+
+- **P1.7** — Scorecard transparency.
+  - **What:** expose `scorecard.dimensions` (dimension, raw score,
+    weight, contribution) in manifest and memo. Auto-generate a "Path
+    to core candidate" list of the 3 lowest-contribution dimensions
+    plus the concrete evidence needed to raise each.
+  - **Done when:** 09887 memo shows each dimension's score and the top
+    3 lift targets. `watchlist-rank` CSV gains per-dimension columns
+    behind a flag.
+  - **Depends on:** none (independent).
+  - **Estimated size:** 0.5 day.
+
+- **P1.8** — Research-only Action Plan.
+  - **What:** new module `src/biotech_alpha/position_action.py` that
+    combines `target_price_range`, `current_share_price`, and
+    `research_position_limit_pct` into `entry_zone_price_range`,
+    `suggested_position_pct`, and `exit_trigger_conditions` (price >
+    bull target; runway < 12M; catalyst miss on a high-weight event).
+  - **Labeling:** every output field must carry
+    `guidance_type = "research_only"`. Memo § Action Plan explicitly
+    states "research support only; not a trading instruction".
+    `Do Not Break` list gains a dedicated rule about this.
+  - **Done when:** memo shows a bounded entry zone and explicit exit
+    triggers; unit tests cover absent share price, inverted
+    bear > bull edge cases, and the do-not-format-as-signal rule.
+  - **Depends on:** P0.1, P1.7.
+  - **Estimated size:** 1 day.
+
+#### P2 — Data breadth
+
+These tasks are necessary medium-term but only pay off once the P0 / P1
+structure can consume them.
+
+- **P2.9** — China drug clinical trial registry ingestion.
+  **Size:** 3-5 days.
+- **P2.10** — HKEXnews announcement RSS and change tracker.
+  **Size:** 2 days.
+- **P2.11** — License / BD event tracker into `event_impacts`.
+  **Size:** 2 days.
+- **P2.12** — Peer valuation comparison (target + phase-matched HK
+  biotech). **Size:** 2 days.
+- **P2.13** — Equity history / financing track with automatic
+  `expected_dilution_pct` suggestion. **Size:** 2 days.
+
+#### P3 — Strategic additions
+
+- **P3.14** — `KlineTechnicalLLMAgent` (OHLCV + a few classic indicators;
+  flags divergence vs fundamental / macro read; research-only).
+  **Size:** 3 days.
+- **P3.15** — Historical memo diff (same slug, last two runs).
+  **Size:** 2 days.
+- **P3.16** — Portfolio-level concentration checks (target / modality /
+  catalyst density). **Size:** 1 day.
+- **P3.17** — Bilingual memo output (EN + zh-CN; preserve English
+  technical terms). **Size:** 1-2 days.
+- **P3.18** — HTML / PDF memo export with pipeline gantt, catalyst
+  timeline, rNPV stack chart. **Size:** 3-5 days.
+
+#### Execution order
+
+Target sequence, optimised for earliest "the memo feels investable" moment:
+
+1. P0.1 Default rNPV draft.
+2. P0.2 Memo template rewrite.
+3. P1.5 Cross-agent finding merge.
+4. P0.3 `InvestmentThesisLLMAgent`.
+5. P1.6 Catalyst roadmap priority.
+6. P1.7 Scorecard transparency.
+7. P0.4 Core Asset Deep Dive.
+8. P1.8 Research-only action plan.
+9. P2.* data breadth (pick based on the gap the P0 / P1 memo reveals).
+10. P3.* strategic additions.
+
+After step 4, rerun `report "09887.HK"` as the canonical quality check
+and compare against `data/memos/09887-hk/20260423T095148Z_memo.md`.
+
+#### Cross-sprint invariants (Do Not Break)
+
+- Deterministic report must still run when every LLM agent is skipped
+  (`--no-llm` or missing LLM env + `--allow-no-llm`).
+- All auto-generated assumptions remain `needs_human_review=true` until a
+  curated override lands.
+- Any new LLM agent must accept a per-agent model override.
+- Every new field threading through the run must be represented in the
+  manifest so a future run is reproducible.
