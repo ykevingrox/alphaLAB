@@ -212,6 +212,11 @@ class CompanyReportTest(unittest.TestCase):
             self.assertIn("hkexnews_updates", manifest["artifacts"])
             self.assertEqual(manifest["hkexnews_updates"]["new_count"], 1)
             self.assertTrue(manifest["hkexnews_updates"]["typed_new_items"])
+            memo_text = Path(result.research_result.artifacts.memo_markdown).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("## HKEXnews Updates", memo_text)
+            self.assertIn("[corporate] 09606 - Voluntary Announcement", memo_text)
 
     def test_saved_memo_includes_llm_addendum(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

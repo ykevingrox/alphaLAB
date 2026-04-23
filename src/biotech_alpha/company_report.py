@@ -1503,6 +1503,10 @@ def write_hkexnews_updates_report(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    _append_hkexnews_memo_section(
+        result=result,
+        payload=payload,
+    )
     _update_manifest_with_extra_artifact(
         result=result,
         artifact_key="hkexnews_updates",
@@ -1517,6 +1521,48 @@ def write_hkexnews_updates_report(
         },
     )
     return replace(result, hkexnews_updates_path=output_path)
+
+
+def _append_hkexnews_memo_section(
+    *,
+    result: CompanyReportResult,
+    payload: dict[str, Any],
+) -> None:
+    memo_path = result.research_result.artifacts.memo_markdown
+    if memo_path is None:
+        return
+    path = Path(memo_path)
+    if not path.exists():
+        return
+    base = path.read_text(encoding="utf-8").rstrip()
+    section = hkexnews_memo_addendum_markdown(payload)
+    path.write_text(f"{base}\n\n{section}\n", encoding="utf-8")
+
+
+def hkexnews_memo_addendum_markdown(payload: dict[str, Any]) -> str:
+    typed = payload.get("typed_new_items")
+    rows = typed if isinstance(typed, list) else []
+    lines = ["## HKEXnews Updates", ""]
+    lines.append(
+        f"- New announcements since last state: {payload.get('new_count', 0)} "
+        f"(total fetched: {payload.get('item_count', 0)})."
+    )
+    if not rows:
+        lines.append("- No new ticker-matched announcements in this run.")
+        lines.append("- Review-gated: classification is deterministic and needs analyst confirmation.")
+        return "\n".join(lines)
+    lines.append("- Review-gated: classification is deterministic and needs analyst confirmation.")
+    lines.append("")
+    for row in rows[:5]:
+        title = str(row.get("title") or "Untitled announcement")
+        event_type = str(row.get("event_type") or "corporate")
+        published = row.get("published_at") or "unknown time"
+        lines.append(
+            f"- [{event_type}] {title} (published {published})"
+        )
+    if len(rows) > 5:
+        lines.append(f"- ... {len(rows) - 5} more announcement(s)")
+    return "\n".join(lines)
 
 
 def extraction_audit_payload(result: CompanyReportResult) -> dict[str, Any]:

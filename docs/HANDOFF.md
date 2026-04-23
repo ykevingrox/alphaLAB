@@ -600,8 +600,10 @@ Use this shape:
   - Summary payload now exposes `hkexnews_updates_path` for downstream tools.
   - Deterministic event typing now lands in `typed_new_items` with
     `clinical/regulatory/financing/corporate` labels (all review-gated).
-  - Boundary: memo/catalyst threading is still pending; typed items are exposed
-    in artifact/manifest/summary but not yet merged into memo sections.
+  - Typed HKEXnews items are now threaded into saved memo markdown under
+    `## HKEXnews Updates` (review-gated addendum block).
+  - Boundary: items are not yet converted into deterministic catalyst-calendar
+    rows or target-price delta inputs.
 
 ## Current Repo State
 
@@ -896,9 +898,11 @@ Sprint 5 workstreams first.
 
 ### Next Action
 
-1. Thread typed HKEXnews events into catalyst/memo sections with clear
-   review-gated labels.
-2. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
+1. Convert typed HKEXnews events into deterministic catalyst-calendar rows where
+   parsing confidence is sufficient.
+2. Add optional valuation-impact mapping hooks for financing/regulatory
+   announcement classes (still review-gated).
+3. Keep optional `AssetDeepDiveLLMAgent` and deeper P0.4 source-like expansion
    as non-blocking enhancements.
 
 ### Acceptance Criteria
