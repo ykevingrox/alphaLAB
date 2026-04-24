@@ -531,6 +531,7 @@ def memo_to_markdown(
     *,
     llm_findings: tuple[AgentFinding, ...] = (),
     llm_confidence_threshold: float = 0.3,
+    report_quality_payload: dict[str, Any] | None = None,
 ) -> str:
     """Render an investment-style memo with LLM findings merged in."""
 
@@ -678,6 +679,34 @@ def memo_to_markdown(
 
     lines.extend(["", "## 关键风险与证伪条件", ""])
     lines.extend(_finding_risk_lines(tuple(all_findings)))
+
+    if isinstance(report_quality_payload, dict):
+        lines.extend(["", "## 报告质量门", ""])
+        publish_gate = str(
+            report_quality_payload.get("publish_gate") or "review_required"
+        )
+        summary = str(
+            report_quality_payload.get("summary")
+            or "报告质量审阅完成，建议人工复核。"
+        )
+        lines.append(f"- publish_gate: `{publish_gate}`")
+        lines.append(f"- {summary}")
+        for key, label in (
+            ("critical_issues", "关键问题"),
+            ("consistency_findings", "一致性发现"),
+            ("missing_evidence_findings", "证据缺口"),
+            ("language_quality_findings", "语言质量"),
+            ("valuation_coherence_findings", "估值一致性"),
+            ("recommended_fixes", "建议修复"),
+        ):
+            values = report_quality_payload.get(key) or []
+            if not values:
+                continue
+            lines.append(f"- {label}:")
+            for item in values[:5]:
+                text = str(item).strip()
+                if text:
+                    lines.append(f"  - {text}")
 
     lines.extend(["", "## 证据与来源", ""])
     evidence_items = (

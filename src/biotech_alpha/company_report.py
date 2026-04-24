@@ -379,9 +379,20 @@ def write_llm_memo_addendum(
 
     memo_path.parent.mkdir(parents=True, exist_ok=True)
     llm_findings = tuple(getattr(llm_agent_result, "findings", ()) or ())
+    llm_facts = getattr(llm_agent_result, "facts", {}) or {}
+    report_quality_payload = (
+        llm_facts.get("report_quality_payload")
+        if isinstance(llm_facts, dict)
+        else None
+    )
     base = memo_to_markdown(
         research_result.memo,
         llm_findings=llm_findings,
+        report_quality_payload=(
+            report_quality_payload
+            if isinstance(report_quality_payload, dict)
+            else None
+        ),
     ).rstrip()
     addendum = llm_memo_addendum_markdown(
         llm_agent_result,
