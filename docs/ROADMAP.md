@@ -561,7 +561,9 @@ eventually a technical / K-line agent.
   (`valuation-commercial-agent`, `valuation-pipeline-rnpv-agent`,
   `valuation-balance-sheet-agent`, `valuation-committee-agent`) plus
   `report-quality-agent`.
-- **Moved to Sprint 7 (Stage B)** — `catalyst-agent`, `kline-agent`.
+- **Moved to Sprint 7 (Stage B)** — `strategic-economics-agent`,
+  `catalyst-agent`, `market-expectations-agent`, and
+  `market-regime-timing-agent`.
 - **Moved to Sprint 8 (Stage C)** — `data-collector-agent`,
   `report-synthesizer-agent` formalization.
 
@@ -936,7 +938,9 @@ All steps above are completed at baseline level. Ongoing iteration prioritizes:
 four-agent valuation pod and add a standalone `report-quality-agent` that
 owns the publish gate. Keep HK innovative-drug biotech as the only vertical.
 
-**Sprint status:** not started.
+**Sprint status:** in verification (core implementation landed; calibration
+pending for biotech-specific valuation framing and cross-ticker quality-gate
+consistency).
 
 **Acceptance baseline.** A one-command run on `09606.HK`, `02142.HK`, and
 `09887.HK` produces:
@@ -966,6 +970,11 @@ owns the publish gate. Keep HK innovative-drug biotech as the only vertical.
 - Currency is always declared explicitly; when inputs are in RMB/CNY the
   balance-sheet agent must apply the existing `target_price.py`
   conversion path rather than inventing a new one.
+- Conservative rNPV is a floor or cross-check, not the only fair-value anchor
+  for pre-revenue innovative-drug companies. The committee must separate:
+  conservative rNPV floor, market-implied value, and scenario repricing range.
+- The pod must explain why a stock can sustain a valuation band above rNPV
+  before labeling that gap as overvaluation.
 
 **Model strategy for Stage A.** Keep `qwen3.5-plus` as the dev default.
 Provide `LLMConfig.per_agent_models` plumbing so a production run can pin
@@ -974,7 +983,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.1 — Pod skeleton + committee passthrough
 
-- **Status:** not started.
+- **Status:** done.
 - **What:** Add three sub-agent skeletons (`ValuationCommercialLLMAgent`,
   `ValuationPipelineRnpvLLMAgent`, `ValuationBalanceSheetLLMAgent`) and a
   thin `ValuationCommitteeLLMAgent` that simply concatenates sub-agent
@@ -997,7 +1006,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.2 — Committee SOTP logic
 
-- **Status:** not started.
+- **Status:** done (first production version; ongoing calibration).
 - **What:** Replace passthrough committee with real SOTP bridge,
   currency reconciliation, method weighting, and conflict resolution.
   Committee must also consume `macro_context`, `pipeline_triage_payload`,
@@ -1024,7 +1033,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.3 — `report-quality-agent`
 
-- **Status:** not started.
+- **Status:** done (first production version; gate calibration ongoing).
 - **What:** New LLM agent consuming the composed memo, every
   `AgentFinding`, run-level `scorecard`, `extraction_audit`,
   `input_validation`, and valuation pod outputs. Emits the contract
@@ -1053,7 +1062,8 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.4 — Deprecate monolithic `valuation-specialist`
 
-- **Status:** not started.
+- **Status:** done (default quick stack uses valuation pod; specialist retained
+  as opt-in compatibility path).
 - **What:** Move `valuation-specialist` out of the default stack behind
   an opt-in flag. Keep the class and tests so old manifests can still be
   reproduced.
@@ -1071,7 +1081,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.5 — Per-agent model override plumbing
 
-- **Status:** not started.
+- **Status:** done.
 - **What:** Extend `LLMConfig` with `per_agent_models: dict[str, str]`
   resolved from env
   `BIOTECH_ALPHA_LLM_MODEL_<AGENT_NAME>` (agent name uppercased,
@@ -1086,6 +1096,38 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 - **Depends on:** none (can land in parallel with S6.1-S6.4).
 - **Estimated size:** 1 day.
 
+#### S6.6 — Biotech valuation framing calibration
+
+- **Status:** next.
+- **What:** Recalibrate valuation-pod prompts/contracts so they reflect
+  biotech market structure rather than mature-company valuation defaults.
+- **Why:** The latest acceptance sweep shows `commercial`, `rnpv`, and
+  `balance_sheet` repeatedly collapse onto the same rNPV target-price range.
+  This makes the system call persistent market valuation bands "wrong" without
+  first explaining BD, retained economics, platform optionality when present,
+  catalyst-window premiums, or sector liquidity.
+- **Rules:**
+  1. `valuation-commercial` must return no operating commercial value when
+     product revenue is absent; it must not fall back to rNPV.
+  2. `valuation-balance-sheet` must emit only net cash/debt/non-operating
+     adjustments and method `balance_sheet_adjustment`.
+  3. `valuation-committee` must distinguish `conservative_rnpv_floor`,
+     `market_implied_value`, and `scenario_repricing_range`.
+  4. `report-quality` must flag "rNPV treated as sole fair value" as a
+     framing defect, while allowing `review_required` instead of `block` when
+     the only problem is missing strategic/market-expectation context.
+- **Done when:**
+  1. Three-ticker canonical smoke no longer shows identical valuation ranges
+     across commercial, rNPV, and balance-sheet components.
+  2. `09887.HK` report explains the gap between conservative rNPV and current
+     price through market-implied assumptions before concluding on valuation.
+  3. `02142.HK` may still block for true data-quality failures, but not
+     solely because market price exceeds rNPV.
+  4. `09606.HK` report-quality JSON parses cleanly or falls back to
+     `review_required` without hiding the raw critical issues.
+- **Depends on:** S6.1-S6.5.
+- **Estimated size:** 1-2 days.
+
 #### Sprint 6 execution order
 
 1. S6.5 (unblocks cheap experimentation with strong models for the new
@@ -1095,6 +1137,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
    only needs schema-valid pod outputs, not the real committee logic).
 4. S6.2 (committee SOTP logic).
 5. S6.4 (deprecate monolith).
+6. S6.6 (biotech valuation framing calibration).
 
 #### Sprint 6 validation
 
@@ -1108,21 +1151,41 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
   `artifacts.valuation_pod`, `artifacts.report_quality`, and a compact
   `valuation_pod_summary` plus `report_quality_gate` in the summary
   payload.
+- Latest saved acceptance sweep (2026-04-24):
+  - `09606.HK` run `20260424T094304Z`: `publish_gate=review_required`
+  - `02142.HK` run `20260424T094508Z`: `publish_gate=block`
+  - `09887.HK` run `20260424T094708Z`: `publish_gate=block`
+  - Remaining closeout item is S6.6: fix biotech valuation framing and
+    component role boundaries before targeting `{pass, review_required}`.
 
-### Sprint 7: Catalyst + K-line Specialists (Stage B)
+### Sprint 7: Strategic Economics + Market Context (Stage B)
 
 **Sprint status:** not started. Sprint 6 must close first.
 
-- `catalyst-agent`: LLM narrative over deterministic catalyst calendar.
-  Ranks events by `|pos * value_delta|`, explains the cause-effect chain,
-  and writes the memo's Catalyst Roadmap prose. Numerical deltas still
-  come from `target_price.py`.
-- `kline-agent`: LLM over deterministic SMA / RSI / support / resistance
-  outputs produced by the existing `technical-timing` command. Outputs
-  long-horizon trend framing plus explicit "research-only" labels; does
-  NOT produce entry/exit signals.
+- `strategic-economics-agent`: explains how a company captures value from its
+  science through retained economics, BD/licensing, regional rights, partner
+  quality, cost sharing, commercialization path, and platform reuse only when
+  the company has platform evidence.
+- `catalyst-agent`: independent LLM narrative over deterministic catalyst
+  calendar. It ranks clinical, regulatory, BD, and conference/data-readout
+  events by evidence quality, binary risk, expectation risk, and repricing
+  paths. Numerical deltas still come from `target_price.py`.
+- `market-expectations-agent`: explains what the current market cap appears
+  to imply. It asks why the stock has sustained its valuation band before the
+  system labels the gap versus conservative rNPV as overvaluation, including
+  which catalyst assumptions appear priced in.
+- `market-regime-timing-agent`: combines the existing `macro-context` role,
+  planned k-line framing, sector sentiment, liquidity, and fund-flow proxies
+  into research-only timing labels (`favorable`, `neutral`, `fragile`,
+  `avoid_chasing`, `de_risk_watch`).
 
-Sprint-7 execution will be detailed when Sprint 6 closes.
+Sprint-7 execution will be detailed when Sprint 6 closes. The target final
+memo shape must keep two conclusions separate:
+
+1. `Fundamental view`: whether the company belongs in avoid/watchlist/core
+   research pools.
+2. `Timing view`: whether the current market regime and price action support
+   higher attention, patience, or de-risk monitoring.
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 

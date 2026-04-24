@@ -105,12 +105,12 @@ Quick-mode behavior:
 - Auto-enables the full current LLM agent stack:
   `provisional-pipeline`, `provisional-financial`, `pipeline-triage`,
   `financial-triage`, `competition-triage`, `macro-context`,
-  `scientific-skeptic`, `investment-thesis`, `valuation-specialist`.
-- Sprint 6 (in progress) will add the valuation pod
-  (`valuation-commercial`, `valuation-rnpv`, `valuation-balance-sheet`,
-  `valuation-committee`) and `report-quality` to this default stack, and
-  drop the monolithic `valuation-specialist` from the default while
-  keeping it runnable via `company-report --llm-agents valuation-specialist`.
+  `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
+  `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
+  `report-quality`.
+- The monolithic `valuation-specialist` remains available for
+  reproducibility via `company-report --llm-agents valuation-specialist`,
+  but is no longer the default quick-report valuation path.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
   explicit terminal fallback output.
 
@@ -119,9 +119,9 @@ Architecture note:
 - The target runtime is a multi-LLM-agent collaborative topology (see
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
-- Planned next upgrades are valuation pod decomposition
-  (commercial/rNPV/balance-sheet/committee) and a standalone report-quality
-  reviewer agent.
+- Planned next upgrades are biotech valuation framing calibration,
+  `strategic-economics-agent`, `catalyst-agent`,
+  `market-expectations-agent`, and `market-regime-timing-agent`.
 
 Expected behavior:
 
@@ -501,15 +501,16 @@ If validation warns about placeholders:
 - Competitive matching is deterministic on target + indication, with a
   review-gated ClinicalTrials.gov discovery runner.
 - Cash runway is a first-pass estimate, not scenario modeling.
-- Valuation narrative currently comes from the monolithic
-  `valuation-specialist` agent. Sprint 6 decomposes this into a
-  four-agent valuation pod (commercial / pipeline-rNPV / balance-sheet /
-  committee).
-- There is no standalone LLM report-quality reviewer yet; the publish gate
-  is a rule-based `quality_gate` today. Sprint 6 adds
-  `report-quality-agent`.
+- Valuation narrative currently comes from the Sprint 6 valuation pod
+  (commercial / pipeline-rNPV / balance-sheet / committee). The next
+  calibration task is to prevent conservative rNPV from being treated as the
+  only fair-value anchor for pre-revenue biotech.
+- `report-quality-agent` is wired in the LLM path, while the deterministic
+  `--no-llm` path still uses the rule-based `quality_gate`.
 - `scientific-skeptic` and `investment-thesis` agents produce LLM-backed
   counter-thesis and thesis summaries, but they do not yet evaluate trial
   design, endpoints, efficacy, or safety from source documents directly.
-- No LLM `kline-agent`, `catalyst-agent`, or `data-collector-agent` yet;
-  tracked as Stage B / Stage C in `docs/ROADMAP.md`.
+- No LLM `strategic-economics-agent`, `catalyst-agent`,
+  `market-expectations-agent`, `market-regime-timing-agent`, or
+  `data-collector-agent`
+  yet; tracked as Stage B / Stage C in `docs/ROADMAP.md`.

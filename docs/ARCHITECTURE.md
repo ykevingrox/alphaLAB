@@ -203,15 +203,18 @@ Target agent topology (canonical):
 - Layer 1 — Domain specialists:
   - `pipeline-clinical-agent` (currently `pipeline-triage`)
   - `competition-agent` (currently `competition-triage`)
-  - `macro-agent` (currently `macro-context`)
+  - `strategic-economics-agent` (Stage B)
   - `catalyst-agent` (Stage B)
-  - `kline-agent` (Stage B)
-- Layer 2 — Valuation pod (Stage A):
+- Layer 2 — Market context and timing:
+  - `market-expectations-agent` (Stage B)
+  - `market-regime-timing-agent` (Stage B; absorbs macro context,
+    technical timing, sector sentiment, and fund-flow framing)
+- Layer 3 — Valuation pod (Stage A, Stage B calibrated):
   - `valuation-commercial-agent`
   - `valuation-pipeline-rnpv-agent`
   - `valuation-balance-sheet-agent`
   - `valuation-committee-agent`
-- Layer 3 — Decision and publishing:
+- Layer 4 — Decision and publishing:
   - `investment-thesis-agent` (retain)
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)
@@ -231,9 +234,11 @@ Current architecture consistency note:
   target multi-LLM-agent design.
 - Current runtime is a hybrid state: pipeline/competition/macro specialists,
   scientific-skeptic, and investment-thesis are already LLM-based; the
-  monolithic `valuation-specialist` is being decomposed into the pod in
-  Sprint 6; kline/catalyst/report-quality/data-collector remain mostly
-  deterministic or partially implemented.
+  monolithic `valuation-specialist` has been decomposed into the Sprint 6
+  valuation pod. The latest acceptance artifacts show the pod runs, but the
+  valuation framing still over-treats conservative rNPV as the only fair-value
+  anchor. Stage B now adds strategic economics, market expectations, and
+  regime/timing agents before broadening final synthesis.
 
 ## MVP Runtime
 

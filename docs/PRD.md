@@ -71,9 +71,10 @@ Current implementation status:
   following opt-in LLM agents — `provisional-pipeline`,
   `provisional-financial`, `pipeline-triage`, `financial-triage`,
   `competition-triage`, `macro-context`, `scientific-skeptic`,
-  `investment-thesis`, `valuation-specialist` — with JSON schema
-  validation, per-run and per-agent call budgets, and JSONL traces under
-  `data/traces/`.
+  `investment-thesis`, `valuation-commercial`, `valuation-rnpv`,
+  `valuation-balance-sheet`, `valuation-committee`, `report-quality`, and
+  compatibility-only `valuation-specialist` — with JSON schema validation,
+  per-run and per-agent call budgets, and JSONL traces under `data/traces/`.
 - Implemented: HK public market-data providers (Tencent / Yahoo) and macro
   live-signal providers (Yahoo / Stooq / HKMA) with disk cache and
   stale-if-error fallback.
@@ -85,12 +86,15 @@ Current implementation status:
   auto-degrades to deterministic mode with an explicit terminal note;
   `company-report --llm-agents` still supports `--allow-no-llm` for the
   same fallback.
-- Pending (Stage A, Sprint 6): valuation pod decomposition into four
-  specialist agents (commercial / pipeline-rNPV / balance-sheet /
-  committee) and a standalone `report-quality-agent` that owns the
-  publish gate. Tracked in `docs/ROADMAP.md` and
-  `docs/ARCHITECTURE_AUDIT.md`.
-- Pending (Stage B, Sprint 7): LLM `catalyst-agent` and `kline-agent`.
+- Implemented (Stage A, Sprint 6; calibration pending): valuation pod
+  decomposition into four specialist agents (commercial / pipeline-rNPV /
+  balance-sheet / committee) and a standalone `report-quality-agent` that
+  owns the publish gate. Latest artifacts show the pod runs, but biotech
+  valuation framing still needs calibration so conservative rNPV is not
+  treated as the sole fair-value anchor.
+- Pending (Stage B, Sprint 7): LLM `strategic-economics-agent`,
+  `catalyst-agent`, `market-expectations-agent`, and
+  `market-regime-timing-agent`.
 - Pending (Stage C, Sprint 8): LLM `data-collector-agent` and
   `report-synthesizer-agent`.
 - Pending: broader company document ingestion beyond HKEX annual results,

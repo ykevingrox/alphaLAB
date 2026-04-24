@@ -263,6 +263,11 @@ with `catalyst-alerts`. Curated target-price assumptions can then map a catalyst
 event to probability of success, launch timing, peak sales, or discount-rate
 deltas through the `event-impact` command.
 
+Stage B upgrade note: the planned LLM `catalyst-agent` is an independent input
+layer, not a final decision layer. It evaluates event quality before
+`market-expectations-agent`, `market-regime-timing-agent`, and
+`valuation-committee-agent` consume the catalyst payload.
+
 Outputs:
 
 - Catalyst event type
@@ -272,6 +277,26 @@ Outputs:
 - Assumption deltas
 - Evidence and rationale
 - Human-review flag
+
+Stage B LLM outputs:
+
+- `catalyst_events`: event, asset, date/window, binary/non-binary type, and
+  source evidence.
+- `expected_value_direction`: positive, negative, mixed, or unclear.
+- `event_confidence`: confidence in event timing and relevance.
+- `expectation_risk`: whether the event appears crowded, underappreciated, or
+  already priced in.
+- `repricing_paths`: success, failure, delay, and ambiguous-readout scenarios.
+- `valuation_inputs_to_update`: which PoS, launch timing, peak sales, discount
+  rate, or retained-economics assumptions may change.
+
+Boundaries:
+
+- Must not issue entry/exit instructions.
+- Must not invent event probabilities when deterministic assumptions are
+  absent; it can label direction and evidence quality.
+- Must feed downstream expectation, timing, and valuation agents rather than
+  replacing them.
 
 ## rNPV Scenario Agent
 
@@ -447,13 +472,16 @@ Boundaries:
 ### Valuation Committee Agent
 
 Purpose: synthesize the three pod sub-agents into an SOTP view with
-explicit weights and conflict arbitration.
+explicit weights, conflict arbitration, and biotech-specific valuation
+framing.
 
 Inputs:
 
 - Outputs of `valuation-commercial-agent`,
   `valuation-pipeline-rnpv-agent`, `valuation-balance-sheet-agent`
-- `macro_context`
+- `strategic_economics_payload` when available
+- `market_expectations_payload` when available
+- `market_regime_timing_payload` when available
 - `pipeline_triage_payload`
 - `competition_triage_payload`
 
@@ -462,6 +490,12 @@ Outputs:
 - `sotp_bridge`: ordered list of `{component, method, value_contribution}`
   that sums to `final_equity_value_range.base`.
 - `method_weights`: `{commercial, rnpv, balance_sheet}` summing to 1.0.
+- `conservative_rnpv_floor`: cash-adjusted value range from core assets
+  under conservative assumptions.
+- `market_implied_value`: explanation of what the current market value appears
+  to price in; can be qualitative when data is insufficient.
+- `scenario_repricing_range`: plausible value change under catalyst, BD,
+  financing, or sector-regime changes.
 - `conflict_resolution`: list of `{conflict, resolution, rationale}` when
   sub-agents disagree.
 - `final_equity_value_range`: `{bear, base, bull}` in declared currency.
@@ -475,6 +509,104 @@ Boundaries:
 - Must NOT invent new numbers; every figure must trace to a pod sub-agent
   output or to a declared assumption.
 - Must log weighting rationale so reviewers can reproduce the SOTP bridge.
+- Must NOT describe conservative rNPV as the only fair value for a
+  pre-revenue biotech. It must explain any market premium or state that the
+  premium is unexplained.
+
+## Strategic Economics Agent
+
+Purpose: explain how a biotech company captures shareholder value from its
+science. This role is broader than a BD extractor and only analyzes platform
+reuse when there is company-specific evidence.
+
+Inputs:
+
+- `pipeline_assets` and `pipeline_triage_payload`
+- Evidence excerpts with BD, licensing, regional-rights, NewCo, royalty,
+  milestone, cost-sharing, or commercialization language
+- `financials_snapshot`
+- `competition_triage_payload`
+
+Outputs:
+
+- `retained_economics_map`: asset, region, partner, and economics-share rows
+  when disclosed or inferable from explicit evidence.
+- `bd_validation_events`: collaborations, upfronts, milestones, royalties,
+  cost-sharing, or partner-validation events.
+- `partner_quality_assessment`: partner execution capability and strategic
+  fit.
+- `commercialization_path`: self-commercialization, partner-led,
+  region-split, royalty-only, or unclear.
+- `value_capture_score`: 0-100 evidence-backed score.
+- `strategic_premium_discount`: premium/discount drivers for the valuation
+  committee.
+- `needs_human_review`.
+
+Boundaries:
+
+- Must NOT count headline milestone totals as guaranteed value.
+- Must distinguish "science validated by partner" from "economics retained by
+  the listed company".
+- Must NOT force a platform thesis when the company has no platform evidence.
+
+## Market Expectations Agent
+
+Purpose: explain what the current market cap appears to imply before any
+agent declares the stock cheap or expensive.
+
+Inputs:
+
+- `market_snapshot`, `valuation_snapshot`, historical price and market-cap
+  context when available
+- `target_price_scenarios` and valuation pod outputs
+- `strategic_economics_payload`
+- Catalyst calendar and market-regime/timing payload when available
+
+Outputs:
+
+- `market_implied_assumptions`: assumptions needed to justify observed market
+  value.
+- `valuation_band_context`: historical floor, mid-band, extended band, or
+  unknown.
+- `rnpv_gap_explanation`: why observed price differs from conservative rNPV.
+- `expectation_risk_flags`: assumptions that could break the valuation band.
+- `evidence_gaps`.
+- `confidence`.
+
+Boundaries:
+
+- Must NOT treat current price as proof of fair value.
+- Must NOT call a stock overvalued solely because conservative rNPV is below
+  price.
+
+## Market Regime Timing Agent
+
+Purpose: combine macro, technical, sector sentiment, and fund-flow context into
+a research-only timing view. This absorbs the current `macro-context` role and
+the planned k-line specialist into one timing layer.
+
+Inputs:
+
+- Existing `macro-context` output
+- Deterministic technical timing outputs (trend, support/resistance, moving
+  averages, relative strength, drawdown)
+- Sector sentiment, liquidity, valuation-band, and fund-flow proxies when
+  available
+
+Outputs:
+
+- `timing_view`: `favorable`, `neutral`, `fragile`, `avoid_chasing`, or
+  `de_risk_watch`.
+- `horizon`: `1-3 months`, `3-6 months`, or `6-12 months`.
+- `macro_regime`, `technical_state`, `sentiment_state`.
+- `key_triggers`.
+- `invalidation_signals`.
+- `confidence`.
+
+Boundaries:
+
+- Must remain research-only and must NOT produce entry/exit orders.
+- Must keep long-term fundamental view separate from current timing view.
 
 ## Report Synthesizer Agent
 
@@ -523,7 +655,8 @@ Outputs:
 - `language_quality_findings`: residual English fragments in zh-CN reports,
   over-claiming tone, removed disclaimer drift
 - `valuation_coherence_findings`: committee vs per-share vs event-impact
-  vs scorecard direction sanity
+  vs scorecard direction sanity; also flags treating conservative rNPV as the
+  sole fair-value anchor for pre-revenue biotech
 - `recommended_fixes`: list of concrete edits with target section path
 
 Boundaries:
@@ -545,9 +678,11 @@ topology is tracked in `docs/ROADMAP.md`.
 - `data-collector-agent` (Stage C)
 - `pipeline-clinical-agent` — currently `pipeline-triage`
 - `competition-agent` — currently `competition-triage`
-- `macro-agent` — currently `macro-context`
-- `kline-agent` (Stage B)
+- `strategic-economics-agent` (Stage B)
 - `catalyst-agent` (Stage B)
+- `market-expectations-agent` (Stage B)
+- `market-regime-timing-agent` (Stage B; absorbs current `macro-context`
+  plus the planned k-line role)
 - Valuation pod (Stage A):
   - `valuation-commercial-agent`
   - `valuation-pipeline-rnpv-agent`

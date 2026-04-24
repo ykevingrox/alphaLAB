@@ -1686,6 +1686,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
     system=(
         "你是投研估值小组成员。"
         "仅使用输入事实做估值解释，不得编造外部数字。"
+        "港股创新药公司估值不能把保守rNPV当作唯一公允价值。"
         "输出严格 JSON，数字字段必须是数字。"
     ),
     user_template=(
@@ -1701,6 +1702,17 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "竞争分诊:\n${competition_triage}\n\n"
         "宏观上下文:\n${macro_context}\n\n"
         "上游估值分项(仅 committee 可用):\n${upstream_valuation_payloads}\n\n"
+        "角色硬约束:\n"
+        "- valuation-commercial-agent: 只评估已商业化产品、经常性收入、"
+        "launch ramp或已确认的milestone/royalty收入；如果没有收入证据，"
+        "返回0贡献或低置信度，不得改用rNPV。\n"
+        "- valuation-pipeline-rnpv-agent: 只评估管线rNPV，必须引用输入中的"
+        "PoS、峰值销售、上市时间和权益假设；不得创造新数字。\n"
+        "- valuation-balance-sheet-agent: 只做净现金、债务、非经营资产调整，"
+        "method必须为balance_sheet_adjustment，不得评估经营或管线资产。\n"
+        "- valuation-committee-agent: 不要把保守rNPV写成唯一合理股价；"
+        "请区分conservative_rnpv_floor、market_implied_value和"
+        "scenario_repricing_range，并解释市场溢价是否有证据支持。\n\n"
         "请返回严格 JSON：\n"
         "{\n"
         "  \"summary\": \"<2-4句>\",\n"
@@ -1713,6 +1725,13 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "  \"confidence\": 0.0,\n"
         "  \"needs_human_review\": true,\n"
         "  \"currency\": \"HKD\",\n"
+        "  \"value_type\": \"<per_share|equity_value>\",\n"
+        "  \"unit_basis\": \"<reported|normalized>\",\n"
+        "  \"fx_assumption\": \"<汇率说明>\",\n"
+        "  \"shares_outstanding_used\": 0.0,\n"
+        "  \"conservative_rnpv_floor\": \"<仅committee填写，可空>\",\n"
+        "  \"market_implied_value\": \"<仅committee填写，可空>\",\n"
+        "  \"scenario_repricing_range\": \"<仅committee填写，可空>\",\n"
         "  \"sotp_bridge\": [\"<仅committee填写，可空>\"],\n"
         "  \"method_weights\": [\"<仅committee填写，可空>\"],\n"
         "  \"conflict_resolution\": [\"<仅committee填写，可空>\"]\n"
@@ -1771,6 +1790,22 @@ VALUATION_POD_PROMPT = StructuredPrompt(
             "confidence": {"type": ["number", "null"]},
             "needs_human_review": {"type": "boolean"},
             "currency": {"type": "string", "min_length": 3},
+            "value_type": {
+                "type": "string",
+                "enum": ["per_share", "equity_value"],
+            },
+            "unit_basis": {"type": "string", "min_length": 2},
+            "fx_assumption": {"type": "string", "min_length": 2},
+            "shares_outstanding_used": {"type": ["number", "null"]},
+            "conservative_rnpv_floor": {
+                "type": ["string", "object", "null"],
+            },
+            "market_implied_value": {
+                "type": ["string", "object", "null"],
+            },
+            "scenario_repricing_range": {
+                "type": ["string", "object", "null"],
+            },
             "sotp_bridge": {
                 "type": "array",
                 "items": {
@@ -1867,6 +1902,17 @@ class _ValuationPodLLMAgentBase(Agent):
         try:
             payload = VALUATION_POD_PROMPT.parse_response(call.response_text)
             payload = _normalize_payload_company(payload, context.company)
+            payload = _normalize_valuation_payload(
+                payload=payload,
+                component=self.role,
+                valuation_snapshot=store.get("valuation_snapshot"),
+            )
+            payload = _coerce_valuation_role_payload(
+                payload=payload,
+                role=self.role,
+                financials_snapshot=store.get("financials_snapshot"),
+                valuation_snapshot=store.get("valuation_snapshot"),
+            )
         except SchemaError as exc:
             return AgentStepResult(
                 agent_name=self.name,
@@ -1982,6 +2028,9 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
     system=(
         "你是独立报告质量审阅员。"
         "仅审查一致性、证据充分性、语言质量与估值口径一致性。"
+        "对创新药biotech，保守rNPV低于市价本身不是hard_error；"
+        "只有数学断裂、单位错误、双重计算、缺失关键证据或把rNPV误写成"
+        "唯一公允价值时才升级。"
         "不得发明新数据，不得覆盖上游结论。"
     ),
     user_template=(
@@ -1992,6 +2041,14 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "摘要指标:\n${result_summary}\n\n"
         "估值分项输出:\n${valuation_pod_payloads}\n\n"
         "LLM findings:\n${llm_findings}\n\n"
+        "估值标准化结果:\n${normalized_valuation}\n\n"
+        "审阅规则:\n"
+        "- 若问题只是缺少战略经济/市场预期解释，优先给review_required，"
+        "不要直接block。\n"
+        "- 若commercial/rNPV/balance_sheet重复同一估值范围，或"
+        "balance_sheet使用rNPV方法，应作为估值口径问题。\n"
+        "- 若报告把保守rNPV写成唯一合理股价，请列入"
+        "valuation_coherence_findings。\n\n"
         "请返回严格 JSON：\n"
         "{\n"
         "  \"summary\": \"<1-3句审查结论>\",\n"
@@ -2002,6 +2059,9 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "  \"language_quality_findings\": [\"<发现>\", \"...\"],\n"
         "  \"valuation_coherence_findings\": [\"<发现>\", \"...\"],\n"
         "  \"recommended_fixes\": [\"<可执行修复>\", \"...\"],\n"
+        "  \"issue_classification\": [\n"
+        "    {\"issue\": \"<简述>\", \"severity\": \"<hard_error|soft_warning>\", \"rationale\": \"<原因>\"}\n"
+        "  ],\n"
         "  \"confidence\": 0.0\n"
         "}"
     ),
@@ -2051,6 +2111,22 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
             "recommended_fixes": {
                 "type": "array",
                 "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "issue_classification": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["issue", "severity", "rationale"],
+                    "properties": {
+                        "issue": {"type": "string", "min_length": 1},
+                        "severity": {
+                            "type": "string",
+                            "enum": ["hard_error", "soft_warning"],
+                        },
+                        "rationale": {"type": "string", "min_length": 1},
+                    },
+                },
                 "max_items": 20,
             },
             "confidence": {"type": ["number", "null"]},
@@ -2115,6 +2191,9 @@ class ReportQualityLLMAgent(Agent):
                     }
                 ),
                 "llm_findings": _json_block(llm_findings),
+                "normalized_valuation": _json_block(
+                    _normalized_valuation_for_review(store)
+                ),
             }
         )
         _write_debug_prompt(
@@ -2159,6 +2238,10 @@ class ReportQualityLLMAgent(Agent):
         try:
             payload = REPORT_QUALITY_PROMPT.parse_response(call.response_text)
             payload = _normalize_payload_company(payload, context.company)
+            payload = _postprocess_report_quality_payload(
+                payload=payload,
+                store=store,
+            )
         except SchemaError as exc:
             payload = _report_quality_fallback_payload(
                 reason=f"schema_error: {exc}"
@@ -2695,6 +2778,13 @@ def _report_quality_fallback_payload(*, reason: str) -> dict[str, Any]:
         "recommended_fixes": [
             "rerun report-quality agent after fixing LLM/schema issue"
         ],
+        "issue_classification": [
+            {
+                "issue": "report_quality_unavailable",
+                "severity": "hard_error",
+                "rationale": reason,
+            }
+        ],
         "confidence": 0.2,
     }
 
@@ -2719,8 +2809,8 @@ def _enrich_committee_payload_from_sub_agents(
     enriched = dict(payload)
     components: list[tuple[str, dict[str, Any]]] = []
     for name, item in (
-        ("commercial", commercial_payload),
         ("rnpv", rnpv_payload),
+        ("commercial", commercial_payload),
         ("balance_sheet", balance_sheet_payload),
     ):
         if isinstance(item, dict):
@@ -2734,29 +2824,161 @@ def _enrich_committee_payload_from_sub_agents(
     base_total = 0.0
     bull_total = 0.0
     abs_base_total = 0.0
+    shares_outstanding = None
+    if isinstance(valuation_snapshot, dict):
+        shares_outstanding = _safe_float(
+            valuation_snapshot.get("shares_outstanding")
+        )
+    seen_signatures: set[tuple[float, float, float]] = set()
+    conflicts: list[dict[str, Any]] = []
     for component_name, component_payload in components:
         bear, base, bull = _valuation_range_tuple(component_payload)
+        value_type = str(
+            component_payload.get("value_type") or "equity_value"
+        ).strip()
         currency = str(component_payload.get("currency") or "HKD").upper()
+        fx_rate_to_hkd = _currency_to_hkd_rate(currency, valuation_snapshot)
+        unit_basis = "equity_value"
+        if (
+            value_type == "per_share"
+            and shares_outstanding
+            and shares_outstanding > 0
+        ):
+            bear *= shares_outstanding
+            base *= shares_outstanding
+            bull *= shares_outstanding
+            unit_basis = "per_share_to_equity"
+            conflicts.append(
+                {
+                    "conflict": "unit_basis_normalized",
+                    "resolution": (
+                        f"{component_name} range scaled by shares_outstanding"
+                    ),
+                    "rationale": (
+                        "component range appears to be per-share; converted "
+                        "to equity value before SOTP aggregation"
+                    ),
+                }
+            )
         currencies.add(currency)
+        method = str(component_payload.get("method") or "").strip()
+        contribution_allowed = True
+        expected_methods = {
+            "balance_sheet": {"balance_sheet_adjustment"},
+        }
+        expected = expected_methods.get(component_name, set())
+        if expected and method not in expected:
+            contribution_allowed = False
+            conflicts.append(
+                {
+                    "conflict": "component_method_mismatch",
+                    "resolution": (
+                        f"{component_name} contribution is excluded from SOTP total"
+                    ),
+                    "rationale": (
+                        f"{component_name} expected one of {sorted(expected)}, "
+                        f"got {method or 'unknown'}"
+                    ),
+                }
+            )
+        elif component_name in {"commercial", "rnpv"}:
+            preferred_methods = {
+                "commercial": {"multiple", "dcf_simple", "sum_of_parts"},
+                "rnpv": {"rNPV"},
+            }
+            preferred = preferred_methods.get(component_name, set())
+            if method and preferred and method not in preferred:
+                conflicts.append(
+                    {
+                        "conflict": "component_method_mismatch",
+                        "resolution": (
+                            f"{component_name} kept with caution in committee total"
+                        ),
+                        "rationale": (
+                            f"{component_name} preferred methods are "
+                            f"{sorted(preferred)}, got {method}"
+                        ),
+                    }
+                )
+
+        if component_name == "balance_sheet" and not contribution_allowed:
+            # Deterministic fallback: net cash/debt adjustment from valuation snapshot.
+            det_bear, det_base, det_bull = _deterministic_balance_sheet_adjustment(
+                valuation_snapshot
+            )
+            if det_base != 0.0:
+                bear, base, bull = det_bear, det_base, det_bull
+                method = "balance_sheet_adjustment(deterministic_fallback)"
+                contribution_allowed = True
+                conflicts.append(
+                    {
+                        "conflict": "balance_sheet_llm_method_invalid",
+                        "resolution": "fallback to deterministic net cash/debt adjustment",
+                        "rationale": "preserve additive adjustment in committee bridge",
+                    }
+                )
+
+        converted_bear = bear * fx_rate_to_hkd
+        converted_base = base * fx_rate_to_hkd
+        converted_bull = bull * fx_rate_to_hkd
+        signature = (
+            round(converted_bear, 4),
+            round(converted_base, 4),
+            round(converted_bull, 4),
+        )
+        if contribution_allowed and signature in seen_signatures:
+            contribution_allowed = False
+            conflicts.append(
+                {
+                    "conflict": "duplicate_component_valuation_range",
+                    "resolution": (
+                        f"{component_name} contribution is excluded to avoid double count"
+                    ),
+                    "rationale": (
+                        "another component already contributes the same "
+                        f"(bear, base, bull) range {signature}"
+                    ),
+                }
+            )
+        seen_signatures.add(signature)
+
+        base_contribution = base if contribution_allowed else 0.0
         bridge.append(
             {
                 "component": component_name,
-                "method": component_payload.get("method"),
+                "method": method,
                 "bear": bear,
                 "base": base,
                 "bull": bull,
                 "currency": currency,
-                "value_contribution": base,
+                "value_type": value_type,
+                "unit_basis": unit_basis,
+                "fx_to_hkd": fx_rate_to_hkd,
+                "bear_hkd": round(converted_bear, 4),
+                "base_hkd": round(converted_base, 4),
+                "bull_hkd": round(converted_bull, 4),
+                "value_contribution": base_contribution * fx_rate_to_hkd,
+                "contribution_allowed": contribution_allowed,
             }
         )
-        bear_total += bear
-        base_total += base
-        bull_total += bull
-        abs_base_total += abs(base)
+        if contribution_allowed:
+            bear_total += converted_bear
+            base_total += converted_base
+            bull_total += converted_bull
+            abs_base_total += abs(converted_base)
 
     weights: list[dict[str, Any]] = []
     for row in bridge:
-        base = float(row.get("base") or 0.0)
+        base = float(row.get("value_contribution") or 0.0)
+        allowed = bool(row.get("contribution_allowed"))
+        if not allowed:
+            weights.append(
+                {
+                    "component": row.get("component"),
+                    "weight": 0.0,
+                }
+            )
+            continue
         if abs_base_total > 0:
             weight = abs(base) / abs_base_total
         else:
@@ -2768,7 +2990,6 @@ def _enrich_committee_payload_from_sub_agents(
             }
         )
 
-    conflicts: list[dict[str, Any]] = []
     if len(currencies) > 1:
         conflicts.append(
             {
@@ -2803,19 +3024,54 @@ def _enrich_committee_payload_from_sub_agents(
         "bull": round(bull_total, 2),
     }
     enriched["final_equity_value_range"] = dict(enriched["valuation_range"])
-    shares_outstanding = None
-    if isinstance(valuation_snapshot, dict):
-        shares_outstanding = _safe_float(
-            valuation_snapshot.get("shares_outstanding")
-        )
     if shares_outstanding and shares_outstanding > 0:
+        per_share_bear = bear_total / shares_outstanding
+        per_share_base = base_total / shares_outstanding
+        per_share_bull = bull_total / shares_outstanding
         enriched["final_per_share_range"] = {
-            "bear": round(bear_total / shares_outstanding, 4),
-            "base": round(base_total / shares_outstanding, 4),
-            "bull": round(bull_total / shares_outstanding, 4),
+            "bear": _preserve_small_value(per_share_bear),
+            "base": _preserve_small_value(per_share_base),
+            "bull": _preserve_small_value(per_share_bull),
         }
     else:
         enriched["final_per_share_range"] = dict(enriched["valuation_range"])
+        conflicts.append(
+            {
+                "conflict": "missing_or_invalid_shares_outstanding",
+                "resolution": (
+                    "fallback to equity value range for final_per_share_range"
+                ),
+                "rationale": "shares_outstanding unavailable or non-positive",
+            }
+        )
+    conservative_floor = _committee_floor_from_bridge(
+        bridge=bridge,
+        shares_outstanding=shares_outstanding,
+    )
+    market_cap = _extract_numeric(valuation_snapshot, "market_cap")
+    premium_to_floor = None
+    floor_base = _safe_float(conservative_floor.get("base"))
+    if market_cap > 0 and floor_base > 0:
+        premium_to_floor = round((market_cap / floor_base) - 1.0, 4)
+    enriched["conservative_rnpv_floor"] = conservative_floor
+    enriched["market_implied_value"] = {
+        "market_cap": market_cap or None,
+        "currency": "HKD",
+        "premium_to_conservative_floor": premium_to_floor,
+        "interpretation": (
+            "Current market value may include strategic economics, BD, "
+            "platform optionality when evidenced, catalyst-window premium, "
+            "and sector liquidity. These require separate agent support in "
+            "Stage B."
+        ),
+    }
+    enriched["scenario_repricing_range"] = {
+        "bear": enriched["valuation_range"]["bear"],
+        "base": enriched["valuation_range"]["base"],
+        "bull": enriched["valuation_range"]["bull"],
+        "currency": "HKD",
+        "basis": "committee_current_components_before_stage_b_market_premium",
+    }
     return enriched
 
 
@@ -2830,11 +3086,307 @@ def _valuation_range_tuple(payload: dict[str, Any]) -> tuple[float, float, float
     )
 
 
+def _committee_floor_from_bridge(
+    *,
+    bridge: list[dict[str, Any]],
+    shares_outstanding: float | None,
+) -> dict[str, Any]:
+    bear = 0.0
+    base = 0.0
+    bull = 0.0
+    for row in bridge:
+        if row.get("component") not in {"rnpv", "balance_sheet"}:
+            continue
+        if not bool(row.get("contribution_allowed")):
+            continue
+        bear += _safe_float(row.get("bear_hkd"))
+        base += _safe_float(row.get("base_hkd"))
+        bull += _safe_float(row.get("bull_hkd"))
+    result: dict[str, Any] = {
+        "bear": round(bear, 2),
+        "base": round(base, 2),
+        "bull": round(bull, 2),
+        "currency": "HKD",
+        "basis": "rnpv_plus_balance_sheet_only",
+    }
+    if shares_outstanding and shares_outstanding > 0:
+        result["per_share"] = {
+            "bear": _preserve_small_value(bear / shares_outstanding),
+            "base": _preserve_small_value(base / shares_outstanding),
+            "bull": _preserve_small_value(bull / shares_outstanding),
+        }
+    return result
+
+
 def _safe_float(value: Any) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _extract_numeric(mapping: Any, *keys: str) -> float:
+    if not isinstance(mapping, dict):
+        return 0.0
+    for key in keys:
+        value = mapping.get(key)
+        parsed = _safe_float(value)
+        if parsed != 0.0:
+            return parsed
+    for nested_key in ("snapshot", "metrics", "financials", "financial_snapshot"):
+        nested = mapping.get(nested_key)
+        parsed = _extract_numeric(nested, *keys)
+        if parsed != 0.0:
+            return parsed
+    return 0.0
+
+
+def _has_commercial_revenue(financials_snapshot: Any) -> bool:
+    revenue = _extract_numeric(
+        financials_snapshot,
+        "revenue_ttm",
+        "total_revenue",
+        "revenue",
+        "product_revenue",
+        "sales",
+        "turnover",
+    )
+    return revenue > 0
+
+
+def _coerce_valuation_role_payload(
+    *,
+    payload: dict[str, Any],
+    role: str,
+    financials_snapshot: Any,
+    valuation_snapshot: Any,
+) -> dict[str, Any]:
+    coerced = dict(payload)
+    if role == "valuation-commercial-agent" and not _has_commercial_revenue(
+        financials_snapshot
+    ):
+        coerced["method"] = "multiple"
+        coerced["scope"] = (
+            "commercialized_products_and_recurring_revenue; no commercial "
+            "revenue evidence in current inputs"
+        )
+        coerced["valuation_range"] = {"bear": 0.0, "base": 0.0, "bull": 0.0}
+        coerced["currency"] = str(coerced.get("currency") or "HKD").upper()
+        coerced["value_type"] = "equity_value"
+        coerced["unit_basis"] = "no_revenue_zero_commercial_contribution"
+        coerced["needs_human_review"] = True
+        coerced["confidence"] = min(_safe_float(coerced.get("confidence")), 0.35)
+        assumptions = list(coerced.get("assumptions") or [])
+        assumptions.append(
+            "No recurring/product revenue found; commercial agent must not "
+            "fall back to pipeline rNPV."
+        )
+        coerced["assumptions"] = assumptions[:12]
+    elif role == "valuation-balance-sheet-agent":
+        net_cash = _deterministic_balance_sheet_adjustment(valuation_snapshot)
+        if net_cash == (0.0, 0.0, 0.0):
+            net_cash = _deterministic_balance_sheet_adjustment(
+                financials_snapshot
+            )
+        coerced["method"] = "balance_sheet_adjustment"
+        coerced["scope"] = "net_cash_debt_and_non_operating_adjustments_only"
+        coerced["valuation_range"] = {
+            "bear": net_cash[0],
+            "base": net_cash[1],
+            "bull": net_cash[2],
+        }
+        coerced["currency"] = "HKD"
+        coerced["value_type"] = "equity_value"
+        coerced["unit_basis"] = "deterministic_balance_sheet_adjustment"
+        coerced["needs_human_review"] = bool(coerced.get("needs_human_review", True))
+        assumptions = list(coerced.get("assumptions") or [])
+        assumptions.append(
+            "Balance-sheet agent is constrained to net cash/debt adjustments "
+            "and must not price pipeline or operating assets."
+        )
+        coerced["assumptions"] = assumptions[:12]
+    return coerced
+
+
+def _deterministic_balance_sheet_adjustment(
+    valuation_snapshot: Any,
+) -> tuple[float, float, float]:
+    if not isinstance(valuation_snapshot, dict):
+        return (0.0, 0.0, 0.0)
+    cash = _extract_numeric(
+        valuation_snapshot,
+        "cash",
+        "cash_and_equivalents",
+        "cash_and_cash_equivalents",
+    )
+    debt = _extract_numeric(valuation_snapshot, "total_debt", "debt")
+    if debt == 0.0:
+        debt = _extract_numeric(
+            valuation_snapshot,
+            "short_term_debt",
+        ) + _extract_numeric(
+            valuation_snapshot,
+            "long_term_debt",
+        )
+    net = cash - debt
+    return (net, net, net)
+
+
+def _preserve_small_value(value: float) -> float:
+    rounded = round(value, 6)
+    if rounded != 0.0:
+        return rounded
+    return value
+
+
+def _currency_to_hkd_rate(currency: str, valuation_snapshot: Any) -> float:
+    normalized = (currency or "HKD").strip().upper()
+    if normalized == "HKD":
+        return 1.0
+    if normalized in {"CNY", "RMB"}:
+        inferred = 1.1
+        if isinstance(valuation_snapshot, dict):
+            for key in (
+                "fx_cny_hkd",
+                "fx_rmb_hkd",
+                "cny_to_hkd",
+                "rmb_to_hkd",
+            ):
+                candidate = _safe_float(valuation_snapshot.get(key))
+                if candidate > 0:
+                    inferred = candidate
+                    break
+        return inferred
+    return 1.0
+
+
+def _normalize_valuation_payload(
+    *,
+    payload: dict[str, Any],
+    component: str,
+    valuation_snapshot: Any,
+) -> dict[str, Any]:
+    normalized = dict(payload)
+    method = str(normalized.get("method") or "").strip()
+    value_type = str(normalized.get("value_type") or "").strip()
+    if not value_type:
+        if method in {"rNPV", "multiple", "dcf_simple"}:
+            value_type = "per_share"
+        else:
+            value_type = "equity_value"
+    currency = str(normalized.get("currency") or "HKD").strip().upper()
+    normalized["currency"] = currency
+    normalized["value_type"] = value_type
+    normalized["unit_basis"] = str(
+        normalized.get("unit_basis") or "reported_by_sub_agent"
+    ).strip()
+    fx = _currency_to_hkd_rate(currency, valuation_snapshot)
+    normalized["fx_assumption"] = str(
+        normalized.get("fx_assumption")
+        or f"1 {currency} = {fx} HKD (deterministic default)"
+    ).strip()
+    shares = None
+    if isinstance(valuation_snapshot, dict):
+        shares = _safe_float(valuation_snapshot.get("shares_outstanding"))
+    raw_shares = normalized.get("shares_outstanding_used")
+    parsed_raw_shares = _safe_float(raw_shares)
+    if parsed_raw_shares > 0:
+        normalized["shares_outstanding_used"] = parsed_raw_shares
+    elif shares and shares > 0:
+        normalized["shares_outstanding_used"] = shares
+    else:
+        normalized["shares_outstanding_used"] = None
+
+    # Committee output is always a normalized aggregation product.
+    if component == "valuation-committee-agent":
+        normalized["value_type"] = "equity_value"
+        normalized["unit_basis"] = "committee_normalized_hkd_equity_value"
+    return normalized
+
+
+def _normalized_valuation_for_review(store: FactStore) -> dict[str, Any]:
+    snapshot = store.get("valuation_snapshot")
+    return {
+        "commercial": _normalize_valuation_payload(
+            payload=dict(store.get("valuation_commercial_payload") or {}),
+            component="valuation-commercial-agent",
+            valuation_snapshot=snapshot,
+        ),
+        "rnpv": _normalize_valuation_payload(
+            payload=dict(store.get("valuation_rnpv_payload") or {}),
+            component="valuation-pipeline-rnpv-agent",
+            valuation_snapshot=snapshot,
+        ),
+        "balance_sheet": _normalize_valuation_payload(
+            payload=dict(store.get("valuation_balance_sheet_payload") or {}),
+            component="valuation-balance-sheet-agent",
+            valuation_snapshot=snapshot,
+        ),
+        "committee": _normalize_valuation_payload(
+            payload=dict(store.get("valuation_committee_payload") or {}),
+            component="valuation-committee-agent",
+            valuation_snapshot=snapshot,
+        ),
+    }
+
+
+def _postprocess_report_quality_payload(
+    *,
+    payload: dict[str, Any],
+    store: FactStore,
+) -> dict[str, Any]:
+    normalized = dict(payload)
+    gate = str(normalized.get("publish_gate") or "review_required").strip()
+    if gate != "block":
+        return normalized
+
+    issue_classification = normalized.get("issue_classification")
+    hard_count = 0
+    if isinstance(issue_classification, list):
+        for item in issue_classification:
+            if isinstance(item, dict) and item.get("severity") == "hard_error":
+                hard_count += 1
+
+    if hard_count == 0:
+        texts: list[str] = []
+        for key in (
+            "critical_issues",
+            "consistency_findings",
+            "missing_evidence_findings",
+            "language_quality_findings",
+            "valuation_coherence_findings",
+        ):
+            texts.extend(str(x) for x in (normalized.get(key) or []))
+        combined = " ".join(texts).lower()
+        hard_tokens = (
+            "计算",
+            "公式",
+            "加总",
+            "单位",
+            "currency",
+            "fx",
+            "冲突",
+            "不一致",
+            "断裂",
+            "漏算",
+            "double count",
+            "shares",
+            "估值口径",
+        )
+        has_hard_signal = any(token in combined for token in hard_tokens)
+        if not has_hard_signal:
+            normalized["publish_gate"] = "review_required"
+            fixes = list(normalized.get("recommended_fixes") or [])
+            fixes.append(
+                "deterministic gate override: downgrade block to review_required "
+                "because only soft warnings were detected"
+            )
+            normalized["recommended_fixes"] = fixes
+
+    committee_payload = store.get("valuation_committee_payload")
+    if isinstance(committee_payload, dict):
+        normalized["committee_unit_basis"] = committee_payload.get("unit_basis")
+    return normalized
 
 
 def _finding_snapshot(finding: Any) -> dict[str, Any] | None:

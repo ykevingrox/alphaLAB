@@ -930,22 +930,17 @@ Latest smoke result:
 
 ### Current Task
 
-Enter Sprint 6 (Stage A of the architecture audit): decompose
-`valuation-specialist` into the valuation pod and add the standalone
-`report-quality-agent`. HK innovative-drug biotech remains the only
-vertical for this sprint.
+Close Sprint 6 (Stage A) by recalibrating the valuation pod for biotech
+market structure. Valuation pod + report-quality are wired and live; current
+focus is stopping the pod from treating conservative rNPV as the only fair
+value for pre-revenue innovative-drug companies.
 
 ### Next Action
 
-Land **S6.5** first: per-agent model override plumbing
-(`LLMConfig.per_agent_models` + env
-`BIOTECH_ALPHA_LLM_MODEL_<AGENT_NAME>`). This is a 1-day cheap dependency
-that unblocks strong-model experimentation for the pod committee and
-report-quality agent in subsequent steps.
-
-After S6.5 lands, move on in this order: S6.1 pod skeleton -> S6.3
-report-quality agent -> S6.2 committee SOTP logic -> S6.4 deprecate
-monolith.
+Implement S6.6: tighten valuation-pod prompts/contracts so
+`valuation-commercial` does not fall back to rNPV, `valuation-balance-sheet`
+only emits net cash/debt adjustments, and `valuation-committee` separates
+conservative rNPV floor, market-implied value, and scenario repricing range.
 
 ### Acceptance Criteria (Sprint 6 close)
 
@@ -993,23 +988,33 @@ BIOTECH_ALPHA_LLM_MODEL_REPORT_QUALITY=qwen-max \
 .venv/bin/python -m biotech_alpha.cli report "09606.HK" --json
 ```
 
+Latest Stage A acceptance sweep (saved artifacts):
+
+- `report "09606.HK" --json` -> run `20260424T094304Z`,
+  `publish_gate=review_required`
+- `report "02142.HK" --json` -> run `20260424T094508Z`,
+  `publish_gate=block`
+- `report "09887.HK" --json` -> run `20260424T094708Z`,
+  `publish_gate=block`
+
 ### Queue
 
 Stage A (Sprint 6) is the active queue; full detail lives in
 `docs/ROADMAP.md` under "Sprint 6".
 
-1. S6.5 per-agent model override plumbing.
-2. S6.1 pod skeleton + passthrough committee.
-3. S6.3 report-quality agent (can proceed in parallel with S6.2 once S6.1
-   lands because it only needs schema-valid pod outputs).
-4. S6.2 committee SOTP logic with currency reconciliation and weighting.
-5. S6.4 deprecate monolithic `valuation-specialist` from default stack
-   (keep runnable for reproducibility).
+1. S6.6 biotech valuation framing: enforce distinct valuation-pod method
+   scope and stop using rNPV as the only fair-value anchor.
+2. Re-run canonical three-ticker acceptance and target
+   `publish_gate in {pass, review_required}` for all three.
+3. Freeze Sprint 6 and publish a concise acceptance artifact index for
+   reviewers.
 
-After Sprint 6 closes, Stage B (Sprint 7) queues: `catalyst-agent`
-(LLM narrative over deterministic catalyst calendar) and `kline-agent`
-(LLM framing over deterministic technical-timing outputs,
-research-only).
+After Sprint 6 closes, Stage B (Sprint 7) queues:
+`strategic-economics-agent`, `catalyst-agent`,
+`market-expectations-agent`, then `market-regime-timing-agent`. Catalyst is
+an independent event-quality input layer; the timing agent absorbs the current
+macro role and planned k-line role while preserving the research-only
+boundary.
 
 Longer-term backlog retained but out of scope for Sprint 6:
 

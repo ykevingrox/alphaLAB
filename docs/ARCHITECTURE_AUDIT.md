@@ -6,9 +6,9 @@ This audit checks whether the current design and implementation align with the
 target product vision:
 
 - A multi-LLM-agent collaborative stock research system.
-- Specialized agents for valuation, technical timing (K-line), macro context,
-  data collection, competition, catalysts, report synthesis, and report quality
-  review.
+- Specialized agents for valuation, strategic economics, market expectations,
+  market regime/timing, data collection, competition, catalysts, report
+  synthesis, and report quality review.
 - One-command UX (`company/ticker in -> report out`) remains primary.
 
 Near-term product vertical stays **HK innovative-drug biotech**. Cross-market
@@ -23,13 +23,14 @@ Current system is **partially aligned**:
 
 - **Aligned:** AgentGraph runtime, FactStore collaboration, LLM specialist
   agents for pipeline/financial/competition/macro/skeptic/investment thesis,
-  plus valuation-specialist narrative.
+  plus the first valuation pod and report-quality implementation.
 - **Partially aligned:** report synthesis and quality review exist, but still
-  rely heavily on deterministic rendering and rule-based quality gates.
-- **Not aligned yet:** no standalone LLM `kline-agent`, no standalone LLM
-  `data-collector-agent`, no standalone LLM `catalyst-agent`, and no dedicated
-  LLM `report-quality-agent`. The single `valuation-specialist` agent covers
-  the full valuation surface and should be decomposed into a pod.
+  rely heavily on deterministic rendering. The latest acceptance sweep also
+  shows the valuation pod overuses conservative rNPV as the only fair-value
+  anchor for pre-revenue biotech.
+- **Not aligned yet:** no `strategic-economics-agent`, no
+  `market-expectations-agent`, no `market-regime-timing-agent`, no standalone
+  LLM `data-collector-agent`, and no standalone LLM `catalyst-agent`.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -50,11 +51,18 @@ multi-LLM investment committee.
 - `pipeline-clinical-agent` (LLM) — currently implemented as
   `pipeline-triage` specialist plus deterministic pipeline module.
 - `competition-agent` (LLM) — currently implemented as `competition-triage`.
-- `macro-agent` (LLM) — currently implemented as `macro-context`.
-- `kline-agent` (LLM, long-horizon technical framing).
 - `catalyst-agent` (LLM, catalyst ranking + probability/impact narrative).
+- `strategic-economics-agent` (LLM, value capture through rights, BD,
+  commercialization path, partner quality, and platform reuse when evidenced).
+- `market-expectations-agent` (LLM, market-implied assumptions and valuation
+  band explanation).
 
-### Layer 2: Valuation Pod (Multi-Agent)
+### Layer 2: Market Context And Timing
+
+- `market-regime-timing-agent` (LLM, research-only macro, technical, sector
+  sentiment, liquidity, and fund-flow framing).
+
+### Layer 3: Valuation Pod (Multi-Agent)
 
 - `valuation-commercial-agent`
   - Commercialized products / recurring revenue valuation.
@@ -65,7 +73,7 @@ multi-LLM investment committee.
 - `valuation-committee-agent`
   - SOTP synthesis, weighting, conflict arbitration, final valuation range.
 
-### Layer 3: Decision And Publishing
+### Layer 4: Decision And Publishing
 
 - `investment-thesis-agent` (retain existing) — bull/bear drivers, assumptions,
   falsification watch. Feeds Executive Verdict.
@@ -92,30 +100,38 @@ multi-LLM investment committee.
   - `macro-context`
   - `scientific-skeptic`
   - `investment-thesis`
-  - `valuation-specialist` (monolithic, to be decomposed)
+  - `valuation-commercial`
+  - `valuation-rnpv`
+  - `valuation-balance-sheet`
+  - `valuation-committee`
+  - `report-quality`
+  - `valuation-specialist` (compatibility path, no longer default)
 - Deterministic modules still carrying responsibilities targeted for future
   dedicated LLM agents:
   - Technical timing (`technical-timing` command).
   - Catalyst generation/ranking (`target_price.py`, `pipeline.py`).
   - Data collection quality and source triage (extraction audit module).
-  - Final report quality gating and release scoring (rule-based
-    `quality_gate`).
+  - Strategic economics and market expectations.
 
 ## Consistency Scorecard (as of 2026-04-24)
 
 - Runtime orchestration consistency: **High**
 - Agent role completeness vs target vision: **Medium**
-- Valuation architecture completeness: **Medium** (narrative specialist exists,
-  but no valuation pod decomposition yet)
-- Report synthesis/editorial separation: **Medium-Low**
+- Valuation architecture completeness: **Medium-High** (pod exists, but
+  Stage A+ calibration must fix biotech valuation framing)
+- Report synthesis/editorial separation: **Medium**
 - One-command UX consistency: **High**
 
 ## Key Gaps (Must Fix First)
 
-1. Missing valuation pod decomposition (commercial/rNPV/balance-sheet/committee).
-2. Missing standalone LLM report-quality reviewer.
+1. Valuation pod role boundaries are not yet strict enough:
+   commercial/rNPV/balance-sheet can collapse into the same rNPV range.
+2. Missing strategic-economics and market-expectations layers, so reports
+   cannot yet explain sustained biotech valuation bands above conservative
+   rNPV.
 3. Missing LLM catalyst specialist.
-4. Missing LLM kline specialist.
+4. Market regime/timing is split between macro context and deterministic
+   technical outputs rather than a unified research-only timing view.
 5. Data-collector role not represented as an explicit LLM agent contract.
 
 ## Migration Plan
@@ -137,12 +153,47 @@ The staging below is the committed plan. Sprint-level execution lives in
     finding.
   - Emits `publish_gate` and hard-block reasons.
 
+### Stage A+ (Sprint 6 closeout)
+
+- Recalibrate the valuation pod so it stops treating conservative rNPV as
+  the only fair-value anchor for pre-revenue innovative-drug companies.
+- Enforce pod role boundaries:
+  - `valuation-commercial-agent` returns no commercial operating value when
+    recurring product revenue is absent; it must not fall back to rNPV.
+  - `valuation-balance-sheet-agent` only emits deterministic net cash,
+    debt, and non-operating adjustments.
+  - `valuation-committee-agent` separates conservative rNPV floor,
+    market-implied value, and scenario repricing range instead of collapsing
+    all of them into a single target price.
+- Update `report-quality-agent` to flag misuse of rNPV as the only biotech
+  valuation standard, not merely numerical disagreement.
+
 ### Stage B (Sprint 7)
 
-- Add `catalyst-agent` and replace deterministic-only catalyst narrative
-  blocks in final memo sections.
-- Add `kline-agent` and integrate with thesis/risk conclusions as a
-  secondary timing layer (research-only framing preserved).
+- Add `strategic-economics-agent`:
+  - Explains how scientific assets become shareholder value through retained
+    economics, regional rights, BD/licensing, partner quality, development
+    cost sharing, commercialization path, and platform reuse only when
+    platform evidence exists.
+  - This is intentionally broader than a narrow BD extractor and replaces the
+    earlier idea of a standalone platform agent.
+- Add `catalyst-agent` as an independent event-quality layer:
+  - Ranks clinical, regulatory, BD, and conference/data-readout events by
+    evidence quality, binary risk, expectation risk, and plausible repricing
+    paths.
+  - Feeds market expectations, market-regime/timing, and valuation committee;
+    it does not produce buy/sell timing by itself.
+- Add `market-expectations-agent`:
+  - Explains what the current market cap appears to imply and why the stock
+    may have held a valuation band above conservative rNPV, including what
+    catalyst assumptions appear priced in.
+  - Compares market-implied assumptions against evidence instead of declaring
+    the market wrong whenever rNPV is lower than price.
+- Add `market-regime-timing-agent`:
+  - Absorbs current `macro-context`, future k-line framing, sector sentiment,
+    liquidity, and fund-flow signals.
+  - Outputs research-only timing labels such as `favorable`, `neutral`,
+    `fragile`, `avoid_chasing`, and `de_risk_watch`.
 
 ### Stage C (Sprint 8)
 
@@ -198,10 +249,102 @@ can consume them uniformly:
   - Output method: `"balance_sheet_adjustment"`. Must honour existing
     `RMB/CNY -> HKD` conversion path used by `target_price.py`.
 - `valuation-committee-agent`
-  - Inputs: outputs of the three above + `macro_context` +
+  - Inputs: outputs of the three above + `strategic_economics_payload` +
+    `market_expectations_payload` + `market_regime_timing_payload` +
     `pipeline_triage_payload` + `competition_triage_payload`.
-  - Output: SOTP aggregation with explicit weights and conflict
-    resolution.
+  - Output: SOTP aggregation plus explicit separation of conservative
+    rNPV floor, market-implied value, and scenario repricing range.
+
+## Strategic Economics Agent Contract (Required for Stage B)
+
+`strategic-economics-agent` answers one question: how does this company
+capture economic value from its science?
+
+Inputs:
+
+- `pipeline_assets` and `pipeline_triage_payload`
+- Company disclosures and evidence excerpts containing BD, licensing,
+  collaboration, NewCo, royalty, milestone, or regional-rights language
+- `financials_snapshot` for cash impact and runway implications
+- `competition_triage_payload` for partner and commercialization context
+
+Outputs:
+
+- `retained_economics_map`: asset/region/economics-share rows when evidence
+  supports them
+- `bd_validation_events`: list of collaborations, upfronts, milestones,
+  royalties, cost-sharing terms, or partner validation events
+- `partner_quality_assessment`: execution capability and strategic fit
+- `commercialization_path`: self-commercialization, partner-led,
+  region-split, royalty-only, or unclear
+- `value_capture_score`: 0-100 score with evidence
+- `strategic_premium_discount`: qualitative premium/discount drivers that
+  the valuation committee may use, without inventing new market facts
+- `needs_human_review`
+
+Boundaries:
+
+- Must not force a platform analysis when the company lacks platform evidence.
+- Must not count headline milestone totals as guaranteed value.
+- Must identify when BD validates science but caps retained economics.
+
+## Market Expectations Agent Contract (Required for Stage B)
+
+`market-expectations-agent` explains what the stock price appears to imply.
+It is not a momentum or trading agent.
+
+Inputs:
+
+- `market_snapshot`, `valuation_snapshot`, historical price/market-cap
+  context when available
+- `target_price_scenarios`, valuation pod outputs, and scorecard
+- `strategic_economics_payload`, catalyst calendar, macro/timing payloads
+
+Outputs:
+
+- `market_implied_assumptions`: what the current market cap seems to require
+  for pipeline success, BD, platform repeatability, or catalyst execution
+- `valuation_band_context`: whether price sits near historical floor,
+  middle band, extended band, or unknown
+- `rnpv_gap_explanation`: why conservative rNPV differs from observed price
+  and what evidence supports or weakens the gap
+- `expectation_risk_flags`: assumptions that could break the valuation band
+- `evidence_gaps`
+- `confidence`
+
+Boundaries:
+
+- Must not treat current price as proof of fair value.
+- Must not call a stock "overvalued" solely because conservative rNPV is
+  below price; it must first explain the market-implied premium.
+
+## Market Regime Timing Agent Contract (Required for Stage B)
+
+`market-regime-timing-agent` combines macro, technical, sentiment, and
+fund-flow context into a research-only timing view.
+
+Inputs:
+
+- Existing `macro-context` output
+- Deterministic technical timing outputs such as trend, support/resistance,
+  moving averages, relative strength, and drawdown
+- Sector sentiment, liquidity, valuation-band, and fund-flow proxies when
+  available
+
+Outputs:
+
+- `timing_view`: `favorable`, `neutral`, `fragile`, `avoid_chasing`, or
+  `de_risk_watch`
+- `horizon`: `1-3 months`, `3-6 months`, or `6-12 months`
+- `macro_regime`, `technical_state`, `sentiment_state`
+- `key_triggers`
+- `invalidation_signals`
+- `confidence`
+
+Boundaries:
+
+- Must remain research-only and must not produce entry/exit orders.
+- Must keep long-term fundamental view separate from current timing view.
 
 ## Report Quality Agent Contract (Required)
 
@@ -215,7 +358,8 @@ can consume them uniformly:
 - `language_quality_findings` (residual English fragments in zh-CN reports,
   over-claiming tone, removed-disclaimer drift)
 - `valuation_coherence_findings` (committee vs per-share vs event-impact
-  vs scorecard direction sanity)
+  vs scorecard direction sanity; also flags treating conservative rNPV as the
+  sole fair-value anchor for pre-revenue biotech)
 - `recommended_fixes` (list of concrete edits with target section path)
 
 Quality-agent scope MUST NOT include:
@@ -241,11 +385,12 @@ Quality-agent scope MUST NOT include:
 
 ## Immediate Next Action
 
-Execute Sprint 6 in `docs/ROADMAP.md`:
+Execute S6.6 in `docs/ROADMAP.md`:
 
-1. Land the three valuation sub-agent contracts and a thin committee that
-   merely concatenates sub-agent outputs.
-2. Land `report-quality-agent` with a `review_required`-by-default gate
-   until calibration lands.
-3. Re-run the canonical one-command smoke on `DualityBio` and at least one
-   additional HK ticker (`02142.HK` or `09887.HK`) as acceptance baseline.
+1. Tighten valuation-pod prompts/contracts so commercial, rNPV, and
+   balance-sheet agents cannot all emit the same rNPV-derived range.
+2. Add committee framing for conservative rNPV floor, market-implied value,
+   and scenario repricing range.
+3. Re-run the canonical smoke artifacts on `09606.HK`, `02142.HK`, and
+   `09887.HK`; only true data-quality failures should remain eligible for
+   `publish_gate=block`.
