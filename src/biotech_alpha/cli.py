@@ -1004,7 +1004,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "macro-context",
                 "scientific-skeptic",
                 "investment-thesis",
-                "valuation-specialist",
                 "valuation-commercial",
                 "valuation-rnpv",
                 "valuation-balance-sheet",

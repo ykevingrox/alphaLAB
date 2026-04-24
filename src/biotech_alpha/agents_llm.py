@@ -2096,20 +2096,49 @@ class ReportQualityLLMAgent(Agent):
                 },
             )
         except LLMError as exc:
+            payload = _report_quality_fallback_payload(
+                reason=f"llm_error: {exc}"
+            )
+            finding = _report_quality_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model="fallback",
+                prompt_tokens=None,
+                completion_tokens=None,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"LLM call failed: {exc}",
+                finding=finding,
+                warnings=(f"report_quality fallback applied: {exc}",),
+                outputs={
+                    "report_quality_llm_finding": finding,
+                    "report_quality_payload": payload,
+                },
             )
         try:
             payload = REPORT_QUALITY_PROMPT.parse_response(call.response_text)
             payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
+            payload = _report_quality_fallback_payload(
+                reason=f"schema_error: {exc}"
+            )
+            finding = _report_quality_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model=call.model,
+                prompt_tokens=call.prompt_tokens,
+                completion_tokens=call.completion_tokens,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"response did not match schema: {exc}",
+                finding=finding,
                 warnings=(
                     f"raw response (first 500 chars): {call.response_text[:500]}",
                 ),
+                outputs={
+                    "report_quality_llm_finding": finding,
+                    "report_quality_payload": payload,
+                },
             )
         finding = _report_quality_finding_from_payload(
             payload=payload,
@@ -2611,6 +2640,22 @@ def _report_quality_finding_from_payload(
         confidence=confidence,
         needs_human_review=needs_human_review,
     )
+
+
+def _report_quality_fallback_payload(*, reason: str) -> dict[str, Any]:
+    return {
+        "summary": "Report quality agent fallback: manual review required.",
+        "publish_gate": "review_required",
+        "critical_issues": [f"report_quality_unavailable: {reason}"],
+        "consistency_findings": [],
+        "missing_evidence_findings": [],
+        "language_quality_findings": [],
+        "valuation_coherence_findings": [],
+        "recommended_fixes": [
+            "rerun report-quality agent after fixing LLM/schema issue"
+        ],
+        "confidence": 0.2,
+    }
 
 
 def _finding_snapshot(finding: Any) -> dict[str, Any] | None:
