@@ -1680,6 +1680,454 @@ class ValuationSpecialistLLMAgent(Agent):
         )
 
 
+VALUATION_POD_PROMPT = StructuredPrompt(
+    name="valuation_pod_agent",
+    tags=("valuation", "pod", "llm"),
+    system=(
+        "你是投研估值小组成员。"
+        "仅使用输入事实做估值解释，不得编造外部数字。"
+        "输出严格 JSON，数字字段必须是数字。"
+    ),
+    user_template=(
+        "公司: ${company}\n"
+        "代码: ${ticker}\n"
+        "市场: ${market}\n"
+        "日期: ${as_of}\n"
+        "角色: ${role}\n\n"
+        "估值快照:\n${valuation_snapshot}\n\n"
+        "目标价快照:\n${target_price_snapshot}\n\n"
+        "财务快照:\n${financials_snapshot}\n\n"
+        "管线分诊:\n${pipeline_triage}\n\n"
+        "竞争分诊:\n${competition_triage}\n\n"
+        "宏观上下文:\n${macro_context}\n\n"
+        "上游估值分项(仅 committee 可用):\n${upstream_valuation_payloads}\n\n"
+        "请返回严格 JSON：\n"
+        "{\n"
+        "  \"summary\": \"<2-4句>\",\n"
+        "  \"method\": \"<multiple|dcf_simple|rNPV|balance_sheet_adjustment|sotp_committee>\",\n"
+        "  \"scope\": \"<估值覆盖范围>\",\n"
+        "  \"assumptions\": [\"<关键假设>\", \"...\"],\n"
+        "  \"valuation_range\": {\"bear\": 0.0, \"base\": 0.0, \"bull\": 0.0},\n"
+        "  \"sensitivity\": [\"<敏感性说明>\", \"...\"],\n"
+        "  \"risks\": [\"<风险>\", \"...\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true,\n"
+        "  \"currency\": \"HKD\",\n"
+        "  \"sotp_bridge\": [\"<仅committee填写，可空>\"],\n"
+        "  \"method_weights\": [\"<仅committee填写，可空>\"],\n"
+        "  \"conflict_resolution\": [\"<仅committee填写，可空>\"]\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "summary",
+            "method",
+            "scope",
+            "assumptions",
+            "valuation_range",
+            "sensitivity",
+            "risks",
+            "needs_human_review",
+            "currency",
+        ],
+        "properties": {
+            "summary": {"type": "string", "min_length": 6},
+            "method": {
+                "type": "string",
+                "enum": [
+                    "multiple",
+                    "dcf_simple",
+                    "rNPV",
+                    "balance_sheet_adjustment",
+                    "sotp_committee",
+                ],
+            },
+            "scope": {"type": "string", "min_length": 2},
+            "assumptions": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 12,
+            },
+            "valuation_range": {
+                "type": "object",
+                "required": ["bear", "base", "bull"],
+                "properties": {
+                    "bear": {"type": "number"},
+                    "base": {"type": "number"},
+                    "bull": {"type": "number"},
+                },
+            },
+            "sensitivity": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 12,
+            },
+            "risks": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 12,
+            },
+            "confidence": {"type": ["number", "null"]},
+            "needs_human_review": {"type": "boolean"},
+            "currency": {"type": "string", "min_length": 3},
+            "sotp_bridge": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "method_weights": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 10,
+            },
+            "conflict_resolution": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 10,
+            },
+        },
+    },
+)
+
+
+@dataclass
+class _ValuationPodLLMAgentBase(Agent):
+    llm_client: LLMClient
+    role: str = "valuation_role"
+    name: str = "valuation_pod_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    finding_output_key: str = "valuation_pod_llm_finding"
+    payload_output_key: str = "valuation_pod_payload"
+    max_tokens: int | None = 1300
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError(f"{self.__class__.__name__} requires an LLMClient")
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        system, user = VALUATION_POD_PROMPT.render(
+            {
+                "company": context.company,
+                "ticker": context.ticker or "n/a",
+                "market": context.market,
+                "as_of": context.as_of_date or "n/a",
+                "role": self.role,
+                "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+                "target_price_snapshot": _json_block(
+                    store.get("target_price_snapshot")
+                ),
+                "financials_snapshot": _json_block(store.get("financials_snapshot")),
+                "pipeline_triage": _json_block(store.get("pipeline_triage_payload")),
+                "competition_triage": _json_block(
+                    store.get("competition_triage_payload")
+                ),
+                "macro_context": _json_block(store.get("macro_context_payload")),
+                "upstream_valuation_payloads": _json_block(
+                    {
+                        "commercial": store.get("valuation_commercial_payload"),
+                        "rnpv": store.get("valuation_rnpv_payload"),
+                        "balance_sheet": store.get("valuation_balance_sheet_payload"),
+                    }
+                ),
+            }
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                    "valuation_role": self.role,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+        try:
+            payload = VALUATION_POD_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): {call.response_text[:500]}",
+                ),
+            )
+        finding = _valuation_pod_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                self.finding_output_key: finding,
+                self.payload_output_key: payload,
+            },
+        )
+
+
+@dataclass
+class ValuationCommercialLLMAgent(_ValuationPodLLMAgentBase):
+    role: str = "valuation-commercial-agent"
+    name: str = "valuation_commercial_llm_agent"
+    produces: tuple[str, ...] = (
+        "valuation_commercial_llm_finding",
+        "valuation_commercial_payload",
+    )
+    finding_output_key: str = "valuation_commercial_llm_finding"
+    payload_output_key: str = "valuation_commercial_payload"
+
+
+@dataclass
+class ValuationPipelineRnpvLLMAgent(_ValuationPodLLMAgentBase):
+    role: str = "valuation-pipeline-rnpv-agent"
+    name: str = "valuation_rnpv_llm_agent"
+    produces: tuple[str, ...] = (
+        "valuation_rnpv_llm_finding",
+        "valuation_rnpv_payload",
+    )
+    finding_output_key: str = "valuation_rnpv_llm_finding"
+    payload_output_key: str = "valuation_rnpv_payload"
+
+
+@dataclass
+class ValuationBalanceSheetLLMAgent(_ValuationPodLLMAgentBase):
+    role: str = "valuation-balance-sheet-agent"
+    name: str = "valuation_balance_sheet_llm_agent"
+    produces: tuple[str, ...] = (
+        "valuation_balance_sheet_llm_finding",
+        "valuation_balance_sheet_payload",
+    )
+    finding_output_key: str = "valuation_balance_sheet_llm_finding"
+    payload_output_key: str = "valuation_balance_sheet_payload"
+
+
+@dataclass
+class ValuationCommitteeLLMAgent(_ValuationPodLLMAgentBase):
+    role: str = "valuation-committee-agent"
+    name: str = "valuation_committee_llm_agent"
+    produces: tuple[str, ...] = (
+        "valuation_committee_llm_finding",
+        "valuation_committee_payload",
+    )
+    finding_output_key: str = "valuation_committee_llm_finding"
+    payload_output_key: str = "valuation_committee_payload"
+    max_tokens: int | None = 1600
+
+
+REPORT_QUALITY_PROMPT = StructuredPrompt(
+    name="report_quality",
+    tags=("report", "quality", "llm"),
+    system=(
+        "你是独立报告质量审阅员。"
+        "仅审查一致性、证据充分性、语言质量与估值口径一致性。"
+        "不得发明新数据，不得覆盖上游结论。"
+    ),
+    user_template=(
+        "公司: ${company}\n"
+        "代码: ${ticker}\n"
+        "市场: ${market}\n"
+        "日期: ${as_of}\n\n"
+        "摘要指标:\n${result_summary}\n\n"
+        "估值分项输出:\n${valuation_pod_payloads}\n\n"
+        "LLM findings:\n${llm_findings}\n\n"
+        "请返回严格 JSON：\n"
+        "{\n"
+        "  \"summary\": \"<1-3句审查结论>\",\n"
+        "  \"publish_gate\": \"<pass|review_required|block>\",\n"
+        "  \"critical_issues\": [\"<问题>\", \"...\"],\n"
+        "  \"consistency_findings\": [\"<发现>\", \"...\"],\n"
+        "  \"missing_evidence_findings\": [\"<发现>\", \"...\"],\n"
+        "  \"language_quality_findings\": [\"<发现>\", \"...\"],\n"
+        "  \"valuation_coherence_findings\": [\"<发现>\", \"...\"],\n"
+        "  \"recommended_fixes\": [\"<可执行修复>\", \"...\"],\n"
+        "  \"confidence\": 0.0\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "summary",
+            "publish_gate",
+            "critical_issues",
+            "consistency_findings",
+            "missing_evidence_findings",
+            "language_quality_findings",
+            "valuation_coherence_findings",
+            "recommended_fixes",
+        ],
+        "properties": {
+            "summary": {"type": "string", "min_length": 4},
+            "publish_gate": {
+                "type": "string",
+                "enum": ["pass", "review_required", "block"],
+            },
+            "critical_issues": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "consistency_findings": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "missing_evidence_findings": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "language_quality_findings": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "valuation_coherence_findings": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "recommended_fixes": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 20,
+            },
+            "confidence": {"type": ["number", "null"]},
+        },
+    },
+)
+
+
+@dataclass
+class ReportQualityLLMAgent(Agent):
+    llm_client: LLMClient
+    name: str = "report_quality_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "report_quality_llm_finding",
+        "report_quality_payload",
+    )
+    max_tokens: int | None = 1200
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("ReportQualityLLMAgent requires an LLMClient")
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        llm_findings = {
+            "scientific_skeptic": _finding_snapshot(
+                store.get("scientific_skeptic_llm_finding")
+            ),
+            "investment_thesis": _finding_snapshot(
+                store.get("investment_thesis_llm_finding")
+            ),
+            "valuation_specialist": _finding_snapshot(
+                store.get("valuation_specialist_llm_finding")
+            ),
+            "valuation_commercial": _finding_snapshot(
+                store.get("valuation_commercial_llm_finding")
+            ),
+            "valuation_rnpv": _finding_snapshot(
+                store.get("valuation_rnpv_llm_finding")
+            ),
+            "valuation_balance_sheet": _finding_snapshot(
+                store.get("valuation_balance_sheet_llm_finding")
+            ),
+            "valuation_committee": _finding_snapshot(
+                store.get("valuation_committee_llm_finding")
+            ),
+        }
+        system, user = REPORT_QUALITY_PROMPT.render(
+            {
+                "company": context.company,
+                "ticker": context.ticker or "n/a",
+                "market": context.market,
+                "as_of": context.as_of_date or "n/a",
+                "result_summary": _json_block(store.get("scorecard_summary")),
+                "valuation_pod_payloads": _json_block(
+                    {
+                        "commercial": store.get("valuation_commercial_payload"),
+                        "rnpv": store.get("valuation_rnpv_payload"),
+                        "balance_sheet": store.get("valuation_balance_sheet_payload"),
+                        "committee": store.get("valuation_committee_payload"),
+                    }
+                ),
+                "llm_findings": _json_block(llm_findings),
+            }
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+        try:
+            payload = REPORT_QUALITY_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): {call.response_text[:500]}",
+                ),
+            )
+        finding = _report_quality_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            outputs={
+                "report_quality_llm_finding": finding,
+                "report_quality_payload": payload,
+            },
+        )
+
+
 PROVISIONAL_PIPELINE_PROMPT = StructuredPrompt(
     name="provisional_pipeline",
     tags=("pipeline", "provisional", "llm"),
@@ -2027,6 +2475,154 @@ def _valuation_specialist_finding_from_payload(
         confidence=confidence,
         needs_human_review=True,
     )
+
+
+def _valuation_pod_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "Valuation pod analysis completed."
+
+    risks: list[str] = []
+    method = str(payload.get("method") or "").strip()
+    scope = str(payload.get("scope") or "").strip()
+    currency = str(payload.get("currency") or "").strip()
+    valuation_range = payload.get("valuation_range") or {}
+    if method:
+        risks.append(f"[method] {method}")
+    if scope:
+        risks.append(f"[scope] {scope}")
+    if valuation_range:
+        risks.append(
+            "[range] "
+            f"bear={valuation_range.get('bear')} "
+            f"base={valuation_range.get('base')} "
+            f"bull={valuation_range.get('bull')} "
+            f"currency={currency or 'n/a'}"
+        )
+
+    for line in payload.get("assumptions") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[assumption] {text}")
+    for line in payload.get("sensitivity") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[sensitivity] {text}")
+    for line in payload.get("risks") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[risk] {text}")
+    for line in payload.get("conflict_resolution") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[conflict] {text}")
+
+    confidence_raw = payload.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else 0.55
+    except (TypeError, ValueError):
+        confidence = 0.55
+    confidence = max(0.0, min(1.0, confidence))
+    needs_human_review = bool(payload.get("needs_human_review", True))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Valuation pod analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=needs_human_review,
+    )
+
+
+def _report_quality_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        summary = "Report quality review completed."
+
+    risks: list[str] = []
+    publish_gate = str(payload.get("publish_gate") or "review_required").strip()
+    if publish_gate:
+        risks.append(f"[publish_gate] {publish_gate}")
+    for key in (
+        "critical_issues",
+        "consistency_findings",
+        "missing_evidence_findings",
+        "language_quality_findings",
+        "valuation_coherence_findings",
+        "recommended_fixes",
+    ):
+        for line in payload.get(key) or []:
+            text = str(line).strip()
+            if text:
+                risks.append(f"[{key}] {text}")
+
+    confidence_raw = payload.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else 0.6
+    except (TypeError, ValueError):
+        confidence = 0.6
+    confidence = max(0.0, min(1.0, confidence))
+    needs_human_review = publish_gate != "pass"
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Report quality review produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=needs_human_review,
+    )
+
+
+def _finding_snapshot(finding: Any) -> dict[str, Any] | None:
+    if finding is None:
+        return None
+    return {
+        "agent_name": getattr(finding, "agent_name", None),
+        "summary": getattr(finding, "summary", None),
+        "risks": list(getattr(finding, "risks", ()) or ()),
+        "confidence": getattr(finding, "confidence", None),
+        "needs_human_review": getattr(finding, "needs_human_review", None),
+    }
 
 
 def _source_text_block(value: Any) -> str:

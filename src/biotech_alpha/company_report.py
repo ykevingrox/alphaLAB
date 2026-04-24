@@ -489,6 +489,11 @@ SUPPORTED_LLM_AGENTS = (
     "macro-context",
     "investment-thesis",
     "valuation-specialist",
+    "valuation-commercial",
+    "valuation-rnpv",
+    "valuation-balance-sheet",
+    "valuation-committee",
+    "report-quality",
 )
 
 
@@ -519,7 +524,12 @@ def _run_llm_agent_pipeline(
         PipelineTriageLLMAgent,
         ProvisionalFinancialLLMAgent,
         ProvisionalPipelineLLMAgent,
+        ReportQualityLLMAgent,
         ScientificSkepticLLMAgent,
+        ValuationBalanceSheetLLMAgent,
+        ValuationCommercialLLMAgent,
+        ValuationCommitteeLLMAgent,
+        ValuationPipelineRnpvLLMAgent,
         ValuationSpecialistLLMAgent,
     )
 
@@ -634,6 +644,63 @@ def _run_llm_agent_pipeline(
             ValuationSpecialistLLMAgent(
                 llm_client=llm_client,
                 depends_on=("publish_research_facts",),
+            )
+        )
+    if "valuation-commercial" in llm_agents:
+        graph.add(
+            ValuationCommercialLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
+    if "valuation-rnpv" in llm_agents:
+        graph.add(
+            ValuationPipelineRnpvLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
+    if "valuation-balance-sheet" in llm_agents:
+        graph.add(
+            ValuationBalanceSheetLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
+    if "valuation-committee" in llm_agents:
+        committee_deps = ["publish_research_facts"]
+        if "valuation-commercial" in llm_agents:
+            committee_deps.append("valuation_commercial_llm_agent")
+        if "valuation-rnpv" in llm_agents:
+            committee_deps.append("valuation_rnpv_llm_agent")
+        if "valuation-balance-sheet" in llm_agents:
+            committee_deps.append("valuation_balance_sheet_llm_agent")
+        graph.add(
+            ValuationCommitteeLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(committee_deps),
+            )
+        )
+    if "report-quality" in llm_agents:
+        quality_deps = ["publish_research_facts"]
+        if "scientific-skeptic" in llm_agents:
+            quality_deps.append("scientific_skeptic_llm_agent")
+        if "investment-thesis" in llm_agents:
+            quality_deps.append("investment_thesis_llm_agent")
+        if "valuation-specialist" in llm_agents:
+            quality_deps.append("valuation_specialist_llm_agent")
+        if "valuation-commercial" in llm_agents:
+            quality_deps.append("valuation_commercial_llm_agent")
+        if "valuation-rnpv" in llm_agents:
+            quality_deps.append("valuation_rnpv_llm_agent")
+        if "valuation-balance-sheet" in llm_agents:
+            quality_deps.append("valuation_balance_sheet_llm_agent")
+        if "valuation-committee" in llm_agents:
+            quality_deps.append("valuation_committee_llm_agent")
+        graph.add(
+            ReportQualityLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(dict.fromkeys(quality_deps)),
             )
         )
 

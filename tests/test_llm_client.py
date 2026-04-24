@@ -17,6 +17,7 @@ from biotech_alpha.llm import (
     LLMConfig,
     LLMConfigError,
     LLMTraceRecorder,
+    OpenAICompatibleLLMClient,
     SchemaError,
     StructuredPrompt,
     validate_json_schema,
@@ -89,6 +90,29 @@ class LLMConfigFromEnvTest(unittest.TestCase):
 
         self.assertEqual(config.call_budget, 10)
         self.assertEqual(config.per_agent_call_budget, 2)
+
+    def test_parses_per_agent_model_overrides(self) -> None:
+        env = {
+            "BIOTECH_ALPHA_LLM_API_KEY": "k",
+            "BIOTECH_ALPHA_LLM_MODEL": "qwen3.5-plus",
+            "BIOTECH_ALPHA_LLM_MODEL_REPORT_QUALITY": "qwen-max",
+            "BIOTECH_ALPHA_LLM_MODEL_VALUATION_COMMITTEE": "qwen-plus",
+        }
+
+        config = LLMConfig.from_env(env)
+
+        self.assertEqual(
+            config.model_for_agent("report_quality"),
+            "qwen-max",
+        )
+        self.assertEqual(
+            config.model_for_agent("valuation-committee"),
+            "qwen-plus",
+        )
+        self.assertEqual(
+            config.model_for_agent("macro_context_llm_agent"),
+            "qwen3.5-plus",
+        )
 
     def test_rejects_non_positive_per_agent_budget(self) -> None:
         for bad in ("0", "-3", "abc"):
@@ -439,6 +463,98 @@ class BudgetEnforcingLLMClientTest(unittest.TestCase):
         self.assertTrue(issubclass(LLMBudgetError, LLMError))
 
 
+class _FakeOpenAIChoiceMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _FakeOpenAIChoice:
+    def __init__(self, content: str, finish_reason: str = "stop") -> None:
+        self.message = _FakeOpenAIChoiceMessage(content)
+        self.finish_reason = finish_reason
+
+
+class _FakeOpenAIUsage:
+    def __init__(
+        self,
+        prompt_tokens: int = 11,
+        completion_tokens: int = 7,
+        total_tokens: int = 18,
+    ) -> None:
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.total_tokens = total_tokens
+
+
+class _FakeOpenAIResponse:
+    def __init__(self, content: str) -> None:
+        self.choices = [_FakeOpenAIChoice(content)]
+        self.usage = _FakeOpenAIUsage()
+
+    def model_dump(self) -> dict:
+        return {
+            "choices": [{"message": {"content": self.choices[0].message.content}}],
+            "usage": {
+                "prompt_tokens": self.usage.prompt_tokens,
+                "completion_tokens": self.usage.completion_tokens,
+                "total_tokens": self.usage.total_tokens,
+            },
+        }
+
+
+class _FakeOpenAICompletions:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):  # noqa: ANN003 - sdk-like signature
+        self.calls.append(kwargs)
+        return _FakeOpenAIResponse('{"ok": true}')
+
+
+class _FakeOpenAIChat:
+    def __init__(self) -> None:
+        self.completions = _FakeOpenAICompletions()
+
+
+class _FakeOpenAIClient:
+    def __init__(self) -> None:
+        self.chat = _FakeOpenAIChat()
+
+
+class _FakeOpenAIModule:
+    class OpenAI:  # noqa: D106 - test-only fake
+        def __init__(self, **kwargs) -> None:  # noqa: ANN003
+            _ = kwargs
+            self.chat = _FakeOpenAIChat()
+
+
+class OpenAICompatibleLLMClientTest(unittest.TestCase):
+    def test_complete_uses_per_agent_model_override(self) -> None:
+        config = LLMConfig.from_env(
+            {
+                "BIOTECH_ALPHA_LLM_API_KEY": "k",
+                "BIOTECH_ALPHA_LLM_MODEL": "qwen-default",
+                "BIOTECH_ALPHA_LLM_MODEL_REPORT_QUALITY_AGENT": "qwen-max",
+            }
+        )
+        client = OpenAICompatibleLLMClient(
+            config,
+            _openai_module=_FakeOpenAIModule(),
+        )
+
+        call = client.complete(
+            system="s",
+            user="u",
+            agent_name="report_quality_agent",
+        )
+
+        self.assertEqual(call.model, "qwen-max")
+        self.assertEqual(
+            client._client.chat.completions.calls[0]["model"],  # type: ignore[attr-defined]
+            "qwen-max",
+        )
+
+
 class _FakeAnthropicContentBlock:
     def __init__(self, text: str) -> None:
         self.text = text
@@ -556,6 +672,34 @@ class AnthropicLLMClientTest(unittest.TestCase):
             AnthropicLLMClient(
                 bad, _anthropic_module=_FakeAnthropicModule([])
             )
+
+    def test_complete_uses_per_agent_model_override(self) -> None:
+        config = LLMConfig.from_env(
+            {
+                "BIOTECH_ALPHA_LLM_PROVIDER": "anthropic",
+                "ANTHROPIC_API_KEY": "sk-ant",
+                "BIOTECH_ALPHA_LLM_MODEL": "claude-default",
+                "BIOTECH_ALPHA_LLM_MODEL_MACRO_CONTEXT_LLM_AGENT": (
+                    "claude-override"
+                ),
+            }
+        )
+        fake_queue = [_FakeAnthropicResponse(text='{"summary":"ok"}')]
+        fake_module = _FakeAnthropicModule(fake_queue)
+        client = AnthropicLLMClient(config, _anthropic_module=fake_module)
+
+        call = client.complete(
+            system="s",
+            user="u",
+            agent_name="macro_context_llm_agent",
+        )
+
+        self.assertEqual(call.model, "claude-override")
+        fake_client = client._client  # type: ignore[attr-defined]
+        self.assertEqual(
+            fake_client.messages.calls[0]["model"],
+            "claude-override",
+        )
 
 
 class BuildLLMClientRoutingTest(unittest.TestCase):

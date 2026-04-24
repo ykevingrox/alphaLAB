@@ -38,8 +38,15 @@ class LLMConfig:
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS
     call_budget: int | None = None
     per_agent_call_budget: int | None = None
+    per_agent_models: dict[str, str] = field(default_factory=dict)
     trace_dir: Path = field(default_factory=lambda: DEFAULT_TRACE_DIR)
     enable_thinking: bool = False
+
+    def model_for_agent(self, agent_name: str) -> str:
+        """Return the configured model override for an agent when present."""
+
+        normalized = _normalize_agent_key(agent_name)
+        return self.per_agent_models.get(normalized, self.model)
 
     @classmethod
     def from_env(
@@ -139,6 +146,10 @@ class LLMConfig:
             env.get("BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET"),
             name="BIOTECH_ALPHA_LLM_PER_AGENT_CALL_BUDGET",
         )
+        per_agent_models = _parse_per_agent_models(
+            env,
+            prefix="BIOTECH_ALPHA_LLM_MODEL_",
+        )
         trace_dir_text = _clean(env.get("BIOTECH_ALPHA_LLM_TRACE_DIR"))
         trace_dir = Path(trace_dir_text) if trace_dir_text else DEFAULT_TRACE_DIR
         enable_thinking = _parse_bool(
@@ -154,6 +165,7 @@ class LLMConfig:
             request_timeout_seconds=timeout,
             call_budget=call_budget,
             per_agent_call_budget=per_agent_call_budget,
+            per_agent_models=per_agent_models,
             trace_dir=trace_dir,
             enable_thinking=enable_thinking,
         )
@@ -261,3 +273,27 @@ def _parse_provider(
             f"{value!r}"
         )
     return cast(Literal["openai-compatible", "anthropic"], lowered)
+
+
+def _parse_per_agent_models(
+    env: dict[str, str], *, prefix: str
+) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for key, value in env.items():
+        if not key.startswith(prefix):
+            continue
+        model_name = _clean(value)
+        if model_name is None:
+            continue
+        suffix = key[len(prefix) :]
+        if not suffix:
+            continue
+        normalized_agent = _normalize_agent_key(suffix)
+        if not normalized_agent:
+            continue
+        overrides[normalized_agent] = model_name
+    return overrides
+
+
+def _normalize_agent_key(value: str) -> str:
+    return value.strip().lower().replace("-", "_")

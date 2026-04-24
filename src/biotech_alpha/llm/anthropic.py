@@ -63,8 +63,9 @@ class AnthropicLLMClient:
         response_format_json: bool = True,
         extra_metadata: dict[str, Any] | None = None,
     ) -> LLMCall:
+        resolved_model = self._config.model_for_agent(agent_name)
         kwargs: dict[str, Any] = {
-            "model": self._config.model,
+            "model": resolved_model,
             "system": system,
             "messages": [{"role": "user", "content": user}],
             "temperature": temperature,
@@ -97,6 +98,7 @@ class AnthropicLLMClient:
                 retries=retries,
                 latency_ms=latency_ms,
                 error=last_error,
+                model=resolved_model,
                 extra_metadata=extra_metadata,
             )
             raise LLMError(
@@ -114,7 +116,7 @@ class AnthropicLLMClient:
             total_tokens = int(prompt_tokens or 0) + int(completion_tokens or 0)
         finish_reason = getattr(response, "stop_reason", None)
         call = LLMCall(
-            model=self._config.model,
+            model=resolved_model,
             prompt=user,
             system=system,
             response_text=text,
@@ -169,13 +171,14 @@ class AnthropicLLMClient:
         retries: int,
         latency_ms: float,
         error: Exception | None,
+        model: str,
         extra_metadata: dict[str, Any] | None,
     ) -> None:
         self._trace.record(
             TraceEntry(
                 timestamp=utc_now_isoformat(),
                 agent_name=agent_name,
-                model=self._config.model,
+                model=model,
                 prompt_hash=hash_prompt(user),
                 prompt_chars=len(user),
                 response_chars=0,

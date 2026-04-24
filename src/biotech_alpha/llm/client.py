@@ -129,6 +129,7 @@ class OpenAICompatibleLLMClient:
         extra_metadata: dict[str, Any] | None = None,
     ) -> LLMCall:
         self._enforce_call_budget(agent_name)
+        resolved_model = self._config.model_for_agent(agent_name)
 
         messages = [
             {"role": "system", "content": system},
@@ -136,7 +137,7 @@ class OpenAICompatibleLLMClient:
         ]
 
         kwargs: dict[str, Any] = {
-            "model": self._config.model,
+            "model": resolved_model,
             "messages": messages,
             "temperature": temperature,
         }
@@ -185,6 +186,7 @@ class OpenAICompatibleLLMClient:
                 retries=retries,
                 latency_ms=latency_ms,
                 error=last_error,
+                model=resolved_model,
                 extra_metadata=extra_metadata,
             )
             raise LLMError(
@@ -203,7 +205,7 @@ class OpenAICompatibleLLMClient:
         finish_reason = getattr(choice, "finish_reason", None)
 
         call = LLMCall(
-            model=self._config.model,
+            model=resolved_model,
             prompt=user,
             system=system,
             response_text=text,
@@ -261,13 +263,14 @@ class OpenAICompatibleLLMClient:
         retries: int,
         latency_ms: float,
         error: Exception | None,
+        model: str,
         extra_metadata: dict[str, Any] | None,
     ) -> None:
         self._trace.record(
             TraceEntry(
                 timestamp=utc_now_isoformat(),
                 agent_name=agent_name,
-                model=self._config.model,
+                model=model,
                 prompt_hash=hash_prompt(user),
                 prompt_chars=len(user),
                 response_chars=0,

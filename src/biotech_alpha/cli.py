@@ -384,6 +384,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "macro-context",
             "investment-thesis",
             "valuation-specialist",
+            "valuation-commercial",
+            "valuation-rnpv",
+            "valuation-balance-sheet",
+            "valuation-committee",
+            "report-quality",
         ),
         help=(
             "Opt-in LLM agents to run after deterministic research. "
@@ -1000,6 +1005,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "scientific-skeptic",
                 "investment-thesis",
                 "valuation-specialist",
+                "valuation-commercial",
+                "valuation-rnpv",
+                "valuation-balance-sheet",
+                "valuation-committee",
+                "report-quality",
             )
             if not args.json:
                 _print_quick_report_stage(
