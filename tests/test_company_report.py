@@ -12,6 +12,7 @@ from biotech_alpha.auto_inputs import AutoInputArtifacts, SourceDocument
 from biotech_alpha.company_report import (
     _build_source_text_excerpt,
     _run_date_from_run_id,
+    _valuation_pod_payload_from_llm_facts,
     build_llm_agent_facts,
     company_report_summary,
     discover_company_inputs,
@@ -818,6 +819,75 @@ class SourceTextExcerptTest(unittest.TestCase):
             assert excerpt is not None
             self.assertEqual(excerpt["anchor_assets"], [])
             self.assertIn("preamble", excerpt["excerpt"])
+
+    def test_build_llm_agent_facts_uses_valuation_cash_fields(self) -> None:
+        class _StubResearch:
+            def __init__(self) -> None:
+                class _Memo:
+                    findings: tuple = ()
+
+                class _Ctx:
+                    company = "Stub"
+                    ticker = "00000.HK"
+                    market = "HK"
+                    as_of_date = None
+
+                class _Valuation:
+                    currency = "HKD"
+                    market_cap = 1000.0
+                    share_price = 10.0
+                    shares_outstanding = 100.0
+                    cash_and_equivalents = 120.0
+                    total_debt = 20.0
+                    revenue_ttm = None
+
+                self.memo = _Memo()
+                self.context = _Ctx()
+                self.pipeline_assets = ()
+                self.trials = ()
+                self.asset_trial_matches = ()
+                self.financial_snapshot = None
+                self.valuation_snapshot = _Valuation()
+                self.valuation_metrics = None
+                self.cash_runway_estimate = None
+                self.input_validation: dict = {}
+
+        facts = build_llm_agent_facts(research_result=_StubResearch())
+
+        market = facts["financials_snapshot"]["market_snapshot"]
+        self.assertEqual(market["cash"], 120.0)
+        self.assertEqual(market["debt"], 20.0)
+
+    def test_valuation_pod_summary_flags_duplicate_ranges(self) -> None:
+        payload = _valuation_pod_payload_from_llm_facts(
+            {
+                "valuation_commercial_payload": {
+                    "method": "multiple",
+                    "valuation_range": {"bear": 1, "base": 2, "bull": 3},
+                },
+                "valuation_rnpv_payload": {
+                    "method": "rNPV",
+                    "valuation_range": {"bear": 1, "base": 2, "bull": 3},
+                },
+                "valuation_balance_sheet_payload": {
+                    "method": "balance_sheet_adjustment",
+                    "valuation_range": {"bear": 0, "base": 1, "bull": 1},
+                },
+                "valuation_committee_payload": {
+                    "method": "sotp_committee",
+                    "currency": "HKD",
+                    "needs_human_review": True,
+                    "conservative_rnpv_floor": {"base": 3},
+                    "market_implied_value": {"market_cap": 10},
+                    "scenario_repricing_range": {"base": 4},
+                },
+            }
+        )
+
+        summary = payload["summary"]
+        self.assertEqual(summary["duplicate_component_range_count"], 1)
+        self.assertEqual(summary["component_methods"]["commercial"], "multiple")
+        self.assertEqual(summary["conservative_rnpv_floor"]["base"], 3)
 
 
 class LLMContextDateTest(unittest.TestCase):

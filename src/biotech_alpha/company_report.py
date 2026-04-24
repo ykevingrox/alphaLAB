@@ -1042,8 +1042,8 @@ def _build_financials_snapshot(
             "shares_outstanding": getattr(
                 valuation, "shares_outstanding", None
             ),
-            "cash": getattr(valuation, "cash", None),
-            "debt": getattr(valuation, "debt", None),
+            "cash": getattr(valuation, "cash_and_equivalents", None),
+            "debt": getattr(valuation, "total_debt", None),
             "revenue_ttm": getattr(valuation, "revenue_ttm", None),
         }
     if valuation_metrics is not None:
@@ -2250,6 +2250,20 @@ def _valuation_pod_payload_from_llm_facts(facts: dict[str, Any]) -> dict[str, An
     }
     available = any(isinstance(value, dict) for value in payload.values())
     committee = payload.get("committee") if isinstance(payload.get("committee"), dict) else {}
+    component_ranges = {
+        key: value.get("valuation_range")
+        for key, value in payload.items()
+        if isinstance(value, dict) and isinstance(value.get("valuation_range"), dict)
+    }
+    signatures: dict[tuple[float | None, float | None, float | None], int] = {}
+    for value in component_ranges.values():
+        signature = (
+            _optional_float(value.get("bear")),
+            _optional_float(value.get("base")),
+            _optional_float(value.get("bull")),
+        )
+        signatures[signature] = signatures.get(signature, 0) + 1
+    duplicate_range_count = sum(count - 1 for count in signatures.values() if count > 1)
     summary = {
         "component_count": sum(1 for value in payload.values() if isinstance(value, dict)),
         "has_committee": isinstance(payload.get("committee"), dict),
@@ -2258,12 +2272,31 @@ def _valuation_pod_payload_from_llm_facts(facts: dict[str, Any]) -> dict[str, An
         "committee_publishable": bool(committee) and not bool(
             committee.get("needs_human_review", True)
         ),
+        "component_methods": {
+            key: value.get("method")
+            for key, value in payload.items()
+            if isinstance(value, dict)
+        },
+        "component_ranges": component_ranges,
+        "duplicate_component_range_count": duplicate_range_count,
+        "conservative_rnpv_floor": committee.get("conservative_rnpv_floor"),
+        "market_implied_value": committee.get("market_implied_value"),
+        "scenario_repricing_range": committee.get("scenario_repricing_range"),
     }
     return {
         "available": available,
         "summary": summary,
         "payload": payload,
     }
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _update_manifest_with_extraction_audit(

@@ -2144,7 +2144,7 @@ class ReportQualityLLMAgent(Agent):
         "report_quality_llm_finding",
         "report_quality_payload",
     )
-    max_tokens: int | None = 1200
+    max_tokens: int | None = 1800
     temperature: float = 0.1
 
     def __post_init__(self) -> None:
@@ -2676,6 +2676,14 @@ def _valuation_pod_finding_from_payload(
         text = str(line).strip()
         if text:
             risks.append(f"[conflict] {text}")
+    for key in (
+        "conservative_rnpv_floor",
+        "market_implied_value",
+        "scenario_repricing_range",
+    ):
+        value = payload.get(key)
+        if value:
+            risks.append(f"[{key}] {value}")
 
     confidence_raw = payload.get("confidence")
     try:
@@ -3133,7 +3141,15 @@ def _extract_numeric(mapping: Any, *keys: str) -> float:
         parsed = _safe_float(value)
         if parsed != 0.0:
             return parsed
-    for nested_key in ("snapshot", "metrics", "financials", "financial_snapshot"):
+    for nested_key in (
+        "snapshot",
+        "metrics",
+        "financials",
+        "financial_snapshot",
+        "market_snapshot",
+        "runway_estimate",
+        "valuation_metrics",
+    ):
         nested = mapping.get(nested_key)
         parsed = _extract_numeric(nested, *keys)
         if parsed != 0.0:
@@ -3371,7 +3387,6 @@ def _postprocess_report_quality_payload(
             "漏算",
             "double count",
             "shares",
-            "估值口径",
         )
         has_hard_signal = any(token in combined for token in hard_tokens)
         if not has_hard_signal:

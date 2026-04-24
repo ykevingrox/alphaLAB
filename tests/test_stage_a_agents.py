@@ -251,6 +251,28 @@ class ReportQualityLLMAgentTest(unittest.TestCase):
         )
         self.assertEqual(patched["publish_gate"], "review_required")
 
+    def test_report_quality_downgrades_market_expectation_gap_only(self) -> None:
+        payload = {
+            "summary": "missing market expectation explanation",
+            "publish_gate": "block",
+            "critical_issues": [
+                "估值口径缺少市场预期解释：保守rNPV低于当前市值。"
+            ],
+            "consistency_findings": [],
+            "missing_evidence_findings": [],
+            "language_quality_findings": [],
+            "valuation_coherence_findings": [
+                "需要解释market-implied assumptions。"
+            ],
+            "recommended_fixes": ["补充市场隐含假设。"],
+            "issue_classification": [],
+        }
+        patched = _postprocess_report_quality_payload(
+            payload=payload,
+            store=FactStore({}),
+        )
+        self.assertEqual(patched["publish_gate"], "review_required")
+
 
 class ValuationNormalizationTest(unittest.TestCase):
     def test_normalize_payload_sets_required_contract_fields(self) -> None:
