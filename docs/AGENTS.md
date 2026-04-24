@@ -347,3 +347,214 @@ Outputs:
 - Suggested monitoring rules
 - Portfolio fit notes
 - Catalyst-adjusted target price range when assumptions are available
+
+## Valuation Pod
+
+Purpose: decompose valuation into specialist sub-agents that each own one
+method, plus a committee agent that performs SOTP synthesis and conflict
+arbitration.
+
+The monolithic `valuation-specialist` remains available behind a
+compatibility flag until the pod is fully validated on canonical HK tickers.
+
+### Shared Pod Output Fields
+
+All pod sub-agents (commercial, rNPV, balance-sheet) emit:
+
+- `method`: one of `"multiple"`, `"dcf_simple"`, `"rNPV"`,
+  `"balance_sheet_adjustment"`.
+- `scope`: declared subset of the company this agent priced.
+- `assumptions`: list of `{name, value, source, needs_human_review}`.
+- `valuation_range`: `{bear, base, bull}` with declared `currency`.
+- `sensitivity`: list of `{driver, delta, value_impact}`.
+- `risks`: `AgentFinding.risks`-compatible.
+- `evidence`: `AgentFinding.evidence`-compatible.
+- `confidence`: float 0.0-1.0.
+- `needs_human_review`: bool.
+
+### Valuation Commercial Agent
+
+Purpose: value commercialized products and recurring revenue.
+
+Inputs:
+
+- `financials_snapshot` (revenue, growth, gross margin, OPEX trend)
+- `pipeline_triage_payload` (identify commercialized vs pipeline assets)
+- `market_snapshot` (market cap, EV, shares outstanding, currency)
+- Optional peer comparables from `peer_valuation` when present
+
+Outputs (in addition to shared fields):
+
+- `revenue_treatment`: `recurring`, `launch_ramp`, or `milestone_royalty`
+- `comparable_peers`: list of `{company, method, multiple, source}`
+
+Boundaries:
+
+- Must NOT produce an rNPV for the same asset already priced by
+  `valuation-pipeline-rnpv-agent`.
+- Must NOT use preclinical or Phase 1 assets in commercial method.
+
+### Valuation Pipeline rNPV Agent
+
+Purpose: compute asset-level rNPV for pre-commercial pipeline assets.
+
+Inputs:
+
+- `pipeline_assets`
+- `target_price_snapshot` including curated / auto-drafted
+  `target_price_assumptions`
+- `pipeline_triage_payload`
+
+Outputs (in addition to shared fields):
+
+- `asset_rnpv_rows`: list of `{asset, pos, peak_sales, launch_year,
+  discount_rate, economics_share, rnpv_value}`
+- `method_version`: `"default_rnpv_v1"` or curated override label
+
+Boundaries:
+
+- Must cite every PoS / peak sales / launch year assumption by field name
+  pointing into `target_price_assumptions`.
+- Must never invent numeric assumptions; if a required assumption is missing,
+  mark `needs_human_review=true` and degrade the corresponding row.
+
+### Valuation Balance Sheet Agent
+
+Purpose: compute net cash, debt, and non-operating adjustments.
+
+Inputs:
+
+- `financials_snapshot` (cash, short-term debt, long-term debt,
+  non-operating assets)
+- `valuation_snapshot` (shares outstanding, market cap, currency)
+- Currency of the reporting entity and of the market snapshot
+
+Outputs (in addition to shared fields):
+
+- `net_cash_adjustment`: signed amount in declared `currency`
+- `debt_adjustment`: signed amount
+- `non_operating_adjustments`: list of `{item, amount, source}`
+- `fx_notes`: list of conversions applied, each with rate and source
+
+Boundaries:
+
+- Must honour the existing `RMB/CNY -> HKD` conversion used by
+  `target_price.py` when the reporting currency differs from the market
+  currency.
+- Must NOT price operating assets; that is the commercial/rNPV agents'
+  scope.
+
+### Valuation Committee Agent
+
+Purpose: synthesize the three pod sub-agents into an SOTP view with
+explicit weights and conflict arbitration.
+
+Inputs:
+
+- Outputs of `valuation-commercial-agent`,
+  `valuation-pipeline-rnpv-agent`, `valuation-balance-sheet-agent`
+- `macro_context`
+- `pipeline_triage_payload`
+- `competition_triage_payload`
+
+Outputs:
+
+- `sotp_bridge`: ordered list of `{component, method, value_contribution}`
+  that sums to `final_equity_value_range.base`.
+- `method_weights`: `{commercial, rnpv, balance_sheet}` summing to 1.0.
+- `conflict_resolution`: list of `{conflict, resolution, rationale}` when
+  sub-agents disagree.
+- `final_equity_value_range`: `{bear, base, bull}` in declared currency.
+- `final_per_share_range`: `{bear, base, bull}` using
+  committee-chosen share count.
+- `currency`: explicit ISO code.
+- `confidence`, `needs_human_review`.
+
+Boundaries:
+
+- Must NOT invent new numbers; every figure must trace to a pod sub-agent
+  output or to a declared assumption.
+- Must log weighting rationale so reviewers can reproduce the SOTP bridge.
+
+## Report Synthesizer Agent
+
+Purpose: produce the final committee-style report from all specialist
+outputs. Deterministic-first by default; LLM writes transitions and the
+Executive Verdict paragraph.
+
+Inputs:
+
+- All upstream agent findings
+- Deterministic memo scaffold
+- Current scorecard, action-plan, catalyst roadmap
+
+Outputs:
+
+- `executive_verdict_paragraph`: prose for the verdict section
+- `section_transitions`: per-section opening sentences
+- `needs_human_review`: true when any required input is missing
+
+Boundaries:
+
+- Must NOT change the memo's structural order.
+- Must NOT change any numeric value rendered in deterministic sections.
+- When upstream findings conflict, must surface the conflict rather than
+  silently pick one side.
+
+## Report Quality Agent
+
+Purpose: independent editorial and consistency audit over the fully composed
+report and every upstream agent finding. It is the publish gate.
+
+Inputs:
+
+- Composed memo markdown
+- All `AgentFinding` entries from the run
+- Run-level `scorecard`, `extraction_audit`, `input_validation` payloads
+- Structured target-price and valuation pod outputs
+
+Outputs:
+
+- `publish_gate`: `pass`, `review_required`, or `block`
+- `critical_issues`: list; any `block`-level reason appears here
+- `consistency_findings`: cross-agent contradictions, currency drift,
+  stale-evidence flags, bear vs bull logical inconsistency
+- `missing_evidence_findings`: claims without an upstream evidence reference
+- `language_quality_findings`: residual English fragments in zh-CN reports,
+  over-claiming tone, removed disclaimer drift
+- `valuation_coherence_findings`: committee vs per-share vs event-impact
+  vs scorecard direction sanity
+- `recommended_fixes`: list of concrete edits with target section path
+
+Boundaries:
+
+- Must NOT invent new market facts or new valuation numbers.
+- Must NOT act as a second scientific-skeptic; the skeptic still owns the
+  bear case.
+- Must NOT silently overwrite any upstream finding. Any override must
+  produce a `recommended_fixes` entry, not rewrite the original artifact.
+- When the run uses `--no-llm`, the report quality agent is skipped; the
+  existing rule-based `quality_gate` remains the deterministic fallback.
+
+## Architecture Upgrade Target
+
+To align with the multi-LLM-agent product direction, the next target agent
+set is treated as the canonical role map. Sprint-level execution of this
+topology is tracked in `docs/ROADMAP.md`.
+
+- `data-collector-agent` (Stage C)
+- `pipeline-clinical-agent` — currently `pipeline-triage`
+- `competition-agent` — currently `competition-triage`
+- `macro-agent` — currently `macro-context`
+- `kline-agent` (Stage B)
+- `catalyst-agent` (Stage B)
+- Valuation pod (Stage A):
+  - `valuation-commercial-agent`
+  - `valuation-pipeline-rnpv-agent`
+  - `valuation-balance-sheet-agent`
+  - `valuation-committee-agent`
+- `report-synthesizer-agent` (Stage C)
+- `report-quality-agent` (Stage A)
+
+Detailed gap analysis, contracts, and migration staging live in
+`docs/ARCHITECTURE_AUDIT.md`.

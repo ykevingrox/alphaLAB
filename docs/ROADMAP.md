@@ -13,6 +13,10 @@ context, and scientific skeptic — all writing into a shared, traceable fact
 store and producing `AgentFinding` outputs with source, severity, and
 confidence. HK biotech is the first vertical we harden, not the endgame.
 
+Architecture alignment baseline is documented in
+`docs/ARCHITECTURE_AUDIT.md`. Roadmap execution should follow that target
+agent topology (including valuation pod and report-quality layer).
+
 ## MVP Strategy
 
 The near-term priority remains a working Hong Kong biotech MVP. Future
@@ -317,15 +321,19 @@ with token counts, latency, and a run-level cost summary.
   `anthropic` opt-in), with provider-specific env key parsing and
   offline protocol tests. Remaining work is live smoke validation.
 
-## Next Execution Plan (Suggested)
+## Next Execution Plan
 
-The highest-priority path is to make one-command `company-report` reliable for
-daily use with minimal manual prep.
+**Active sprint:** Sprint 6 — valuation pod + report-quality agent
+(Stage A of the architecture audit). Full detail in the Sprint 6 section
+below. Sprints 1-5 are largely closed at baseline level and continue as
+quality-hardening backlog.
 
-**Doc discipline:** Each sprint below lists **implementation status** so this
-section stays aligned with the repo. Update statuses when scope changes.
+**Doc discipline:** Each sprint below lists **implementation status** so
+this section stays aligned with the repo. Update statuses when scope
+changes.
 
-**Last status pass:** 2026-04-23 (post LLM-first redesign + valuation currency integration checkpoint).
+**Last status pass:** 2026-04-24 (Stage A planning: valuation pod +
+report-quality agent committed as Sprint 6).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -549,6 +557,13 @@ eventually a technical / K-line agent.
 - **Deferred** — Short exponential backoff on Yahoo 429/503 inside
   `hk_macro_signals_yahoo` (operator preference is to rely on Stooq +
   stale-cache fallback for now, then revisit retries later).
+- **Moved to Sprint 6 (Stage A)** — Valuation pod decomposition
+  (`valuation-commercial-agent`, `valuation-pipeline-rnpv-agent`,
+  `valuation-balance-sheet-agent`, `valuation-committee-agent`) plus
+  `report-quality-agent`.
+- **Moved to Sprint 7 (Stage B)** — `catalyst-agent`, `kline-agent`.
+- **Moved to Sprint 8 (Stage C)** — `data-collector-agent`,
+  `report-synthesizer-agent` formalization.
 
 ### Sprint 5: From Data Sheet To Investment Memo
 
@@ -914,3 +929,211 @@ All steps above are completed at baseline level. Ongoing iteration prioritizes:
 - Any new LLM agent must accept a per-agent model override.
 - Every new field threading through the run must be represented in the
   manifest so a future run is reproducible.
+
+### Sprint 6: Valuation Pod + Report Quality (Stage A)
+
+**Sprint goal.** Decompose the monolithic `valuation-specialist` into a
+four-agent valuation pod and add a standalone `report-quality-agent` that
+owns the publish gate. Keep HK innovative-drug biotech as the only vertical.
+
+**Sprint status:** not started.
+
+**Acceptance baseline.** A one-command run on `09606.HK`, `02142.HK`, and
+`09887.HK` produces:
+
+1. Four distinct valuation-pod findings per run, each with its own
+   `method`, `scope`, `valuation_range`, and `confidence`.
+2. One committee finding with `sotp_bridge`, `method_weights`, and
+   `final_per_share_range`.
+3. One `report-quality-agent` finding with `publish_gate` set to `pass` or
+   `review_required` (never missing).
+4. Deterministic `--no-llm` run still produces a valid memo with the
+   existing rule-based `quality_gate` path unchanged.
+
+**Design principles for Stage A.**
+
+- Pod sub-agents do not invent numbers; they price from deterministic
+  sources (`financials_snapshot`, `target_price_assumptions`,
+  `valuation_snapshot`).
+- LLM in these agents is used to select methods, cite assumption field
+  names, assemble sensitivity, and produce conflict resolution prose, not
+  to generate PoS or peak sales.
+- `report-quality-agent` may NOT overwrite any upstream artifact; it can
+  only emit `recommended_fixes`.
+- Every new agent goes through `BudgetEnforcingLLMClient` with a
+  per-agent budget; default per-agent budget for the pod is 1 call per
+  run to keep Sprint-6 cost linear.
+- Currency is always declared explicitly; when inputs are in RMB/CNY the
+  balance-sheet agent must apply the existing `target_price.py`
+  conversion path rather than inventing a new one.
+
+**Model strategy for Stage A.** Keep `qwen3.5-plus` as the dev default.
+Provide `LLMConfig.per_agent_models` plumbing so a production run can pin
+`valuation-committee-agent` and `report-quality-agent` to a stronger
+model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
+
+#### S6.1 — Pod skeleton + committee passthrough
+
+- **Status:** not started.
+- **What:** Add three sub-agent skeletons (`ValuationCommercialLLMAgent`,
+  `ValuationPipelineRnpvLLMAgent`, `ValuationBalanceSheetLLMAgent`) and a
+  thin `ValuationCommitteeLLMAgent` that simply concatenates sub-agent
+  outputs into the pod contract (no weighting logic yet).
+- **Shape:** every sub-agent emits the shared pod fields defined in
+  `docs/AGENTS.md` and `docs/ARCHITECTURE_AUDIT.md`.
+- **Wiring:** register in `SUPPORTED_LLM_AGENTS`, `company-report
+  --llm-agents` choices, and quick `report` default stack (behind a
+  feature flag until S6.2 lands).
+- **Compatibility:** retain `valuation-specialist` in the default stack
+  until the pod passes S6.4; do not delete it.
+- **Done when:**
+  1. `company-report --llm-agents valuation-commercial valuation-rnpv
+     valuation-balance-sheet valuation-committee` runs end-to-end on
+     `09606.HK` with all four agents producing schema-valid findings.
+  2. Unit tests cover schema validation and schema drift rejection for
+     each sub-agent.
+  3. `valuation-specialist` still runs unchanged when requested.
+- **Estimated size:** 3-4 days.
+
+#### S6.2 — Committee SOTP logic
+
+- **Status:** not started.
+- **What:** Replace passthrough committee with real SOTP bridge,
+  currency reconciliation, method weighting, and conflict resolution.
+  Committee must also consume `macro_context`, `pipeline_triage_payload`,
+  and `competition_triage_payload`.
+- **Currency rule:** if any sub-agent declares a currency different from
+  the balance-sheet agent's declared currency, committee must convert
+  using the existing `target_price.py` conversion helper and record the
+  bridge in `conflict_resolution` + `assumptions`.
+- **Weighting rule:** default weights are data-driven
+  (`commercial` weight scales with revenue materiality; `rnpv` weight
+  scales with pipeline asset count weighted by phase; `balance_sheet`
+  always contributes its net cash/debt as an additive bridge).
+- **Done when:**
+  1. `final_equity_value_range.base` equals the sum of `sotp_bridge`
+     component contributions.
+  2. Currency conflict on a synthetic RMB-reporting / HKD-market fixture
+     produces a recorded `conflict_resolution` entry.
+  3. 09606.HK committee output produces a per-share range consistent
+     with the existing catalyst-adjusted target price within +/-15%
+     (committee is allowed to differ; the sanity threshold is there to
+     catch 10x unit mistakes, not to force agreement).
+- **Depends on:** S6.1.
+- **Estimated size:** 3 days.
+
+#### S6.3 — `report-quality-agent`
+
+- **Status:** not started.
+- **What:** New LLM agent consuming the composed memo, every
+  `AgentFinding`, run-level `scorecard`, `extraction_audit`,
+  `input_validation`, and valuation pod outputs. Emits the contract
+  defined in `docs/AGENTS.md` (publish gate + consistency / evidence /
+  language / valuation coherence findings + recommended fixes).
+- **Wiring:** new CLI name `report-quality`; appears last in the DAG
+  layer. Quick `report` default stack enables it.
+- **Gate defaults:** until the agent has been calibrated on at least
+  three HK tickers, the gate MUST default to `review_required` when the
+  LLM output is empty or schema-invalid, never to `pass`.
+- **Persistence:** emit `<run_id>_report_quality.json` under the memo
+  directory and attach to `manifest.artifacts.report_quality`. Summary
+  payload adds `report_quality_gate` for downstream tools.
+- **Memo rendering:** memo gains an `## 报告质量门` section summarizing
+  the gate, critical issues, and recommended fixes. Deterministic
+  fallback path leaves the section omitted rather than empty.
+- **Done when:**
+  1. Live run on 09606.HK emits a schema-valid finding with at least
+     one `consistency_findings` or `valuation_coherence_findings` row
+     (the pod will initially disagree; that's the point).
+  2. `--no-llm` run still passes and omits the quality-agent section.
+  3. Unit tests cover: happy path, empty memo input, schema drift,
+     and the "never silently downgrade to pass" rule.
+- **Depends on:** S6.1 (so pod findings exist to review).
+- **Estimated size:** 2-3 days.
+
+#### S6.4 — Deprecate monolithic `valuation-specialist`
+
+- **Status:** not started.
+- **What:** Move `valuation-specialist` out of the default stack behind
+  an opt-in flag. Keep the class and tests so old manifests can still be
+  reproduced.
+- **Rollback safety:** if the pod's committee confidence drops below
+  0.3 or `report-quality-agent` gates the run as `block`, fall back to
+  `valuation-specialist` output for the memo's Valuation Detail section
+  so the user still gets a coherent narrative.
+- **Done when:**
+  1. Quick `report` default stack omits `valuation-specialist`.
+  2. `company-report --llm-agents valuation-specialist` still works for
+     reproducibility.
+  3. Tests confirm fallback-to-specialist path when the pod fails.
+- **Depends on:** S6.1, S6.2, S6.3.
+- **Estimated size:** 1 day.
+
+#### S6.5 — Per-agent model override plumbing
+
+- **Status:** not started.
+- **What:** Extend `LLMConfig` with `per_agent_models: dict[str, str]`
+  resolved from env
+  `BIOTECH_ALPHA_LLM_MODEL_<AGENT_NAME>` (agent name uppercased,
+  hyphens -> underscores). `OpenAICompatibleLLMClient` and
+  `AnthropicLLMClient` honour the override per call.
+- **Done when:**
+  1. Running with `BIOTECH_ALPHA_LLM_MODEL_REPORT_QUALITY=qwen-max`
+     routes only that agent's calls to `qwen-max` while other agents
+     continue on the default.
+  2. Trace JSONL records the effective model per call.
+  3. Unit test covers override resolution and default fallback.
+- **Depends on:** none (can land in parallel with S6.1-S6.4).
+- **Estimated size:** 1 day.
+
+#### Sprint 6 execution order
+
+1. S6.5 (unblocks cheap experimentation with strong models for the new
+   agents).
+2. S6.1 (pod skeleton).
+3. S6.3 (report-quality agent; can start once S6.1 lands because it
+   only needs schema-valid pod outputs, not the real committee logic).
+4. S6.2 (committee SOTP logic).
+5. S6.4 (deprecate monolith).
+
+#### Sprint 6 validation
+
+- Full unit-test suite green.
+- `compileall` green on `src/` and `tests/`.
+- Three-ticker canonical smoke:
+  `09606.HK`, `02142.HK`, `09887.HK` each produce pod + committee +
+  report-quality findings with `publish_gate` present.
+- `--no-llm` smoke on `09606.HK` still produces a valid memo.
+- Manifest for every run above carries:
+  `artifacts.valuation_pod`, `artifacts.report_quality`, and a compact
+  `valuation_pod_summary` plus `report_quality_gate` in the summary
+  payload.
+
+### Sprint 7: Catalyst + K-line Specialists (Stage B)
+
+**Sprint status:** not started. Sprint 6 must close first.
+
+- `catalyst-agent`: LLM narrative over deterministic catalyst calendar.
+  Ranks events by `|pos * value_delta|`, explains the cause-effect chain,
+  and writes the memo's Catalyst Roadmap prose. Numerical deltas still
+  come from `target_price.py`.
+- `kline-agent`: LLM over deterministic SMA / RSI / support / resistance
+  outputs produced by the existing `technical-timing` command. Outputs
+  long-horizon trend framing plus explicit "research-only" labels; does
+  NOT produce entry/exit signals.
+
+Sprint-7 execution will be detailed when Sprint 6 closes.
+
+### Sprint 8: Data Collector + Report Synthesizer (Stage C)
+
+**Sprint status:** not started. Sprint 7 must close first.
+
+- `data-collector-agent`: LLM layer on top of existing deterministic
+  ingestion that triages evidence quality, flags stale sources, and
+  produces `publish_ready / needs_more_evidence / insufficient_data`
+  verdicts per input domain. Feeds the `report-quality-agent`.
+- `report-synthesizer-agent`: move the memo's Executive Verdict and
+  section transitions from deterministic rendering to an LLM agent, with
+  deterministic fallback preserved.
+
+Sprint-8 execution will be detailed when Sprint 7 closes.

@@ -102,10 +102,26 @@ Quick-mode behavior:
 - Auto-enables market data (`hk-public`) and macro live signals (`yahoo-hk`).
 - Auto-enables ClinicalTrials.gov competitor discovery for generated
   competitor candidate packs.
-- Auto-enables all current LLM agents including `competition-triage`.
-- Includes `valuation-specialist` in the default LLM stack.
+- Auto-enables the full current LLM agent stack:
+  `provisional-pipeline`, `provisional-financial`, `pipeline-triage`,
+  `financial-triage`, `competition-triage`, `macro-context`,
+  `scientific-skeptic`, `investment-thesis`, `valuation-specialist`.
+- Sprint 6 (in progress) will add the valuation pod
+  (`valuation-commercial`, `valuation-rnpv`, `valuation-balance-sheet`,
+  `valuation-committee`) and `report-quality` to this default stack, and
+  drop the monolithic `valuation-specialist` from the default while
+  keeping it runnable via `company-report --llm-agents valuation-specialist`.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
   explicit terminal fallback output.
+
+Architecture note:
+
+- The target runtime is a multi-LLM-agent collaborative topology (see
+  `docs/ARCHITECTURE_AUDIT.md`).
+- Current quick `report` already runs a subset of specialist LLM agents.
+- Planned next upgrades are valuation pod decomposition
+  (commercial/rNPV/balance-sheet/committee) and a standalone report-quality
+  reviewer agent.
 
 Expected behavior:
 
@@ -471,16 +487,29 @@ If validation warns about placeholders:
 
 ## Current Limits
 
-- Pipeline, financial, competitor, valuation, and target-price assumption inputs
-  are curated JSON files.
-- Target-price output is a deterministic first-pass rNPV model. It does not yet
-  include launch curves, patent cliffs, geography splits, or calibrated
+- Pipeline, financial, competitor, valuation, and target-price assumption
+  inputs are curated JSON files with optional auto-drafted fallbacks under
+  `data/input/generated/`.
+- Target-price output is a deterministic first-pass rNPV model. It does not
+  yet include launch curves, patent cliffs, geography splits, or calibrated
   historical event-reaction backtests.
-- Automatic PDF/report extraction is not implemented yet.
-- China drug trial registry ingestion is not implemented yet.
-- Competitive matching is deterministic and coarse: target and indication only.
+- Automatic PDF/report extraction is first-pass only (HKEX annual results).
+  Broader document ingestion across interim reports, prospectuses, and
+  investor presentations is pending.
+- China drug trial registry ingestion is first-pass (deterministic feed +
+  state tracker). Full CDE schema mirror is not implemented.
+- Competitive matching is deterministic on target + indication, with a
+  review-gated ClinicalTrials.gov discovery runner.
 - Cash runway is a first-pass estimate, not scenario modeling.
-- The memo is deterministic and conservative; a full LLM investment committee is
-  still pending.
-- The skeptical review is deterministic and checklist-based; it does not yet
-  evaluate trial design, endpoints, efficacy, or safety from source documents.
+- Valuation narrative currently comes from the monolithic
+  `valuation-specialist` agent. Sprint 6 decomposes this into a
+  four-agent valuation pod (commercial / pipeline-rNPV / balance-sheet /
+  committee).
+- There is no standalone LLM report-quality reviewer yet; the publish gate
+  is a rule-based `quality_gate` today. Sprint 6 adds
+  `report-quality-agent`.
+- `scientific-skeptic` and `investment-thesis` agents produce LLM-backed
+  counter-thesis and thesis summaries, but they do not yet evaluate trial
+  design, endpoints, efficacy, or safety from source documents directly.
+- No LLM `kline-agent`, `catalyst-agent`, or `data-collector-agent` yet;
+  tracked as Stage B / Stage C in `docs/ROADMAP.md`.

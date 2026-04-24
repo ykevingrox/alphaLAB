@@ -67,25 +67,38 @@ Current implementation status:
   integration.
 - Implemented: reproducible local artifacts, including manifest, raw responses,
   normalized records, CSV tables, memo JSON, and memo Markdown.
-- Implemented: in-process `AgentGraph` + `FactStore` runtime with five opt-in
-  LLM agents — `pipeline-triage`, `financial-triage`, `competition-triage`,
-  `macro-context`, `scientific-skeptic` — with JSON schema validation, per-run
-  and per-agent call budgets, and JSONL traces under `data/traces/`.
+- Implemented: in-process `AgentGraph` + `FactStore` runtime with the
+  following opt-in LLM agents — `provisional-pipeline`,
+  `provisional-financial`, `pipeline-triage`, `financial-triage`,
+  `competition-triage`, `macro-context`, `scientific-skeptic`,
+  `investment-thesis`, `valuation-specialist` — with JSON schema
+  validation, per-run and per-agent call budgets, and JSONL traces under
+  `data/traces/`.
 - Implemented: HK public market-data providers (Tencent / Yahoo) and macro
   live-signal providers (Yahoo / Stooq / HKMA) with disk cache and
   stale-if-error fallback.
 - Implemented: ClinicalTrials.gov competitor discovery that feeds generated
   competitor candidate packs (review-gated, not treated as curated truth).
 - Implemented: quick one-command `report "<company|ticker>"` entry that
-  auto-enables auto-inputs, market data, macro signals, and the full LLM stack
-  by default, and fails fast on missing LLM env unless `--allow-no-llm` is
-  passed.
-- Pending: broader company document ingestion beyond HKEX annual results, more
-  robust financial statement parsing across interim/prospectus styles, US-
-  market sibling market-data provider so auto-draft is not HK-only, automatic
-  competitor discovery beyond ClinicalTrials.gov (company pages, filings),
-  calibrated historical catalyst-reaction backtests, and a technical / K-line
-  timing agent.
+  auto-enables auto-inputs, market data, macro signals, and the full LLM
+  stack by default. When LLM env is missing or invalid the quick path
+  auto-degrades to deterministic mode with an explicit terminal note;
+  `company-report --llm-agents` still supports `--allow-no-llm` for the
+  same fallback.
+- Pending (Stage A, Sprint 6): valuation pod decomposition into four
+  specialist agents (commercial / pipeline-rNPV / balance-sheet /
+  committee) and a standalone `report-quality-agent` that owns the
+  publish gate. Tracked in `docs/ROADMAP.md` and
+  `docs/ARCHITECTURE_AUDIT.md`.
+- Pending (Stage B, Sprint 7): LLM `catalyst-agent` and `kline-agent`.
+- Pending (Stage C, Sprint 8): LLM `data-collector-agent` and
+  `report-synthesizer-agent`.
+- Pending: broader company document ingestion beyond HKEX annual results,
+  more robust financial statement parsing across interim/prospectus
+  styles, US-market sibling market-data provider so auto-draft is not
+  HK-only (explicit non-goal until after Stage C), automatic competitor
+  discovery beyond ClinicalTrials.gov (company pages, filings), and
+  calibrated historical catalyst-reaction backtests.
 
 ## Non-Goals For MVP
 

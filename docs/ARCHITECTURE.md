@@ -196,21 +196,44 @@ The runtime is a small in-process orchestrator, not a distributed framework:
   `BudgetEnforcingLLMClient`, and every LLM call is appended as JSONL under
   `data/traces/` for audit.
 
-Recommended agents:
+Target agent topology (canonical):
 
-- Research Collector Agent
-- Pipeline Agent
-- Clinical Trial Agent
-- Regulatory Agent
-- Competitive Landscape Agent
-- Cash Runway Agent
-- Valuation Agent
-- Catalyst Impact Agent
-- rNPV Scenario Agent
-- Technical Timing Agent
-- Risk Agent
-- Scientific Skeptic Agent
-- Investment Committee Agent
+- Layer 0 — Data collection:
+  - `data-collector-agent` (Stage C)
+- Layer 1 — Domain specialists:
+  - `pipeline-clinical-agent` (currently `pipeline-triage`)
+  - `competition-agent` (currently `competition-triage`)
+  - `macro-agent` (currently `macro-context`)
+  - `catalyst-agent` (Stage B)
+  - `kline-agent` (Stage B)
+- Layer 2 — Valuation pod (Stage A):
+  - `valuation-commercial-agent`
+  - `valuation-pipeline-rnpv-agent`
+  - `valuation-balance-sheet-agent`
+  - `valuation-committee-agent`
+- Layer 3 — Decision and publishing:
+  - `investment-thesis-agent` (retain)
+  - `scientific-skeptic-agent` (retain)
+  - `report-synthesizer-agent` (Stage C)
+  - `report-quality-agent` (Stage A)
+
+Deterministic backbone agents that feed the LLM layers:
+
+- Clinical Trial Agent (deterministic registry matching)
+- Cash Runway Agent (deterministic burn/runway)
+- Watchlist Scorecard Agent (deterministic bucket + monitoring rules)
+- Data Quality Agent (deterministic input validation)
+- Research Action Plan Agent (deterministic research-only sizing)
+
+Current architecture consistency note:
+
+- See `docs/ARCHITECTURE_AUDIT.md` for the latest alignment audit against the
+  target multi-LLM-agent design.
+- Current runtime is a hybrid state: pipeline/competition/macro specialists,
+  scientific-skeptic, and investment-thesis are already LLM-based; the
+  monolithic `valuation-specialist` is being decomposed into the pod in
+  Sprint 6; kline/catalyst/report-quality/data-collector remain mostly
+  deterministic or partially implemented.
 
 ## MVP Runtime
 

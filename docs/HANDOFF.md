@@ -46,7 +46,23 @@ Use this shape:
 
 ## Last Completed
 
-- 2026-04-23 文档收口与估值链路修复（当前权威状态）:
+- 2026-04-24 Stage A 计划落地（当前权威状态）:
+  - 选定 Option A：HK 生物科技 vertical 先做到端到端，然后再横向扩展。
+  - `docs/ARCHITECTURE_AUDIT.md` 重写：Stage A/B/C 与估值 pod / 报告质量
+    agent 契约细化。
+  - `docs/AGENTS.md` 新增 Valuation Pod（商业化/rNPV/资产负债表/委员会）
+    四个子 agent 的完整契约、边界与共享输出字段；新增
+    Report Synthesizer Agent 与 Report Quality Agent 的契约。
+  - `docs/ROADMAP.md` 新增 Sprint 6（Stage A）明细：S6.1-S6.5 五个子任务、
+    执行顺序、验收基准、per-agent model override 策略、currency 处理规则、
+    默认门“review_required 优先于 pass”的硬约束。Sprint 7/8 标记为
+    后续 Stage B/C 占位。
+  - `docs/ARCHITECTURE.md` agent 层改为按 Stage A/B/C 描述的 canonical
+    topology，区分 LLM specialists 与 deterministic backbone。
+  - `docs/HANDOFF.md` 的 Current Task / Next Action / Acceptance /
+    Validation / Queue 全部切换到 Sprint 6，明确 S6.5 为第一步。
+
+- 2026-04-23 文档收口与估值链路修复:
   - 估值口径已统一：当市场估值快照 `cash/debt` 为空或 0 时，默认使用财务快照现金/短债并做 `RMB/CNY -> HKD` 换算后并入估值与目标价链路。
   - `report "DualityBio"` 最新报告的 EV 与 rNPV 已反映现金并表，`data/latest/latest-report.md` 中可见：
     `现金=3.59049e+09 HKD`、`EV=2.44634e+10 HKD`、`rNPV口径净现金=3438150840 HKD`。
@@ -914,23 +930,40 @@ Latest smoke result:
 
 ### Current Task
 
-Keep the one-command report stable and auditable after the LLM-first redesign,
-with valuation consistency (currency/net-cash), Chinese-first output quality,
-and low-friction operator UX.
+Enter Sprint 6 (Stage A of the architecture audit): decompose
+`valuation-specialist` into the valuation pod and add the standalone
+`report-quality-agent`. HK innovative-drug biotech remains the only
+vertical for this sprint.
 
 ### Next Action
 
-Consolidate FX conversion logic into one shared utility and thread explicit
-`fx_source` / `fx_rate` metadata into valuation and target-price artifacts so
-the currency-adjusted EV path is fully traceable.
+Land **S6.5** first: per-agent model override plumbing
+(`LLMConfig.per_agent_models` + env
+`BIOTECH_ALPHA_LLM_MODEL_<AGENT_NAME>`). This is a 1-day cheap dependency
+that unblocks strong-model experimentation for the pod committee and
+report-quality agent in subsequent steps.
 
-### Acceptance Criteria
+After S6.5 lands, move on in this order: S6.1 pod skeleton -> S6.3
+report-quality agent -> S6.2 committee SOTP logic -> S6.4 deprecate
+monolith.
 
-- Currency-adjusted EV and target-price net-cash must be consistent in report,
-  saved artifacts, and LLM fact snapshots.
-- No regression in one-command UX (`report "<company|ticker>"`) or deterministic
-  fallback behavior when LLM is unavailable.
-- Chinese-first report output remains the default for quick access paths.
+### Acceptance Criteria (Sprint 6 close)
+
+- `valuation-commercial-agent`, `valuation-pipeline-rnpv-agent`,
+  `valuation-balance-sheet-agent`, and `valuation-committee-agent` all
+  run in the same AgentGraph layer, emit schema-valid findings, and
+  follow the pod contract in `docs/AGENTS.md`.
+- `report-quality-agent` runs last in the DAG layer, emits `publish_gate`
+  (`pass` / `review_required` / `block`), and defaults to
+  `review_required` on schema failure — never silently to `pass`.
+- Three-ticker canonical smoke (`09606.HK`, `02142.HK`, `09887.HK`)
+  produces pod + committee + quality findings with manifests.
+- `--no-llm` run on `09606.HK` still produces a valid deterministic
+  memo.
+- `valuation-specialist` remains runnable for reproducibility, but is no
+  longer in the quick `report` default stack.
+- `LLMConfig.per_agent_models` override is testable in both unit tests
+  and the trace JSONL.
 
 ### Validation
 
@@ -941,39 +974,57 @@ git diff --check
 awk 'length($0) > 88 { print FILENAME ":" FNR ":" length($0) }' \
   $(git ls-files '*.py' '*.md' '*.toml')
 
-# After P0.1 lands, check the canonical tickers for a populated
-# Catalyst-Adjusted Valuation section.
-for ticker in 09887.HK 09606.HK 02142.HK 01801.HK; do
-  .venv/bin/python -m biotech_alpha.cli report "$ticker" --no-llm --no-save
+# Deterministic-only smoke (must stay green every sprint)
+.venv/bin/python -m biotech_alpha.cli report "09606.HK" --no-llm --no-save
+
+# Pod + quality-agent smoke (requires .env with BIOTECH_ALPHA_LLM_API_KEY)
+for ticker in 09606.HK 02142.HK 09887.HK; do
+  .venv/bin/python -m biotech_alpha.cli company-report \
+    --ticker "$ticker" --auto-inputs --market-data hk-public \
+    --llm-agents pipeline-triage financial-triage competition-triage \
+      macro-context investment-thesis scientific-skeptic \
+      valuation-commercial valuation-rnpv valuation-balance-sheet \
+      valuation-committee report-quality
 done
 
-# Live LLM smoke still available (requires .env with BIOTECH_ALPHA_LLM_API_KEY)
-.venv/bin/python -m biotech_alpha.cli company-report \
-  --ticker 09606.HK --auto-inputs --market-data hk-public \
-  --llm-agents pipeline-triage financial-triage competition-triage \
-    macro-context scientific-skeptic
+# Per-agent model override smoke (strong model for pod committee only)
+BIOTECH_ALPHA_LLM_MODEL_VALUATION_COMMITTEE=qwen-max \
+BIOTECH_ALPHA_LLM_MODEL_REPORT_QUALITY=qwen-max \
+.venv/bin/python -m biotech_alpha.cli report "09606.HK" --json
 ```
 
 ### Queue
 
-Sprint 5 execution order (full detail in `docs/ROADMAP.md`):
+Stage A (Sprint 6) is the active queue; full detail lives in
+`docs/ROADMAP.md` under "Sprint 6".
 
-1. Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper source-like
-   ground-truth expansion, and additional cross-agent merge heuristics.
-2. Deferred data-breadth depth: richer CDE normalization dictionaries.
-3. Contingency backlog: hybrid CDE extraction fallback for difficult titles.
+1. S6.5 per-agent model override plumbing.
+2. S6.1 pod skeleton + passthrough committee.
+3. S6.3 report-quality agent (can proceed in parallel with S6.2 once S6.1
+   lands because it only needs schema-valid pod outputs).
+4. S6.2 committee SOTP logic with currency reconciliation and weighting.
+5. S6.4 deprecate monolithic `valuation-specialist` from default stack
+   (keep runnable for reproducibility).
 
-Pre-Sprint 5 backlog retained for later:
+After Sprint 6 closes, Stage B (Sprint 7) queues: `catalyst-agent`
+(LLM narrative over deterministic catalyst calendar) and `kline-agent`
+(LLM framing over deterministic technical-timing outputs,
+research-only).
 
-- Run live `qwen3.5-plus` smoke when provider/model compatibility or
-  end-to-end behavior needs validation.
+Longer-term backlog retained but out of scope for Sprint 6:
+
+- Optional enhancement backlog: `AssetDeepDiveLLMAgent`, deeper
+  source-like ground-truth expansion, and additional cross-agent merge
+  heuristics.
+- Deferred data-breadth depth: richer CDE normalization dictionaries;
+  hybrid CDE extraction fallback for difficult titles.
 - Re-check quantitative macro feeds when provider rate limits recover.
 - Add one more representative HK biotech disclosure-style fixture
   (distinct from DualityBio, Harbour BioMed, Leads Biolabs, Innovent).
 - Tighten validator checks for stale placeholders and weak evidence
   metadata.
-- Add a US-market sibling market-data provider so auto-draft is not
-  HK-only.
+- US-market sibling market-data provider (explicit non-goal for
+  Sprint 6; revisit after Stage C).
 
 ## Do Not Break
 
