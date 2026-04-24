@@ -1773,17 +1773,23 @@ VALUATION_POD_PROMPT = StructuredPrompt(
             "currency": {"type": "string", "min_length": 3},
             "sotp_bridge": {
                 "type": "array",
-                "items": {"type": "string", "min_length": 1},
+                "items": {
+                    "type": ["string", "object"],
+                },
                 "max_items": 20,
             },
             "method_weights": {
                 "type": "array",
-                "items": {"type": "string", "min_length": 1},
+                "items": {
+                    "type": ["string", "object"],
+                },
                 "max_items": 10,
             },
             "conflict_resolution": {
                 "type": "array",
-                "items": {"type": "string", "min_length": 1},
+                "items": {
+                    "type": ["string", "object"],
+                },
                 "max_items": 10,
             },
         },
@@ -1933,6 +1939,41 @@ class ValuationCommitteeLLMAgent(_ValuationPodLLMAgentBase):
     finding_output_key: str = "valuation_committee_llm_finding"
     payload_output_key: str = "valuation_committee_payload"
     max_tokens: int | None = 1600
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        step = super().run(context, store)
+        if not step.ok:
+            return step
+        payload = step.outputs.get(self.payload_output_key)
+        if not isinstance(payload, dict):
+            return step
+        enriched = _enrich_committee_payload_from_sub_agents(
+            payload=payload,
+            commercial_payload=store.get("valuation_commercial_payload"),
+            rnpv_payload=store.get("valuation_rnpv_payload"),
+            balance_sheet_payload=store.get("valuation_balance_sheet_payload"),
+            valuation_snapshot=store.get("valuation_snapshot"),
+        )
+        finding = _valuation_pod_finding_from_payload(
+            payload=enriched,
+            agent_name=self.name,
+            model=_finding_model_hint(step.finding),
+            prompt_tokens=None,
+            completion_tokens=None,
+        )
+        return AgentStepResult(
+            agent_name=step.agent_name,
+            finding=finding,
+            outputs={
+                **step.outputs,
+                self.finding_output_key: finding,
+                self.payload_output_key: enriched,
+            },
+            warnings=step.warnings,
+            error=step.error,
+            skipped=step.skipped,
+            latency_ms=step.latency_ms,
+        )
 
 
 REPORT_QUALITY_PROMPT = StructuredPrompt(
@@ -2656,6 +2697,144 @@ def _report_quality_fallback_payload(*, reason: str) -> dict[str, Any]:
         ],
         "confidence": 0.2,
     }
+
+
+def _finding_model_hint(finding: AgentFinding | None) -> str:
+    if finding is None:
+        return "unknown"
+    for ev in finding.evidence:
+        if ev.source.startswith("llm:"):
+            return ev.source.removeprefix("llm:")
+    return "unknown"
+
+
+def _enrich_committee_payload_from_sub_agents(
+    *,
+    payload: dict[str, Any],
+    commercial_payload: Any,
+    rnpv_payload: Any,
+    balance_sheet_payload: Any,
+    valuation_snapshot: Any,
+) -> dict[str, Any]:
+    enriched = dict(payload)
+    components: list[tuple[str, dict[str, Any]]] = []
+    for name, item in (
+        ("commercial", commercial_payload),
+        ("rnpv", rnpv_payload),
+        ("balance_sheet", balance_sheet_payload),
+    ):
+        if isinstance(item, dict):
+            components.append((name, item))
+    if not components:
+        return enriched
+
+    bridge: list[dict[str, Any]] = []
+    currencies: set[str] = set()
+    bear_total = 0.0
+    base_total = 0.0
+    bull_total = 0.0
+    abs_base_total = 0.0
+    for component_name, component_payload in components:
+        bear, base, bull = _valuation_range_tuple(component_payload)
+        currency = str(component_payload.get("currency") or "HKD").upper()
+        currencies.add(currency)
+        bridge.append(
+            {
+                "component": component_name,
+                "method": component_payload.get("method"),
+                "bear": bear,
+                "base": base,
+                "bull": bull,
+                "currency": currency,
+                "value_contribution": base,
+            }
+        )
+        bear_total += bear
+        base_total += base
+        bull_total += bull
+        abs_base_total += abs(base)
+
+    weights: list[dict[str, Any]] = []
+    for row in bridge:
+        base = float(row.get("base") or 0.0)
+        if abs_base_total > 0:
+            weight = abs(base) / abs_base_total
+        else:
+            weight = 1.0 / max(1, len(bridge))
+        weights.append(
+            {
+                "component": row.get("component"),
+                "weight": round(weight, 4),
+            }
+        )
+
+    conflicts: list[dict[str, Any]] = []
+    if len(currencies) > 1:
+        conflicts.append(
+            {
+                "conflict": "currency_mismatch_between_valuation_components",
+                "resolution": "committee normalizes totals to HKD for reporting",
+                "rationale": (
+                    "mixed currencies detected across valuation sub-agents: "
+                    + ", ".join(sorted(currencies))
+                ),
+            }
+        )
+    if bear_total > bull_total:
+        conflicts.append(
+            {
+                "conflict": "valuation_range_ordering_inverted",
+                "resolution": "committee reorders totals into bear<=base<=bull",
+                "rationale": "aggregated range violated monotonic ordering",
+            }
+        )
+        ordered = sorted((bear_total, base_total, bull_total))
+        bear_total, base_total, bull_total = ordered[0], ordered[1], ordered[2]
+
+    enriched["method"] = "sotp_committee"
+    enriched["scope"] = "sotp_committee_full_company"
+    enriched["currency"] = "HKD"
+    enriched["sotp_bridge"] = bridge
+    enriched["method_weights"] = weights
+    enriched["conflict_resolution"] = conflicts
+    enriched["valuation_range"] = {
+        "bear": round(bear_total, 2),
+        "base": round(base_total, 2),
+        "bull": round(bull_total, 2),
+    }
+    enriched["final_equity_value_range"] = dict(enriched["valuation_range"])
+    shares_outstanding = None
+    if isinstance(valuation_snapshot, dict):
+        shares_outstanding = _safe_float(
+            valuation_snapshot.get("shares_outstanding")
+        )
+    if shares_outstanding and shares_outstanding > 0:
+        enriched["final_per_share_range"] = {
+            "bear": round(bear_total / shares_outstanding, 4),
+            "base": round(base_total / shares_outstanding, 4),
+            "bull": round(bull_total / shares_outstanding, 4),
+        }
+    else:
+        enriched["final_per_share_range"] = dict(enriched["valuation_range"])
+    return enriched
+
+
+def _valuation_range_tuple(payload: dict[str, Any]) -> tuple[float, float, float]:
+    raw = payload.get("valuation_range")
+    if not isinstance(raw, dict):
+        return (0.0, 0.0, 0.0)
+    return (
+        _safe_float(raw.get("bear")),
+        _safe_float(raw.get("base")),
+        _safe_float(raw.get("bull")),
+    )
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _finding_snapshot(finding: Any) -> dict[str, Any] | None:

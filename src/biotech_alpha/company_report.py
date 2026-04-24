@@ -84,6 +84,8 @@ class CompanyReportResult:
     auto_input_artifacts: Any | None = None
     llm_agent_result: Any | None = None
     llm_trace_path: Path | None = None
+    report_quality_path: Path | None = None
+    valuation_pod_path: Path | None = None
     hkexnews_updates_path: Path | None = None
     cde_updates_path: Path | None = None
     hkexnews_event_impacts_path: Path | None = None
@@ -351,6 +353,11 @@ def run_company_report(
         )
     if save:
         report_result = write_extraction_audit_report(
+            output_dir=output_dir,
+            result=report_result,
+        )
+    if save and llm_agent_result is not None:
+        report_result = write_stage_a_llm_reports(
             output_dir=output_dir,
             result=report_result,
         )
@@ -2116,6 +2123,138 @@ def _cde_updates_report_path(
     )
 
 
+def _report_quality_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_report_quality.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_report_quality.json"
+    )
+
+
+def _valuation_pod_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_valuation_pod.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_valuation_pod.json"
+    )
+
+
+def write_stage_a_llm_reports(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> CompanyReportResult:
+    llm_result = result.llm_agent_result
+    if llm_result is None:
+        return result
+    facts = getattr(llm_result, "facts", {}) or {}
+    if not isinstance(facts, dict):
+        facts = {}
+
+    report_quality_payload = facts.get("report_quality_payload")
+    report_quality_path: Path | None = None
+    if isinstance(report_quality_payload, dict):
+        report_quality_path = _report_quality_report_path(
+            output_dir=output_dir,
+            result=result,
+        )
+        report_quality_path.parent.mkdir(parents=True, exist_ok=True)
+        report_quality_path.write_text(
+            json.dumps(_jsonable(report_quality_payload), ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        _update_manifest_with_extra_artifact(
+            result=result,
+            artifact_key="report_quality",
+            artifact_path=report_quality_path,
+            payload_key="report_quality",
+            payload_value={
+                "publish_gate": report_quality_payload.get("publish_gate"),
+                "critical_issue_count": len(
+                    report_quality_payload.get("critical_issues") or []
+                ),
+                "recommended_fix_count": len(
+                    report_quality_payload.get("recommended_fixes") or []
+                ),
+            },
+        )
+
+    valuation_pod_payload = _valuation_pod_payload_from_llm_facts(facts)
+    valuation_pod_path: Path | None = None
+    if valuation_pod_payload["available"]:
+        valuation_pod_path = _valuation_pod_report_path(
+            output_dir=output_dir,
+            result=result,
+        )
+        valuation_pod_path.parent.mkdir(parents=True, exist_ok=True)
+        valuation_pod_path.write_text(
+            json.dumps(_jsonable(valuation_pod_payload), ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        _update_manifest_with_extra_artifact(
+            result=result,
+            artifact_key="valuation_pod",
+            artifact_path=valuation_pod_path,
+            payload_key="valuation_pod_summary",
+            payload_value=valuation_pod_payload["summary"],
+        )
+
+    return replace(
+        result,
+        report_quality_path=report_quality_path,
+        valuation_pod_path=valuation_pod_path,
+    )
+
+
+def _valuation_pod_payload_from_llm_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "commercial": facts.get("valuation_commercial_payload"),
+        "rnpv": facts.get("valuation_rnpv_payload"),
+        "balance_sheet": facts.get("valuation_balance_sheet_payload"),
+        "committee": facts.get("valuation_committee_payload"),
+    }
+    available = any(isinstance(value, dict) for value in payload.values())
+    committee = payload.get("committee") if isinstance(payload.get("committee"), dict) else {}
+    summary = {
+        "component_count": sum(1 for value in payload.values() if isinstance(value, dict)),
+        "has_committee": isinstance(payload.get("committee"), dict),
+        "committee_method": committee.get("method"),
+        "committee_currency": committee.get("currency"),
+        "committee_publishable": bool(committee) and not bool(
+            committee.get("needs_human_review", True)
+        ),
+    }
+    return {
+        "available": available,
+        "summary": summary,
+        "payload": payload,
+    }
+
+
 def _update_manifest_with_extraction_audit(
     *,
     result: CompanyReportResult,
@@ -2297,6 +2436,14 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             if result.llm_agent_result is not None
             else None
         ),
+        "report_quality_path": (
+            str(result.report_quality_path) if result.report_quality_path else None
+        ),
+        "report_quality": _report_quality_summary(result),
+        "valuation_pod_path": (
+            str(result.valuation_pod_path) if result.valuation_pod_path else None
+        ),
+        "valuation_pod_summary": _valuation_pod_summary(result),
         "llm_trace_path": (
             str(result.llm_trace_path) if result.llm_trace_path else None
         ),
@@ -2350,6 +2497,34 @@ def _build_hkexnews_summary(result: CompanyReportResult) -> dict[str, Any] | Non
         "new_count": payload.get("new_count", 0),
         "typed_new_items": typed if isinstance(typed, list) else [],
     }
+
+
+def _report_quality_summary(result: CompanyReportResult) -> dict[str, Any] | None:
+    payload = None
+    if result.llm_agent_result is not None:
+        facts = getattr(result.llm_agent_result, "facts", {}) or {}
+        if isinstance(facts, dict):
+            payload = facts.get("report_quality_payload")
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "publish_gate": payload.get("publish_gate"),
+        "critical_issue_count": len(payload.get("critical_issues") or []),
+        "recommended_fix_count": len(payload.get("recommended_fixes") or []),
+        "summary": payload.get("summary"),
+    }
+
+
+def _valuation_pod_summary(result: CompanyReportResult) -> dict[str, Any] | None:
+    if result.llm_agent_result is None:
+        return None
+    facts = getattr(result.llm_agent_result, "facts", {}) or {}
+    if not isinstance(facts, dict):
+        return None
+    payload = _valuation_pod_payload_from_llm_facts(facts)
+    if not payload.get("available"):
+        return None
+    return payload.get("summary")
 
 
 def _build_json_artifact_summary(path: Path | None) -> dict[str, Any] | None:
