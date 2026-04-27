@@ -176,6 +176,18 @@ For Hong Kong tickers the quick-report path can attach a live market snapshot
 - All providers degrade gracefully: any failure becomes a validation warning,
   never an exception that aborts the report.
 
+Potential optional adapter:
+
+- `yfinance` may be useful for historical OHLCV, volume, analyst target,
+  upgrades/downgrades, holders, sector, screener, and news-style market data.
+  It should remain an optional adapter behind graceful import, not a core
+  dependency. The project is an unofficial Yahoo Finance wrapper, so every
+  payload must keep source metadata, warnings, and provider-failure fallback.
+- The first useful integration is not a new LLM agent. It is a deterministic
+  technical-feature layer that can consume historical price series from any
+  provider and emit returns, drawdown, volume trend, moving-average state,
+  volatility state, and relative strength versus an index benchmark.
+
 ### Macro Signal Providers
 
 The `MacroContextLLMAgent` can be fed optional live macro signals:

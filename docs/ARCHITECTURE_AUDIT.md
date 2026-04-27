@@ -15,7 +15,7 @@ Near-term product vertical stays **HK innovative-drug biotech**. Cross-market
 and cross-sector expansion is an explicit non-goal for the next sprint so the
 agent topology can stabilize on one disclosure style before generalization.
 
-Audit date: 2026-04-24.
+Audit date: 2026-04-27.
 
 ## Executive Conclusion
 
@@ -25,9 +25,10 @@ Current system is **partially aligned**:
   agents for pipeline/financial/competition/macro/skeptic/investment thesis,
   plus the first valuation pod and report-quality implementation.
 - **Partially aligned:** report synthesis and quality review exist, but still
-  rely heavily on deterministic rendering. The latest acceptance sweep also
-  shows the valuation pod overuses conservative rNPV as the only fair-value
-  anchor for pre-revenue biotech.
+  rely heavily on deterministic rendering. Stage A+ valuation calibration now
+  separates conservative rNPV floor, market-implied value, and repricing
+  scenarios, but the dedicated Stage B agents that explain those drivers are
+  not implemented yet.
 - **Not aligned yet:** no `strategic-economics-agent`, no
   `market-expectations-agent`, no `market-regime-timing-agent`, no standalone
   LLM `data-collector-agent`, and no standalone LLM `catalyst-agent`.
@@ -113,19 +114,19 @@ multi-LLM investment committee.
   - Data collection quality and source triage (extraction audit module).
   - Strategic economics and market expectations.
 
-## Consistency Scorecard (as of 2026-04-24)
+## Consistency Scorecard (as of 2026-04-27)
 
 - Runtime orchestration consistency: **High**
 - Agent role completeness vs target vision: **Medium**
-- Valuation architecture completeness: **Medium-High** (pod exists, but
-  Stage A+ calibration must fix biotech valuation framing)
+- Valuation architecture completeness: **High for Stage A** (pod exists and
+  Stage A+ framing separates rNPV floor, market-implied value, and repricing)
 - Report synthesis/editorial separation: **Medium**
 - One-command UX consistency: **High**
 
 ## Key Gaps (Must Fix First)
 
-1. Valuation pod role boundaries are not yet strict enough:
-   commercial/rNPV/balance-sheet can collapse into the same rNPV range.
+1. Missing deterministic market technical feature layer to feed Stage B
+   timing and expectation agents without provider noise in prompts.
 2. Missing strategic-economics and market-expectations layers, so reports
    cannot yet explain sustained biotech valuation bands above conservative
    rNPV.
@@ -139,7 +140,7 @@ multi-LLM investment committee.
 The staging below is the committed plan. Sprint-level execution lives in
 `docs/ROADMAP.md` under Sprint 6, Sprint 7, Sprint 8.
 
-### Stage A (Active in Sprint 6) — highest priority
+### Stage A (Sprint 6) — implemented baseline
 
 - Add valuation pod contracts and wire into AgentGraph:
   - `valuation-commercial-agent`
@@ -153,7 +154,7 @@ The staging below is the committed plan. Sprint-level execution lives in
     finding.
   - Emits `publish_gate` and hard-block reasons.
 
-### Stage A+ (Sprint 6 closeout)
+### Stage A+ (Sprint 6 closeout) — implemented baseline
 
 - Recalibrate the valuation pod so it stops treating conservative rNPV as
   the only fair-value anchor for pre-revenue innovative-drug companies.
@@ -167,6 +168,19 @@ The staging below is the committed plan. Sprint-level execution lives in
     all of them into a single target price.
 - Update `report-quality-agent` to flag misuse of rNPV as the only biotech
   valuation standard, not merely numerical disagreement.
+
+### Stage B data-feature prework (next)
+
+- Add a deterministic technical-feature layer before creating the
+  `market-regime-timing-agent`.
+- Keep the feature layer provider-neutral: it can consume historical OHLCV from
+  raw Yahoo endpoints, future licensed feeds, or optional `yfinance`.
+- Required initial outputs: 1m/3m/6m/12m returns, volume trend, 52-week
+  drawdown, moving-average state, volatility state, and relative strength
+  versus HSI when a benchmark series is present.
+- Do not introduce `TradingAgents` or LangGraph as runtime dependencies in this
+  step. Borrow debate, memory, and checkpoint ideas later if the current
+  `AgentGraph` becomes insufficient.
 
 ### Stage B (Sprint 7)
 

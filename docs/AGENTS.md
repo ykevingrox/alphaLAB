@@ -588,8 +588,8 @@ the planned k-line specialist into one timing layer.
 Inputs:
 
 - Existing `macro-context` output
-- Deterministic technical timing outputs (trend, support/resistance, moving
-  averages, relative strength, drawdown)
+- Deterministic technical feature payloads (returns, volume trend,
+  moving-average state, volatility state, relative strength, drawdown)
 - Sector sentiment, liquidity, valuation-band, and fund-flow proxies when
   available
 
@@ -607,6 +607,9 @@ Boundaries:
 
 - Must remain research-only and must NOT produce entry/exit orders.
 - Must keep long-term fundamental view separate from current timing view.
+- Must not fetch market data directly. It consumes source-backed provider
+  payloads and deterministic feature outputs so provider failures stay outside
+  the prompt.
 
 ## Report Synthesizer Agent
 

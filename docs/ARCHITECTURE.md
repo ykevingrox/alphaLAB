@@ -235,10 +235,24 @@ Current architecture consistency note:
 - Current runtime is a hybrid state: pipeline/competition/macro specialists,
   scientific-skeptic, and investment-thesis are already LLM-based; the
   monolithic `valuation-specialist` has been decomposed into the Sprint 6
-  valuation pod. The latest acceptance artifacts show the pod runs, but the
-  valuation framing still over-treats conservative rNPV as the only fair-value
-  anchor. Stage B now adds strategic economics, market expectations, and
-  regime/timing agents before broadening final synthesis.
+  valuation pod. Stage A+ calibration now separates conservative rNPV floor,
+  market-implied value, and scenario repricing range. Stage B adds strategic
+  economics, catalysts, market expectations, and regime/timing agents before
+  broadening final synthesis.
+
+## External Framework Stance
+
+External projects can inform adapters and patterns, but they should not replace
+the current lightweight runtime without a clear acceptance reason.
+
+- `yfinance` is a candidate optional data adapter for historical price, volume,
+  analyst, holder, and sector data. It belongs behind provider-neutral
+  interfaces and graceful degradation because it is an unofficial Yahoo Finance
+  wrapper.
+- `TradingAgents` is architecture inspiration rather than a dependency for the
+  next sprint. Useful ideas include specialist analyst teams, bull/bear debate,
+  model-tier separation, decision logs, and checkpointing. The current
+  `AgentGraph` remains the default orchestration layer.
 
 ## MVP Runtime
 

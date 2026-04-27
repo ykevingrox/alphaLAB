@@ -323,17 +323,17 @@ with token counts, latency, and a run-level cost summary.
 
 ## Next Execution Plan
 
-**Active sprint:** Sprint 6 — valuation pod + report-quality agent
-(Stage A of the architecture audit). Full detail in the Sprint 6 section
-below. Sprints 1-5 are largely closed at baseline level and continue as
-quality-hardening backlog.
+**Active sprint:** Stage B prework — deterministic market technical feature
+layer, then market-expectations and market-regime/timing agents. Sprint 6
+Stage A is implemented at baseline level and remains open only for calibration
+hardening.
 
 **Doc discipline:** Each sprint below lists **implementation status** so
 this section stays aligned with the repo. Update statuses when scope
 changes.
 
-**Last status pass:** 2026-04-24 (Stage A planning: valuation pod +
-report-quality agent committed as Sprint 6).
+**Last status pass:** 2026-04-27 (Stage A+ valuation calibration committed;
+external repo review added for `yfinance` and `TradingAgents`).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -1155,12 +1155,41 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
   - `09606.HK` run `20260424T094304Z`: `publish_gate=review_required`
   - `02142.HK` run `20260424T094508Z`: `publish_gate=block`
   - `09887.HK` run `20260424T094708Z`: `publish_gate=block`
-  - Remaining closeout item is S6.6: fix biotech valuation framing and
-    component role boundaries before targeting `{pass, review_required}`.
+- Follow-up calibration committed after that sweep:
+  - `6207c61` exposes component methods/ranges and separates conservative
+    rNPV floor, market-implied value, and scenario repricing range.
+  - Live `09887.HK --json --no-save` smoke after calibration produced
+    `publish_gate=review_required`, with no duplicate component ranges.
+  - A fresh three-ticker saved acceptance sweep is optional before declaring a
+    release tag, but it is no longer the next development blocker.
+
+### Stage B Prework: Market Technical Feature Layer
+
+**Sprint status:** next implementation checkpoint.
+
+Build deterministic market features before adding the LLM timing agent. This
+keeps provider volatility out of prompts and gives both
+`market-expectations-agent` and `market-regime-timing-agent` a stable payload.
+
+- Provider-neutral input: historical OHLCV for the company and, when
+  available, a benchmark such as HSI or Hang Seng Biotech.
+- Required initial outputs:
+  - 1m/3m/6m/12m returns.
+  - Drawdown from 52-week high.
+  - Volume trend.
+  - Moving-average state.
+  - Volatility state.
+  - Relative strength versus benchmark.
+- Source discipline: every payload carries provider label, source symbol,
+  retrieved-at timestamp, window, and warnings.
+- `yfinance` may be prototyped as an optional provider after the feature
+  contract exists. It must not be a required dependency.
+- `TradingAgents` is not a dependency for this checkpoint. Keep using the
+  current custom `AgentGraph`.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** not started. Sprint 6 must close first.
+**Sprint status:** not started. Stage B prework should land first.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1179,8 +1208,9 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
   into research-only timing labels (`favorable`, `neutral`, `fragile`,
   `avoid_chasing`, `de_risk_watch`).
 
-Sprint-7 execution will be detailed when Sprint 6 closes. The target final
-memo shape must keep two conclusions separate:
+Sprint-7 agent execution should be detailed after the deterministic technical
+feature payload lands. The target final memo shape must keep two conclusions
+separate:
 
 1. `Fundamental view`: whether the company belongs in avoid/watchlist/core
    research pools.
