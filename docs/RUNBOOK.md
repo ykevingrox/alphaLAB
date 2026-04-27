@@ -120,6 +120,8 @@ Quick-mode behavior:
 - The monolithic `valuation-specialist` remains available for
   reproducibility via `company-report --llm-agents valuation-specialist`,
   but is no longer the default quick-report valuation path.
+- `market-regime-timing` is available as an opt-in Stage B scaffold for
+  `company-report --llm-agents ...`; it is not in quick `report` defaults yet.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
   explicit terminal fallback output.
 
@@ -544,6 +546,6 @@ If validation warns about placeholders:
   counter-thesis and thesis summaries, but they do not yet evaluate trial
   design, endpoints, efficacy, or safety from source documents directly.
 - No LLM `strategic-economics-agent`, `catalyst-agent`,
-  `market-expectations-agent`, `market-regime-timing-agent`, or
-  `data-collector-agent`
-  yet; tracked as Stage B / Stage C in `docs/ROADMAP.md`.
+  `market-expectations-agent`, or `data-collector-agent` yet; tracked as
+  Stage B / Stage C in `docs/ROADMAP.md`. `market-regime-timing` exists as an
+  opt-in scaffold, but is not quick-report default yet.

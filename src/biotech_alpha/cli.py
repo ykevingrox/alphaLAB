@@ -382,6 +382,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "financial-triage",
             "competition-triage",
             "macro-context",
+            "market-regime-timing",
             "investment-thesis",
             "valuation-specialist",
             "valuation-commercial",

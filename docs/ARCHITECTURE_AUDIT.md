@@ -27,11 +27,11 @@ Current system is **partially aligned**:
 - **Partially aligned:** report synthesis and quality review exist, but still
   rely heavily on deterministic rendering. Stage A+ valuation calibration now
   separates conservative rNPV floor, market-implied value, and repricing
-  scenarios, but the dedicated Stage B agents that explain those drivers are
-  not implemented yet.
+  scenarios. Stage B has started with technical features, an optional
+  yfinance history adapter, and an opt-in market-regime/timing scaffold.
 - **Not aligned yet:** no `strategic-economics-agent`, no
-  `market-expectations-agent`, no `market-regime-timing-agent`, no standalone
-  LLM `data-collector-agent`, and no standalone LLM `catalyst-agent`.
+  `market-expectations-agent`, no standalone LLM `data-collector-agent`, and
+  no standalone LLM `catalyst-agent`.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -125,14 +125,14 @@ multi-LLM investment committee.
 
 ## Key Gaps (Must Fix First)
 
-1. Missing deterministic market technical feature layer to feed Stage B
-   timing and expectation agents without provider noise in prompts.
+1. Real technical-feature payloads are not yet threaded into default report
+   LLM facts.
 2. Missing strategic-economics and market-expectations layers, so reports
    cannot yet explain sustained biotech valuation bands above conservative
    rNPV.
 3. Missing LLM catalyst specialist.
-4. Market regime/timing is split between macro context and deterministic
-   technical outputs rather than a unified research-only timing view.
+4. Market regime/timing scaffold exists but is not in quick-report defaults
+   and still lacks live technical/sentiment payloads.
 5. Data-collector role not represented as an explicit LLM agent contract.
 
 ## Migration Plan
@@ -169,15 +169,17 @@ The staging below is the committed plan. Sprint-level execution lives in
 - Update `report-quality-agent` to flag misuse of rNPV as the only biotech
   valuation standard, not merely numerical disagreement.
 
-### Stage B data-feature prework (next)
+### Stage B data-feature prework (implemented baseline)
 
-- Add a deterministic technical-feature layer before creating the
-  `market-regime-timing-agent`.
+- Add a deterministic technical-feature layer before promoting the
+  `market-regime-timing-agent` into default report flows.
 - Keep the feature layer provider-neutral: it can consume historical OHLCV from
   raw Yahoo endpoints, future licensed feeds, or optional `yfinance`.
 - Required initial outputs: 1m/3m/6m/12m returns, volume trend, 52-week
   drawdown, moving-average state, volatility state, and relative strength
   versus HSI when a benchmark series is present.
+- Add optional yfinance history adapter behind graceful import and the
+  `market` optional dependency extra.
 - Do not introduce `TradingAgents` or LangGraph as runtime dependencies in this
   step. Borrow debate, memory, and checkpoint ideas later if the current
   `AgentGraph` becomes insufficient.
@@ -208,6 +210,8 @@ The staging below is the committed plan. Sprint-level execution lives in
     liquidity, and fund-flow signals.
   - Outputs research-only timing labels such as `favorable`, `neutral`,
     `fragile`, `avoid_chasing`, and `de_risk_watch`.
+  - First opt-in scaffold is implemented; default report integration awaits
+    source-backed technical feature threading.
 
 ### Stage C (Sprint 8)
 

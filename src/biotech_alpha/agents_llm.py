@@ -1180,6 +1180,120 @@ MACRO_CONTEXT_PROMPT = StructuredPrompt(
 )
 
 
+MARKET_REGIME_TIMING_PROMPT = StructuredPrompt(
+    name="market_regime_timing",
+    tags=("market", "timing", "technical", "llm"),
+    system=(
+        "You are a market-regime and technical-timing analyst for a long-term "
+        "biotech equity research workflow. You combine macro context, "
+        "deterministic technical features, and available sentiment proxies into "
+        "a research-only timing view. You must keep the long-term fundamental "
+        "view separate from current price-action/regime context.\n\n"
+        "Ground rules:\n"
+        "- Work only from the provided payloads. Do NOT invent prices, "
+        "support/resistance levels, flows, index moves, or headlines.\n"
+        "- If technical_feature_payload is missing, state that the timing view "
+        "is limited by missing price-history features.\n"
+        "- If macro context is insufficient, carry that limitation forward "
+        "instead of guessing.\n"
+        "- No trading instructions. Do NOT say buy, sell, enter, exit, stop "
+        "loss, or position size. Use research-only labels and monitoring "
+        "language.\n"
+        "- Prefer concrete trigger wording tied to provided fields, such as "
+        "3m return, 52w drawdown, moving_average_state, HSI/HSBIO trend, "
+        "volatility state, and source warnings.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: timing_view, horizon, macro_regime, technical_state, "
+        "sentiment_state, key_triggers, invalidation_signals, confidence, "
+        "needs_human_review.\n"
+        "- timing_view is exactly one of: favorable, neutral, fragile, "
+        "avoid_chasing, de_risk_watch.\n"
+        "- horizon is exactly one of: 1-3 months, 3-6 months, 6-12 months.\n"
+        "- key_triggers and invalidation_signals are arrays of concise strings.\n"
+        "- Never nest output inside analysis/result/market_regime_timing."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Macro context payload:\n${macro_context}\n\n"
+        "Macro LLM payload, if available:\n${macro_payload}\n\n"
+        "Deterministic technical feature payload:\n${technical_payload}\n\n"
+        "Sentiment / fund-flow proxy payload, if available:\n${sentiment_payload}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"timing_view\": "
+        "\"favorable|neutral|fragile|avoid_chasing|de_risk_watch\",\n"
+        "  \"horizon\": \"1-3 months|3-6 months|6-12 months\",\n"
+        "  \"macro_regime\": \"<macro regime or insufficient_data>\",\n"
+        "  \"technical_state\": \"<technical state or insufficient_data>\",\n"
+        "  \"sentiment_state\": \"<sentiment/fund-flow state or unknown>\",\n"
+        "  \"key_triggers\": [\"<monitoring trigger>\"],\n"
+        "  \"invalidation_signals\": [\"<signal that would weaken timing view>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "timing_view",
+            "horizon",
+            "macro_regime",
+            "technical_state",
+            "sentiment_state",
+            "key_triggers",
+            "invalidation_signals",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "timing_view": {
+                "type": "string",
+                "enum": [
+                    "favorable",
+                    "neutral",
+                    "fragile",
+                    "avoid_chasing",
+                    "de_risk_watch",
+                ],
+            },
+            "horizon": {
+                "type": "string",
+                "enum": ["1-3 months", "3-6 months", "6-12 months"],
+            },
+            "macro_regime": {"type": "string", "min_length": 2},
+            "technical_state": {"type": "string", "min_length": 2},
+            "sentiment_state": {"type": "string", "min_length": 2},
+            "key_triggers": {
+                "type": "array",
+                "min_items": 1,
+                "max_items": 10,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 220,
+                },
+            },
+            "invalidation_signals": {
+                "type": "array",
+                "min_items": 1,
+                "max_items": 10,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 220,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
 @dataclass
 class MacroContextLLMAgent(Agent):
     """LLM agent that reads a macro-context stub and frames the regime.
@@ -1285,6 +1399,167 @@ class MacroContextLLMAgent(Agent):
             "as_of": context.as_of_date or "n/a",
             "macro_context": _json_block(store.get("macro_context")),
         }
+
+
+@dataclass
+class MarketRegimeTimingLLMAgent(Agent):
+    """LLM agent for research-only market regime and timing labels."""
+
+    llm_client: LLMClient
+    name: str = "market_regime_timing_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "market_regime_timing_llm_finding",
+        "market_regime_timing_payload",
+    )
+    max_tokens: int | None = 1100
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("MarketRegimeTimingLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("technical_feature_payload"), dict):
+            warnings.append("fallback_context:technical_feature_payload")
+        has_macro_payload = isinstance(store.get("macro_context_payload"), dict)
+        has_macro_context = isinstance(store.get("macro_context"), dict)
+        if not has_macro_payload and not has_macro_context:
+            warnings.append("fallback_context:macro_context")
+
+        system, user = MARKET_REGIME_TIMING_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = MARKET_REGIME_TIMING_PROMPT.parse_response(
+                call.response_text
+            )
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _market_regime_timing_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "market_regime_timing_llm_finding": finding,
+                "market_regime_timing_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "macro_context": _json_block(store.get("macro_context")),
+            "macro_payload": _json_block(store.get("macro_context_payload")),
+            "technical_payload": _json_block(
+                store.get("technical_feature_payload")
+            ),
+            "sentiment_payload": _json_block(
+                store.get("market_sentiment_payload")
+            ),
+        }
+
+
+def _market_regime_timing_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    timing_view = str(payload.get("timing_view") or "neutral").strip()
+    horizon = str(payload.get("horizon") or "3-6 months").strip()
+    technical_state = str(payload.get("technical_state") or "unknown").strip()
+    macro_regime = str(payload.get("macro_regime") or "unknown").strip()
+    summary = (
+        f"Timing view: {timing_view} over {horizon}. "
+        f"Macro={macro_regime}; technical={technical_state}."
+    )
+
+    risks: list[str] = []
+    if timing_view in {"fragile", "avoid_chasing", "de_risk_watch"}:
+        risks.append(f"[timing_view] {timing_view}")
+    for signal in payload.get("invalidation_signals") or []:
+        text = str(signal).strip()
+        if text:
+            risks.append(f"[invalidation] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Market regime/timing analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
 
 
 def _macro_context_finding_from_payload(
@@ -2173,6 +2448,9 @@ class ReportQualityLLMAgent(Agent):
             ),
             "valuation_committee": _finding_snapshot(
                 store.get("valuation_committee_llm_finding")
+            ),
+            "market_regime_timing": _finding_snapshot(
+                store.get("market_regime_timing_llm_finding")
             ),
         }
         system, user = REPORT_QUALITY_PROMPT.render(

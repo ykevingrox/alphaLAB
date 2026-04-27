@@ -585,6 +585,12 @@ Purpose: combine macro, technical, sector sentiment, and fund-flow context into
 a research-only timing view. This absorbs the current `macro-context` role and
 the planned k-line specialist into one timing layer.
 
+Current implementation note: the first LLM scaffold is wired as optional
+`market-regime-timing`. It consumes existing `macro_context`, optional
+`macro_context_payload`, and optional `technical_feature_payload`. It is not
+yet in the quick-report default stack because technical payload collection is
+still opt-in/provider-dependent.
+
 Inputs:
 
 - Existing `macro-context` output

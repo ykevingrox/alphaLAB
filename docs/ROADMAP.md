@@ -1186,14 +1186,18 @@ keeps provider volatility out of prompts and gives both
 - **Done** — Optional yfinance adapter prototype behind graceful import and the
   `market` optional dependency extra. It is not wired into the default report
   path yet.
-- **Next** — Create the first `market-regime-timing-agent` scaffold consuming
-  macro context plus `technical_feature_payload`.
+- **Done** — First `market-regime-timing-agent` scaffold consumes macro
+  context plus optional `technical_feature_payload` and emits research-only
+  timing labels. It is opt-in, not quick-report default.
+- **Next** — Thread real technical-feature payloads into report runs, then add
+  `market-expectations-agent`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** not started. Stage B prework should land first.
+**Sprint status:** started. Market-regime/timing scaffold exists; market
+expectations and strategic/catalyst layers are pending.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1210,11 +1214,11 @@ keeps provider volatility out of prompts and gives both
 - `market-regime-timing-agent`: combines the existing `macro-context` role,
   planned k-line framing, sector sentiment, liquidity, and fund-flow proxies
   into research-only timing labels (`favorable`, `neutral`, `fragile`,
-  `avoid_chasing`, `de_risk_watch`).
+  `avoid_chasing`, `de_risk_watch`). First opt-in scaffold is implemented;
+  live technical-feature collection still needs to be threaded into report
+  facts.
 
-Sprint-7 agent execution should be detailed after the deterministic technical
-feature payload lands. The target final memo shape must keep two conclusions
-separate:
+Sprint-7 agent execution should keep two conclusions separate:
 
 1. `Fundamental view`: whether the company belongs in avoid/watchlist/core
    research pools.

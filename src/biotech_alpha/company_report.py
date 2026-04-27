@@ -505,6 +505,7 @@ SUPPORTED_LLM_AGENTS = (
     "financial-triage",
     "competition-triage",
     "macro-context",
+    "market-regime-timing",
     "investment-thesis",
     "valuation-specialist",
     "valuation-commercial",
@@ -539,6 +540,7 @@ def _run_llm_agent_pipeline(
         FinancialTriageLLMAgent,
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
+        MarketRegimeTimingLLMAgent,
         PipelineTriageLLMAgent,
         ProvisionalFinancialLLMAgent,
         ProvisionalPipelineLLMAgent,
@@ -643,6 +645,16 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "market-regime-timing" in llm_agents:
+        timing_deps = ["publish_research_facts"]
+        if "macro-context" in llm_agents:
+            timing_deps.append("macro_context_llm_agent")
+        graph.add(
+            MarketRegimeTimingLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(timing_deps),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
         graph.add(
             ScientificSkepticLLMAgent(
@@ -715,6 +727,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("valuation_balance_sheet_llm_agent")
         if "valuation-committee" in llm_agents:
             quality_deps.append("valuation_committee_llm_agent")
+        if "market-regime-timing" in llm_agents:
+            quality_deps.append("market_regime_timing_llm_agent")
         graph.add(
             ReportQualityLLMAgent(
                 llm_client=llm_client,

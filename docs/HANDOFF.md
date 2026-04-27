@@ -47,6 +47,7 @@ investment committee.
     benchmark OHLCV for relative strength.
   - `biotech_alpha.yfinance_provider` is an optional historical-data adapter
     behind graceful import and the `market` optional dependency extra.
+  - Optional `market-regime-timing` LLM scaffold is wired for company-report.
 - Working tree should be clean before new development. Check with:
 
 ```bash
@@ -80,20 +81,19 @@ Decision for now:
 Current task: continue Stage B without introducing unnecessary external
 dependencies.
 
-Next action: scaffold the first `market-regime-timing-agent` so it consumes
-macro context plus technical feature payloads and emits research-only timing
-labels.
+Next action: thread real technical feature payloads into report LLM facts, then
+start `market-expectations-agent`.
 
 Recommended scope:
 
-1. Add an LLM agent contract and prompt for `market-regime-timing-agent`.
-2. Inputs: existing `macro_context` / macro LLM payload plus optional
-   `technical_feature_payload`.
-3. Outputs: `timing_view`, `horizon`, `macro_regime`, `technical_state`,
-   `sentiment_state`, `key_triggers`, `invalidation_signals`, `confidence`,
-   `needs_human_review`.
-4. Keep it research-only; no entry/exit orders.
-5. Tests should use `FakeLLMClient`; no live market or LLM calls.
+1. Decide whether the first report-threading path should be CSV input,
+   optional yfinance, or provider callback injection.
+2. Publish `technical_feature_payload` in `build_llm_agent_facts` only when
+   source-backed rows are available.
+3. Keep failures warning-only and default report behavior unchanged.
+4. After that, add `market-expectations-agent` over valuation pod +
+   technical/macro context.
+5. Tests should use mocked providers; no live market or LLM calls.
 
 Acceptance criteria:
 
@@ -125,8 +125,7 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. `market-regime-timing-agent` consuming macro + technical + sentiment
-   payloads.
+1. Thread source-backed technical feature payloads into report LLM facts.
 2. `market-expectations-agent` explaining market-implied assumptions and
    valuation-band context.
 3. `strategic-economics-agent`.
