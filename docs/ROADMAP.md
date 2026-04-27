@@ -1165,24 +1165,25 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 ### Stage B Prework: Market Technical Feature Layer
 
-**Sprint status:** next implementation checkpoint.
+**Sprint status:** implemented as deterministic baseline; provider wiring is
+next.
 
 Build deterministic market features before adding the LLM timing agent. This
 keeps provider volatility out of prompts and gives both
 `market-expectations-agent` and `market-regime-timing-agent` a stable payload.
 
-- Provider-neutral input: historical OHLCV for the company and, when
+- **Done** — Provider-neutral input: historical OHLCV for the company and, when
   available, a benchmark such as HSI or Hang Seng Biotech.
-- Required initial outputs:
+- **Done** — Required initial outputs:
   - 1m/3m/6m/12m returns.
   - Drawdown from 52-week high.
   - Volume trend.
   - Moving-average state.
   - Volatility state.
   - Relative strength versus benchmark.
-- Source discipline: every payload carries provider label, source symbol,
+- **Done** — Source discipline: every payload carries provider label, source symbol,
   retrieved-at timestamp, window, and warnings.
-- `yfinance` may be prototyped as an optional provider after the feature
+- **Next** — `yfinance` may be prototyped as an optional provider after the feature
   contract exists. It must not be a required dependency.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.

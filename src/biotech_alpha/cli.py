@@ -851,6 +851,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="OHLCV CSV path with at least close column.",
     )
     technical_parser.add_argument(
+        "--symbol",
+        help="Optional company/security symbol for the feature payload.",
+    )
+    technical_parser.add_argument(
+        "--provider",
+        default="csv",
+        help="Provider label for the feature payload. Defaults to csv.",
+    )
+    technical_parser.add_argument(
+        "--benchmark-ohlcv",
+        help="Optional benchmark OHLCV CSV path for relative strength.",
+    )
+    technical_parser.add_argument(
+        "--benchmark-symbol",
+        help="Optional benchmark symbol label, such as ^HSI.",
+    )
+    technical_parser.add_argument(
         "--output",
         help="Optional output JSON path.",
     )
@@ -1469,7 +1486,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "technical-timing":
-        payload = technical_timing_from_ohlcv(args.ohlcv)
+        payload = technical_timing_from_ohlcv(
+            args.ohlcv,
+            symbol=args.symbol,
+            provider=args.provider,
+            benchmark_path=args.benchmark_ohlcv,
+            benchmark_symbol=args.benchmark_symbol,
+        )
         if args.output:
             path = Path(args.output)
             path.parent.mkdir(parents=True, exist_ok=True)

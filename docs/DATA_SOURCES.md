@@ -183,10 +183,11 @@ Potential optional adapter:
   It should remain an optional adapter behind graceful import, not a core
   dependency. The project is an unofficial Yahoo Finance wrapper, so every
   payload must keep source metadata, warnings, and provider-failure fallback.
-- The first useful integration is not a new LLM agent. It is a deterministic
-  technical-feature layer that can consume historical price series from any
-  provider and emit returns, drawdown, volume trend, moving-average state,
-  volatility state, and relative strength versus an index benchmark.
+- The first useful integration is the deterministic
+  `biotech_alpha.technical_features` layer. It consumes historical price
+  series from any provider and emits returns, drawdown, volume trend,
+  moving-average state, volatility state, and relative strength versus an index
+  benchmark.
 
 ### Macro Signal Providers
 

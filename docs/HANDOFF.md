@@ -40,6 +40,11 @@ investment committee.
     market-implied value, and scenario repricing range.
   - A market-expectation gap alone should produce `review_required`, not a
     mechanical `block`.
+- Stage B prework has started:
+  - `biotech_alpha.technical_features` computes provider-neutral technical
+    payloads from OHLCV rows.
+  - `technical-timing` CLI can attach symbol/provider metadata and optional
+    benchmark OHLCV for relative strength.
 - Working tree should be clean before new development. Check with:
 
 ```bash
@@ -70,27 +75,30 @@ Decision for now:
 
 ## Next Best Action
 
-Current task: plan and start Stage B without introducing unnecessary external
+Current task: continue Stage B without introducing unnecessary external
 dependencies.
 
-Next action: implement the deterministic market technical feature layer that
-will feed the future `market-regime-timing-agent` and
-`market-expectations-agent`.
+Next action: prototype an optional yfinance historical-data adapter behind
+graceful import, feeding the already implemented deterministic technical
+feature layer.
 
 Recommended scope:
 
-1. Add a provider-neutral technical feature module, not an LLM agent first.
-2. Input: historical OHLCV series from an adapter.
-3. Output: source-backed dict with 1m/3m/6m/12m returns, volume trend,
-   drawdown from 52-week high, moving-average state, volatility state, and
-   relative strength vs HSI when benchmark data is available.
-4. Keep provider optional. Existing Tencent/Yahoo raw providers remain.
-5. Tests must use mocked data, not live network.
+1. Keep `yfinance` optional via graceful import or optional extra; no hard
+   dependency in the default install.
+2. Convert yfinance history rows into `OhlcvBar` values and then call
+   `biotech_alpha.technical_features.technical_feature_payload`.
+3. Preserve provider label, source symbol, retrieval time, window, and
+   warnings.
+4. Existing Tencent/Yahoo raw quote providers remain unchanged.
+5. Tests must mock the yfinance module / history dataframe shape; no live
+   network test.
 
 Acceptance criteria:
 
 - `--no-llm` quick report still works.
-- New feature output is deterministic, source-tagged, and warning-friendly.
+- Existing technical feature output remains deterministic, source-tagged, and
+  warning-friendly.
 - No generated runtime files, caches, memos, traces, or raw downloads are
   committed.
 - Docs name how the feature feeds Stage B agents.
@@ -116,15 +124,14 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Deterministic market technical feature layer.
-2. Optional yfinance adapter review / prototype behind graceful import.
-3. `market-regime-timing-agent` consuming macro + technical + sentiment
+1. Optional yfinance adapter prototype behind graceful import.
+2. `market-regime-timing-agent` consuming macro + technical + sentiment
    payloads.
-4. `market-expectations-agent` explaining market-implied assumptions and
+3. `market-expectations-agent` explaining market-implied assumptions and
    valuation-band context.
-5. `strategic-economics-agent`.
-6. `catalyst-agent`.
-7. TradingAgents-inspired bull/bear debate and decision-log memory, after the
+4. `strategic-economics-agent`.
+5. `catalyst-agent`.
+6. TradingAgents-inspired bull/bear debate and decision-log memory, after the
    Stage B agents have stable payloads.
 
 ## Do Not Break

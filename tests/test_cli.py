@@ -1246,17 +1246,42 @@ class QuickReportCliTest(unittest.TestCase):
     def test_technical_timing_command_outputs_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             csv_path = Path(tmpdir) / "ohlcv.csv"
+            benchmark_path = Path(tmpdir) / "benchmark.csv"
             lines = ["date,open,high,low,close,volume"]
+            benchmark_lines = ["date,open,high,low,close,volume"]
             for idx in range(1, 31):
                 close = 10 + idx * 0.1
                 lines.append(f"2026-04-{idx:02d},10,11,9,{close:.2f},100000")
+                benchmark_close = 20 + idx * 0.01
+                benchmark_lines.append(
+                    f"2026-04-{idx:02d},20,21,19,{benchmark_close:.2f},200000"
+                )
             csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            benchmark_path.write_text(
+                "\n".join(benchmark_lines) + "\n", encoding="utf-8"
+            )
             output = io.StringIO()
             with redirect_stdout(output):
-                exit_code = main(["technical-timing", "--ohlcv", str(csv_path)])
+                exit_code = main(
+                    [
+                        "technical-timing",
+                        "--ohlcv",
+                        str(csv_path),
+                        "--symbol",
+                        "09606.HK",
+                        "--benchmark-ohlcv",
+                        str(benchmark_path),
+                        "--benchmark-symbol",
+                        "^HSI",
+                    ]
+                )
             payload = json.loads(output.getvalue())
             self.assertEqual(exit_code, 0)
             self.assertEqual(payload["guidance_type"], "research_only")
+            self.assertEqual(payload["symbol"], "09606.HK")
+            self.assertEqual(
+                payload["relative_strength"]["benchmark_symbol"], "^HSI"
+            )
 
     def test_memo_diff_bilingual_and_export_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

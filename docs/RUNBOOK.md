@@ -455,6 +455,25 @@ The outputs include:
 These outputs should be used as research guidance only, not trading
 instructions.
 
+## Technical Feature Payload
+
+The standalone `technical-timing` command converts OHLCV CSV files into the
+deterministic market feature payload used by future Stage B market agents:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli technical-timing \
+  --ohlcv data/input/09606_hk_ohlcv.csv \
+  --symbol 09606.HK \
+  --benchmark-ohlcv data/input/hsi_ohlcv.csv \
+  --benchmark-symbol ^HSI
+```
+
+The payload is research-only and source-backed. It includes 1m/3m/6m/12m
+returns, drawdown from 52-week high, volume trend, moving-average state,
+volatility state, relative strength versus benchmark, warnings, and provider
+metadata. Provider failures should be handled before this layer; this command
+only computes features from rows it is given.
+
 ## Troubleshooting
 
 If ClinicalTrials.gov calls fail:
