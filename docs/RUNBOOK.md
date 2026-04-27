@@ -22,6 +22,15 @@ python3 -m venv .venv
 Runtime dependencies: `anthropic`, `beautifulsoup4`, `openai`, `pypdf`,
 `requests`. No other third-party runtime dependencies are required.
 
+Optional market-history adapter:
+
+```bash
+.venv/bin/pip install -e ".[market]"
+```
+
+The `market` extra installs `yfinance` for historical OHLCV adapters. The core
+CLI still works without it.
+
 ## LLM Setup
 
 Quick-report (`report ...`) and full LLM agents require API credentials.
@@ -473,6 +482,11 @@ returns, drawdown from 52-week high, volume trend, moving-average state,
 volatility state, relative strength versus benchmark, warnings, and provider
 metadata. Provider failures should be handled before this layer; this command
 only computes features from rows it is given.
+
+For code paths that already installed the optional `market` extra,
+`biotech_alpha.yfinance_provider` can fetch yfinance history and feed the same
+technical-feature layer. It is intentionally not wired into the default report
+path yet; failures return `None` rather than aborting the report.
 
 ## Troubleshooting
 

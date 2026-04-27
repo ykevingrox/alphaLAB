@@ -176,18 +176,18 @@ For Hong Kong tickers the quick-report path can attach a live market snapshot
 - All providers degrade gracefully: any failure becomes a validation warning,
   never an exception that aborts the report.
 
-Potential optional adapter:
+Optional historical adapter:
 
 - `yfinance` may be useful for historical OHLCV, volume, analyst target,
   upgrades/downgrades, holders, sector, screener, and news-style market data.
   It should remain an optional adapter behind graceful import, not a core
   dependency. The project is an unofficial Yahoo Finance wrapper, so every
   payload must keep source metadata, warnings, and provider-failure fallback.
-- The first useful integration is the deterministic
-  `biotech_alpha.technical_features` layer. It consumes historical price
-  series from any provider and emits returns, drawdown, volume trend,
-  moving-average state, volatility state, and relative strength versus an index
-  benchmark.
+- `biotech_alpha.yfinance_provider` is the first prototype. It converts
+  yfinance history into `OhlcvBar` values and then uses the deterministic
+  `biotech_alpha.technical_features` layer. The adapter is installed only with
+  the optional `market` extra and returns `None` if yfinance is absent or
+  history fetches fail.
 
 ### Macro Signal Providers
 

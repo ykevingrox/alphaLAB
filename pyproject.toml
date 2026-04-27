@@ -19,6 +19,11 @@ dependencies = [
   "requests>=2.31",
 ]
 
+[project.optional-dependencies]
+market = [
+  "yfinance>=1.0",
+]
+
 [project.scripts]
 biotech-alpha = "biotech_alpha.cli:main"
 

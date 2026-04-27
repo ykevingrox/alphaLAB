@@ -1165,8 +1165,8 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 ### Stage B Prework: Market Technical Feature Layer
 
-**Sprint status:** implemented as deterministic baseline; provider wiring is
-next.
+**Sprint status:** implemented as deterministic baseline plus optional
+yfinance adapter prototype.
 
 Build deterministic market features before adding the LLM timing agent. This
 keeps provider volatility out of prompts and gives both
@@ -1181,10 +1181,13 @@ keeps provider volatility out of prompts and gives both
   - Moving-average state.
   - Volatility state.
   - Relative strength versus benchmark.
-- **Done** — Source discipline: every payload carries provider label, source symbol,
-  retrieved-at timestamp, window, and warnings.
-- **Next** — `yfinance` may be prototyped as an optional provider after the feature
-  contract exists. It must not be a required dependency.
+- **Done** — Source discipline: every payload carries provider label, source
+  symbol, retrieved-at timestamp, window, and warnings.
+- **Done** — Optional yfinance adapter prototype behind graceful import and the
+  `market` optional dependency extra. It is not wired into the default report
+  path yet.
+- **Next** — Create the first `market-regime-timing-agent` scaffold consuming
+  macro context plus `technical_feature_payload`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 

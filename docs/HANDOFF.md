@@ -45,6 +45,8 @@ investment committee.
     payloads from OHLCV rows.
   - `technical-timing` CLI can attach symbol/provider metadata and optional
     benchmark OHLCV for relative strength.
+  - `biotech_alpha.yfinance_provider` is an optional historical-data adapter
+    behind graceful import and the `market` optional dependency extra.
 - Working tree should be clean before new development. Check with:
 
 ```bash
@@ -78,27 +80,26 @@ Decision for now:
 Current task: continue Stage B without introducing unnecessary external
 dependencies.
 
-Next action: prototype an optional yfinance historical-data adapter behind
-graceful import, feeding the already implemented deterministic technical
-feature layer.
+Next action: scaffold the first `market-regime-timing-agent` so it consumes
+macro context plus technical feature payloads and emits research-only timing
+labels.
 
 Recommended scope:
 
-1. Keep `yfinance` optional via graceful import or optional extra; no hard
-   dependency in the default install.
-2. Convert yfinance history rows into `OhlcvBar` values and then call
-   `biotech_alpha.technical_features.technical_feature_payload`.
-3. Preserve provider label, source symbol, retrieval time, window, and
-   warnings.
-4. Existing Tencent/Yahoo raw quote providers remain unchanged.
-5. Tests must mock the yfinance module / history dataframe shape; no live
-   network test.
+1. Add an LLM agent contract and prompt for `market-regime-timing-agent`.
+2. Inputs: existing `macro_context` / macro LLM payload plus optional
+   `technical_feature_payload`.
+3. Outputs: `timing_view`, `horizon`, `macro_regime`, `technical_state`,
+   `sentiment_state`, `key_triggers`, `invalidation_signals`, `confidence`,
+   `needs_human_review`.
+4. Keep it research-only; no entry/exit orders.
+5. Tests should use `FakeLLMClient`; no live market or LLM calls.
 
 Acceptance criteria:
 
 - `--no-llm` quick report still works.
-- Existing technical feature output remains deterministic, source-tagged, and
-  warning-friendly.
+- Existing technical feature and yfinance adapter outputs remain optional,
+  deterministic, source-tagged, and warning-friendly.
 - No generated runtime files, caches, memos, traces, or raw downloads are
   committed.
 - Docs name how the feature feeds Stage B agents.
@@ -124,14 +125,13 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Optional yfinance adapter prototype behind graceful import.
-2. `market-regime-timing-agent` consuming macro + technical + sentiment
+1. `market-regime-timing-agent` consuming macro + technical + sentiment
    payloads.
-3. `market-expectations-agent` explaining market-implied assumptions and
+2. `market-expectations-agent` explaining market-implied assumptions and
    valuation-band context.
-4. `strategic-economics-agent`.
-5. `catalyst-agent`.
-6. TradingAgents-inspired bull/bear debate and decision-log memory, after the
+3. `strategic-economics-agent`.
+4. `catalyst-agent`.
+5. TradingAgents-inspired bull/bear debate and decision-log memory, after the
    Stage B agents have stable payloads.
 
 ## Do Not Break

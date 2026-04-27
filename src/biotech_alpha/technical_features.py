@@ -42,6 +42,7 @@ def technical_feature_payload(
     retrieved_at: str | None = None,
     benchmark_rows: Iterable[OhlcvBar | dict[str, Any]] | None = None,
     benchmark_symbol: str | None = None,
+    initial_warnings: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Build a deterministic technical feature payload from OHLCV rows."""
 
@@ -49,7 +50,11 @@ def technical_feature_payload(
     if len(bars) < 20:
         raise ValueError("OHLCV rows with valid close price must be >= 20")
 
-    warnings: list[str] = []
+    warnings: list[str] = [
+        text.strip()
+        for text in initial_warnings
+        if isinstance(text, str) and text.strip()
+    ]
     closes = [bar.close for bar in bars]
     volumes = [bar.volume for bar in bars if bar.volume is not None]
     latest = bars[-1]
