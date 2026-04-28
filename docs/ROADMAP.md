@@ -323,10 +323,10 @@ with token counts, latency, and a run-level cost summary.
 
 ## Next Execution Plan
 
-**Active sprint:** Stage B prework — deterministic market technical feature
-layer, then market-expectations and market-regime/timing agents. Sprint 6
-Stage A is implemented at baseline level and remains open only for calibration
-hardening.
+**Active sprint:** Stage C — `data-collector-agent` scaffold is implemented;
+next is `report-synthesizer-agent` with deterministic fallback preserved.
+Sprint 6 Stage A and Sprint 7 Stage B are implemented at scaffold level and
+remain open for calibration hardening before quick-report defaults change.
 
 **Doc discipline:** Each sprint below lists **implementation status** so
 this section stays aligned with the repo. Update statuses when scope

@@ -40,7 +40,7 @@ investment committee.
     market-implied value, and scenario repricing range.
   - A market-expectation gap alone should produce `review_required`, not a
     mechanical `block`.
-- Stage B prework has started:
+- Stage B/C scaffold status:
   - `biotech_alpha.technical_features` computes provider-neutral technical
     payloads from OHLCV rows.
   - `technical-timing` CLI can attach symbol/provider metadata and optional
@@ -53,6 +53,8 @@ investment committee.
     and feeds market expectations / valuation committee when requested.
   - Optional `catalyst` LLM scaffold is wired for company-report and consumes
     catalyst calendar plus target-price event-impact payloads.
+  - Optional `data-collector` LLM scaffold is wired for company-report and
+    feeds per-domain evidence verdicts into report quality when requested.
   - `company-report --technical-features yfinance` now threads source-backed
     technical payloads into LLM facts when `market-regime-timing` or
     `market-expectations` is requested.

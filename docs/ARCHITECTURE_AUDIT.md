@@ -127,15 +127,13 @@ multi-LLM investment committee.
 
 ## Key Gaps (Must Fix First)
 
-1. Technical-feature payloads are threaded for opt-in company-report runs, but
-   not yet quick-report defaults.
-2. Missing strategic-economics and market-expectations layers, so reports
-   cannot yet explain sustained biotech valuation bands above conservative
-   rNPV.
-3. Missing LLM catalyst specialist.
-4. Market regime/timing scaffold exists but is not in quick-report defaults
-   and still lacks sentiment/fund-flow payloads.
-5. Data-collector role not represented as an explicit LLM agent contract.
+1. Stage B/C specialist scaffolds are opt-in and not quick-report defaults;
+   calibration is still needed before promoting them.
+2. Market regime/timing still lacks sentiment and fund-flow payloads.
+3. `report-synthesizer-agent` is still missing; memo prose is still mostly
+   deterministic rendering.
+4. Broader document ingestion beyond HKEX annual results is still pending.
+5. Historical catalyst-reaction calibration and backtests are still pending.
 
 ## Migration Plan
 
@@ -417,12 +415,8 @@ Quality-agent scope MUST NOT include:
 
 ## Immediate Next Action
 
-Execute S6.6 in `docs/ROADMAP.md`:
+Execute Sprint 8 in `docs/ROADMAP.md`:
 
-1. Tighten valuation-pod prompts/contracts so commercial, rNPV, and
-   balance-sheet agents cannot all emit the same rNPV-derived range.
-2. Add committee framing for conservative rNPV floor, market-implied value,
-   and scenario repricing range.
-3. Re-run the canonical smoke artifacts on `09606.HK`, `02142.HK`, and
-   `09887.HK`; only true data-quality failures should remain eligible for
-   `publish_gate=block`.
+1. Add `report-synthesizer-agent` with deterministic fallback preserved.
+2. Calibrate the opt-in Stage B/C stack on `09606.HK` and `09887.HK`.
+3. Keep quick `report` defaults unchanged until the new agents are calibrated.

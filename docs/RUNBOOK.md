@@ -120,10 +120,10 @@ Quick-mode behavior:
 - The monolithic `valuation-specialist` remains available for
   reproducibility via `company-report --llm-agents valuation-specialist`,
   but is no longer the default quick-report valuation path.
-- `strategic-economics`, `catalyst`, `market-regime-timing`, and
-  `market-expectations` are available as opt-in Stage B scaffolds for
-  `company-report --llm-agents ...`; they are not in quick `report` defaults
-  yet.
+- `strategic-economics`, `catalyst`, `market-regime-timing`,
+  `market-expectations`, and `data-collector` are available as opt-in
+  scaffolds for `company-report --llm-agents ...`; they are not in quick
+  `report` defaults yet.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
   explicit terminal fallback output.
 
@@ -132,9 +132,9 @@ Architecture note:
 - The target runtime is a multi-LLM-agent collaborative topology (see
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
-- Planned next upgrades are biotech valuation framing calibration,
-  `strategic-economics-agent`, `catalyst-agent`, and deeper Stage B
-  market-context calibration.
+- Planned next upgrades are `report-synthesizer-agent`, opt-in Stage B/C
+  calibration, and deeper market-context payloads such as sentiment and
+  fund-flow signals.
 
 Expected behavior:
 
