@@ -139,15 +139,18 @@ class StrategicEconomicsAgentTest(unittest.TestCase):
         self.assertIn("fallback_context:source_text_excerpt", step.warnings)
         self.assertIn("[value_capture_risk] unclear", step.finding.risks)
 
-    def test_schema_violation_records_error(self) -> None:
+    def test_schema_violation_falls_back_without_blocking_downstream(self) -> None:
         client = FakeLLMClient()
         client.queue('{"strategic_economics": {"commercialization_path": "unclear"}}')
         agent = StrategicEconomicsLLMAgent(llm_client=client)
 
         step = agent.run(_ctx(), FactStore(_facts()))
 
-        self.assertIsNotNone(step.error)
-        self.assertIn("schema", step.error or "")
+        self.assertIsNone(step.error)
+        payload = step.outputs["strategic_economics_payload"]
+        self.assertEqual(payload["commercialization_path"], "unclear")
+        self.assertEqual(payload["confidence"], 0.0)
+        self.assertTrue(step.warnings)
 
     def test_prompt_schema_rejects_platform_overclaim_path(self) -> None:
         from biotech_alpha.llm.schema import validate_json_schema

@@ -1106,6 +1106,8 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
         "- commercialization_path is exactly one of: self_commercialization, "
         "partner_led, region_split, royalty_only, unclear.\n"
         "- value_capture_score is a number from 0 to 100.\n"
+        "- Keep retained_economics_map to at most 6 rows and each evidence "
+        "string under 180 characters. Summarize; do not paste long excerpts.\n"
         "- Never nest output inside analysis/result/strategic_economics."
     ),
     user_template=(
@@ -1152,7 +1154,7 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
         "properties": {
             "retained_economics_map": {
                 "type": "array",
-                "max_items": 20,
+                "max_items": 8,
                 "items": {
                     "type": "object",
                     "required": [
@@ -1169,14 +1171,19 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
                         "economics_share": {
                             "type": "string",
                             "min_length": 1,
+                            "max_length": 180,
                         },
-                        "evidence": {"type": "string", "min_length": 1},
+                        "evidence": {
+                            "type": "string",
+                            "min_length": 1,
+                            "max_length": 220,
+                        },
                     },
                 },
             },
             "bd_validation_events": {
                 "type": "array",
-                "max_items": 12,
+                "max_items": 8,
                 "items": {
                     "type": "string",
                     "min_length": 3,
@@ -1186,7 +1193,7 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
             "partner_quality_assessment": {
                 "type": "string",
                 "min_length": 3,
-                "max_length": 700,
+                "max_length": 420,
             },
             "commercialization_path": {
                 "type": "string",
@@ -1205,7 +1212,7 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
             },
             "strategic_premium_discount": {
                 "type": "array",
-                "max_items": 12,
+                "max_items": 8,
                 "items": {
                     "type": "string",
                     "min_length": 3,
@@ -1239,7 +1246,7 @@ class StrategicEconomicsLLMAgent(Agent):
         "strategic_economics_llm_finding",
         "strategic_economics_payload",
     )
-    max_tokens: int | None = 1500
+    max_tokens: int | None = 2200
     temperature: float = 0.1
 
     def __post_init__(self) -> None:
@@ -1278,9 +1285,27 @@ class StrategicEconomicsLLMAgent(Agent):
                 },
             )
         except LLMError as exc:
+            payload = _strategic_economics_fallback_payload(
+                reason=f"llm_error: {exc}"
+            )
+            finding = _strategic_economics_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model="fallback",
+                prompt_tokens=None,
+                completion_tokens=None,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"LLM call failed: {exc}",
+                finding=finding,
+                warnings=(
+                    *warnings,
+                    f"strategic_economics fallback applied: {exc}",
+                ),
+                outputs={
+                    "strategic_economics_llm_finding": finding,
+                    "strategic_economics_payload": payload,
+                },
             )
 
         try:
@@ -1289,13 +1314,28 @@ class StrategicEconomicsLLMAgent(Agent):
             )
             payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
+            payload = _strategic_economics_fallback_payload(
+                reason=f"schema_error: {exc}"
+            )
+            finding = _strategic_economics_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model=call.model,
+                prompt_tokens=call.prompt_tokens,
+                completion_tokens=call.completion_tokens,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"response did not match schema: {exc}",
+                finding=finding,
                 warnings=(
+                    *warnings,
                     f"raw response (first 500 chars): "
                     f"{call.response_text[:500]}",
                 ),
+                outputs={
+                    "strategic_economics_llm_finding": finding,
+                    "strategic_economics_payload": payload,
+                },
             )
 
         finding = _strategic_economics_finding_from_payload(
@@ -1413,6 +1453,22 @@ def _strategic_economics_finding_from_payload(
     )
 
 
+def _strategic_economics_fallback_payload(*, reason: str) -> dict[str, Any]:
+    return {
+        "retained_economics_map": [],
+        "bd_validation_events": [],
+        "partner_quality_assessment": "insufficient_data",
+        "commercialization_path": "unclear",
+        "value_capture_score": 0.0,
+        "strategic_premium_discount": [
+            "Strategic economics unavailable; do not infer a platform or BD premium."
+        ],
+        "evidence_gaps": [reason],
+        "confidence": 0.0,
+        "needs_human_review": True,
+    }
+
+
 CATALYST_PROMPT = StructuredPrompt(
     name="catalyst",
     tags=("catalyst", "event", "expectations", "llm"),
@@ -1442,6 +1498,9 @@ CATALYST_PROMPT = StructuredPrompt(
         "repricing_path.\n"
         "- evidence_quality is high, medium, low, or insufficient_data.\n"
         "- binary_risk is high, medium, low, or not_binary.\n"
+        "- Keep catalyst_events to at most 6 rows. Keep expectation_risk and "
+        "repricing_path under 180 characters each. Summarize; do not paste "
+        "long excerpts.\n"
         "- Never nest output inside analysis/result/catalyst."
     ),
     user_template=(
@@ -1483,7 +1542,7 @@ CATALYST_PROMPT = StructuredPrompt(
         "properties": {
             "catalyst_events": {
                 "type": "array",
-                "max_items": 20,
+                "max_items": 8,
                 "items": {
                     "type": "object",
                     "required": [
@@ -1533,19 +1592,19 @@ CATALYST_PROMPT = StructuredPrompt(
                         "expectation_risk": {
                             "type": "string",
                             "min_length": 3,
-                            "max_length": 320,
+                            "max_length": 220,
                         },
                         "repricing_path": {
                             "type": "string",
                             "min_length": 3,
-                            "max_length": 320,
+                            "max_length": 220,
                         },
                     },
                 },
             },
             "priority_events": {
                 "type": "array",
-                "max_items": 10,
+                "max_items": 8,
                 "items": {
                     "type": "string",
                     "min_length": 3,
@@ -1554,7 +1613,7 @@ CATALYST_PROMPT = StructuredPrompt(
             },
             "market_priced_in_flags": {
                 "type": "array",
-                "max_items": 12,
+                "max_items": 8,
                 "items": {
                     "type": "string",
                     "min_length": 3,
@@ -1588,7 +1647,7 @@ class CatalystLLMAgent(Agent):
         "catalyst_llm_finding",
         "catalyst_payload",
     )
-    max_tokens: int | None = 1500
+    max_tokens: int | None = 2200
     temperature: float = 0.1
 
     def __post_init__(self) -> None:
@@ -1627,22 +1686,51 @@ class CatalystLLMAgent(Agent):
                 },
             )
         except LLMError as exc:
+            payload = _catalyst_fallback_payload(reason=f"llm_error: {exc}")
+            finding = _catalyst_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model="fallback",
+                prompt_tokens=None,
+                completion_tokens=None,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"LLM call failed: {exc}",
+                finding=finding,
+                warnings=(
+                    *warnings,
+                    f"catalyst fallback applied: {exc}",
+                ),
+                outputs={
+                    "catalyst_llm_finding": finding,
+                    "catalyst_payload": payload,
+                },
             )
 
         try:
             payload = CATALYST_PROMPT.parse_response(call.response_text)
             payload = _normalize_payload_company(payload, context.company)
         except SchemaError as exc:
+            payload = _catalyst_fallback_payload(reason=f"schema_error: {exc}")
+            finding = _catalyst_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model=call.model,
+                prompt_tokens=call.prompt_tokens,
+                completion_tokens=call.completion_tokens,
+            )
             return AgentStepResult(
                 agent_name=self.name,
-                error=f"response did not match schema: {exc}",
+                finding=finding,
                 warnings=(
+                    *warnings,
                     f"raw response (first 500 chars): "
                     f"{call.response_text[:500]}",
                 ),
+                outputs={
+                    "catalyst_llm_finding": finding,
+                    "catalyst_payload": payload,
+                },
             )
 
         finding = _catalyst_finding_from_payload(
@@ -1755,6 +1843,19 @@ def _catalyst_finding_from_payload(
         confidence=confidence,
         needs_human_review=bool(payload.get("needs_human_review", True)),
     )
+
+
+def _catalyst_fallback_payload(*, reason: str) -> dict[str, Any]:
+    return {
+        "catalyst_events": [],
+        "priority_events": [],
+        "market_priced_in_flags": [
+            "Catalyst analysis unavailable; do not infer event repricing."
+        ],
+        "evidence_gaps": [reason],
+        "confidence": 0.0,
+        "needs_human_review": True,
+    }
 
 
 DATA_COLLECTOR_PROMPT = StructuredPrompt(

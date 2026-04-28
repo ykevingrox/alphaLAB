@@ -148,15 +148,18 @@ class CatalystAgentTest(unittest.TestCase):
         self.assertIn("fallback_context:catalyst_calendar_payload", step.warnings)
         self.assertIn("fallback_context:event_impact_payload", step.warnings)
 
-    def test_schema_violation_records_error(self) -> None:
+    def test_schema_violation_falls_back_without_blocking_downstream(self) -> None:
         client = FakeLLMClient()
         client.queue('{"catalyst": {"priority_events": []}}')
         agent = CatalystLLMAgent(llm_client=client)
 
         step = agent.run(_ctx(), FactStore(_facts()))
 
-        self.assertIsNotNone(step.error)
-        self.assertIn("schema", step.error or "")
+        self.assertIsNone(step.error)
+        payload = step.outputs["catalyst_payload"]
+        self.assertEqual(payload["catalyst_events"], [])
+        self.assertEqual(payload["confidence"], 0.0)
+        self.assertTrue(step.warnings)
 
     def test_prompt_schema_rejects_buy_signal_labels(self) -> None:
         from biotech_alpha.llm.schema import validate_json_schema
