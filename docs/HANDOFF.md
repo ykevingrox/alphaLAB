@@ -49,6 +49,8 @@ investment committee.
     behind graceful import and the `market` optional dependency extra.
   - Optional `market-regime-timing` LLM scaffold is wired for company-report.
   - Optional `market-expectations` LLM scaffold is wired for company-report.
+  - Optional `strategic-economics` LLM scaffold is wired for company-report
+    and feeds market expectations / valuation committee when requested.
   - `company-report --technical-features yfinance` now threads source-backed
     technical payloads into LLM facts when `market-regime-timing` or
     `market-expectations` is requested.
@@ -85,18 +87,19 @@ Decision for now:
 Current task: continue Stage B without introducing unnecessary external
 dependencies.
 
-Next action: start `strategic-economics-agent`.
+Next action: start `catalyst-agent`.
 
 Recommended scope:
 
-1. Add an LLM agent contract and prompt for `strategic-economics-agent`.
-2. Inputs: pipeline/competition facts, source-text excerpts, valuation pod
-   outputs, known BD/partner evidence, financial snapshot, and macro context.
-3. Outputs should distinguish retained economics, regional rights, BD/licensing
-   economics, partner quality, development cost sharing, commercialization
-   path, and platform reuse only when platform evidence exists.
+1. Add an LLM agent contract and prompt for `catalyst-agent`.
+2. Inputs: deterministic catalyst rows, target-price event impacts, pipeline
+   facts, source-text excerpts, strategic-economics payload, market
+   expectations payload, and optional timing payload.
+3. Outputs should rank clinical, regulatory, BD, and conference/data-readout
+   events by evidence quality, binary risk, expectation risk, and plausible
+   repricing path.
 4. Feed its payload into `market-expectations-agent`,
-   `valuation-committee-agent`, and later `catalyst-agent`.
+   `valuation-committee-agent`, and later report synthesis.
 5. Tests should use `FakeLLMClient`; no live market or LLM calls.
 
 Acceptance criteria:
@@ -129,11 +132,10 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. `strategic-economics-agent`.
-2. `catalyst-agent`.
-3. Improve `market-expectations-agent` with strategic economics and catalyst
+1. `catalyst-agent`.
+2. Improve `market-expectations-agent` with strategic economics and catalyst
    payloads once those exist.
-4. TradingAgents-inspired bull/bear debate and decision-log memory, after the
+3. TradingAgents-inspired bull/bear debate and decision-log memory, after the
    Stage B agents have stable payloads.
 
 ## Do Not Break

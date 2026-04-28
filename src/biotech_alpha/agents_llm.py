@@ -1076,6 +1076,343 @@ def _competition_triage_finding_from_payload(
     )
 
 
+STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
+    name="strategic_economics",
+    tags=("strategy", "economics", "bd", "llm"),
+    system=(
+        "You are a strategic-economics analyst for biotech equity research. "
+        "Your job is to explain how a company's science can become "
+        "shareholder economics. This is broader than BD extraction: assess "
+        "retained economics, regional rights, licensing/BD terms, partner "
+        "quality, development cost sharing, commercialization path, and "
+        "platform reuse only when company-specific evidence exists.\n\n"
+        "Ground rules:\n"
+        "- Work only from provided payloads and source excerpts. Do NOT invent "
+        "deal terms, milestone probabilities, royalty rates, rights splits, "
+        "partner names, or platform claims.\n"
+        "- Headline milestone totals are not guaranteed value. Treat them as "
+        "conditional economics unless provided evidence proves otherwise.\n"
+        "- Distinguish science validated by a partner from economics retained "
+        "by the listed company.\n"
+        "- Do not force a platform thesis when the company has no platform "
+        "evidence.\n"
+        "- No trading instructions.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: retained_economics_map, bd_validation_events, "
+        "partner_quality_assessment, commercialization_path, "
+        "value_capture_score, strategic_premium_discount, evidence_gaps, "
+        "confidence, needs_human_review.\n"
+        "- commercialization_path is exactly one of: self_commercialization, "
+        "partner_led, region_split, royalty_only, unclear.\n"
+        "- value_capture_score is a number from 0 to 100.\n"
+        "- Never nest output inside analysis/result/strategic_economics."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Pipeline snapshot:\n${pipeline_snapshot}\n\n"
+        "Pipeline triage payload:\n${pipeline_triage}\n\n"
+        "Competition triage payload:\n${competition_triage}\n\n"
+        "Financials snapshot:\n${financials_snapshot}\n\n"
+        "Valuation snapshot:\n${valuation_snapshot}\n\n"
+        "Macro context payload:\n${macro_context}\n\n"
+        "Source text excerpt:\n${source_text_excerpt}\n\n"
+        "Fallback context:\n${fallback_context}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"retained_economics_map\": [\n"
+        "    {\"asset\": \"<asset or portfolio>\", \"region\": \"<region or unknown>\", \"partner\": \"<partner or null>\", \"economics_share\": \"<disclosed/inferred/unknown>\", \"evidence\": \"<supporting field or excerpt>\"}\n"
+        "  ],\n"
+        "  \"bd_validation_events\": [\"<BD/licensing/partner validation event>\"],\n"
+        "  \"partner_quality_assessment\": \"<partner quality and strategic fit, or insufficient_data>\",\n"
+        "  \"commercialization_path\": \"self_commercialization|partner_led|region_split|royalty_only|unclear\",\n"
+        "  \"value_capture_score\": 0.0,\n"
+        "  \"strategic_premium_discount\": [\"<premium/discount driver for valuation committee>\"],\n"
+        "  \"evidence_gaps\": [\"<missing evidence>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "retained_economics_map",
+            "bd_validation_events",
+            "partner_quality_assessment",
+            "commercialization_path",
+            "value_capture_score",
+            "strategic_premium_discount",
+            "evidence_gaps",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "retained_economics_map": {
+                "type": "array",
+                "max_items": 20,
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "asset",
+                        "region",
+                        "partner",
+                        "economics_share",
+                        "evidence",
+                    ],
+                    "properties": {
+                        "asset": {"type": "string", "min_length": 1},
+                        "region": {"type": "string", "min_length": 1},
+                        "partner": {"type": ["string", "null"]},
+                        "economics_share": {
+                            "type": "string",
+                            "min_length": 1,
+                        },
+                        "evidence": {"type": "string", "min_length": 1},
+                    },
+                },
+            },
+            "bd_validation_events": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "partner_quality_assessment": {
+                "type": "string",
+                "min_length": 3,
+                "max_length": 700,
+            },
+            "commercialization_path": {
+                "type": "string",
+                "enum": [
+                    "self_commercialization",
+                    "partner_led",
+                    "region_split",
+                    "royalty_only",
+                    "unclear",
+                ],
+            },
+            "value_capture_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100,
+            },
+            "strategic_premium_discount": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "evidence_gaps": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class StrategicEconomicsLLMAgent(Agent):
+    """LLM agent for retained economics, BD, rights, and value capture."""
+
+    llm_client: LLMClient
+    name: str = "strategic_economics_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "strategic_economics_llm_finding",
+        "strategic_economics_payload",
+    )
+    max_tokens: int | None = 1500
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("StrategicEconomicsLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("pipeline_snapshot"), dict):
+            warnings.append("fallback_context:pipeline_snapshot")
+        if not store.get("source_text_excerpt"):
+            warnings.append("fallback_context:source_text_excerpt")
+
+        system, user = STRATEGIC_ECONOMICS_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = STRATEGIC_ECONOMICS_PROMPT.parse_response(
+                call.response_text
+            )
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _strategic_economics_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "strategic_economics_llm_finding": finding,
+                "strategic_economics_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "pipeline_snapshot": _json_block(store.get("pipeline_snapshot")),
+            "pipeline_triage": _json_block(store.get("pipeline_triage_payload")),
+            "competition_triage": _json_block(
+                store.get("competition_triage_payload")
+            ),
+            "financials_snapshot": _json_block(store.get("financials_snapshot")),
+            "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+            "macro_context": _json_block(
+                store.get("macro_context_payload")
+                or store.get("macro_context")
+            ),
+            "source_text_excerpt": _source_text_block(
+                store.get("source_text_excerpt")
+            ),
+            "fallback_context": _json_block(store.get("fallback_context")),
+        }
+
+
+def _strategic_economics_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    path = str(payload.get("commercialization_path") or "unclear").strip()
+    score_raw = payload.get("value_capture_score")
+    try:
+        score = float(score_raw)
+    except (TypeError, ValueError):
+        score = 0.0
+    score = max(0.0, min(100.0, score))
+    summary = f"Strategic economics: {path}; value capture score={score:g}/100."
+
+    risks: list[str] = [f"[commercialization_path] {path}"]
+    if path in {"royalty_only", "unclear"}:
+        risks.append(f"[value_capture_risk] {path}")
+    for row in payload.get("retained_economics_map") or []:
+        if not isinstance(row, dict):
+            continue
+        asset = str(row.get("asset") or "portfolio").strip()
+        region = str(row.get("region") or "unknown").strip()
+        share = str(row.get("economics_share") or "unknown").strip()
+        partner = str(row.get("partner") or "no_partner").strip()
+        risks.append(
+            f"[retained_economics] {asset}/{region}/{partner}: {share}"
+        )
+    for line in payload.get("bd_validation_events") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[bd_validation] {text}")
+    for line in payload.get("strategic_premium_discount") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[premium_discount] {text}")
+    for line in payload.get("evidence_gaps") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[evidence_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Strategic economics analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        score=score,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
 MACRO_CONTEXT_PROMPT = StructuredPrompt(
     name="macro_context",
     tags=("macro", "context", "llm"),
@@ -1601,6 +1938,7 @@ MARKET_EXPECTATIONS_PROMPT = StructuredPrompt(
         "Valuation snapshot:\n${valuation_snapshot}\n\n"
         "Target-price snapshot:\n${target_price_snapshot}\n\n"
         "Valuation pod payloads:\n${valuation_pod_payloads}\n\n"
+        "Strategic economics payload:\n${strategic_economics}\n\n"
         "Macro context payload:\n${macro_context}\n\n"
         "Technical feature payload:\n${technical_payload}\n\n"
         "Market-regime/timing payload:\n${timing_payload}\n\n"
@@ -1784,6 +2122,9 @@ class MarketExpectationsLLMAgent(Agent):
                     "balance_sheet": store.get("valuation_balance_sheet_payload"),
                     "committee": store.get("valuation_committee_payload"),
                 }
+            ),
+            "strategic_economics": _json_block(
+                store.get("strategic_economics_payload")
             ),
             "macro_context": _json_block(
                 store.get("macro_context_payload")
@@ -2276,6 +2617,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "管线分诊:\n${pipeline_triage}\n\n"
         "竞争分诊:\n${competition_triage}\n\n"
         "宏观上下文:\n${macro_context}\n\n"
+        "战略经济payload:\n${strategic_economics}\n\n"
         "上游估值分项(仅 committee 可用):\n${upstream_valuation_payloads}\n\n"
         "角色硬约束:\n"
         "- valuation-commercial-agent: 只评估已商业化产品、经常性收入、"
@@ -2440,6 +2782,9 @@ class _ValuationPodLLMAgentBase(Agent):
                     store.get("competition_triage_payload")
                 ),
                 "macro_context": _json_block(store.get("macro_context_payload")),
+                "strategic_economics": _json_block(
+                    store.get("strategic_economics_payload")
+                ),
                 "upstream_valuation_payloads": _json_block(
                     {
                         "commercial": store.get("valuation_commercial_payload"),
@@ -2754,6 +3099,9 @@ class ReportQualityLLMAgent(Agent):
             ),
             "market_expectations": _finding_snapshot(
                 store.get("market_expectations_llm_finding")
+            ),
+            "strategic_economics": _finding_snapshot(
+                store.get("strategic_economics_llm_finding")
             ),
         }
         system, user = REPORT_QUALITY_PROMPT.render(

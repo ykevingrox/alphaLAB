@@ -1195,19 +1195,23 @@ keeps provider volatility out of prompts and gives both
 - **Done** — First `market-expectations-agent` scaffold explains
   market-implied assumptions, valuation-band context, rNPV gaps,
   expectation-risk flags, and evidence gaps.
-- **Next** — Add `strategic-economics-agent`.
+- **Done** — First `strategic-economics-agent` scaffold explains retained
+  economics, BD validation, partner quality, commercialization path,
+  value-capture score, premium/discount drivers, and evidence gaps.
+- **Next** — Add `catalyst-agent`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** started. Market-regime/timing and market-expectations
-scaffolds exist; strategic/catalyst layers are pending.
+**Sprint status:** started. Market-regime/timing, market-expectations, and
+strategic-economics scaffolds exist; catalyst layer is pending.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
   quality, cost sharing, commercialization path, and platform reuse only when
-  the company has platform evidence.
+  the company has platform evidence. First opt-in scaffold is implemented and
+  feeds `market-expectations` and `valuation-committee` when requested.
 - `catalyst-agent`: independent LLM narrative over deterministic catalyst
   calendar. It ranks clinical, regulatory, BD, and conference/data-readout
   events by evidence quality, binary risk, expectation risk, and repricing

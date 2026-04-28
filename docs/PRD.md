@@ -70,10 +70,11 @@ Current implementation status:
 - Implemented: in-process `AgentGraph` + `FactStore` runtime with the
   following opt-in LLM agents — `provisional-pipeline`,
   `provisional-financial`, `pipeline-triage`, `financial-triage`,
-  `competition-triage`, `macro-context`, `scientific-skeptic`,
-  `investment-thesis`, `valuation-commercial`, `valuation-rnpv`,
-  `valuation-balance-sheet`, `valuation-committee`, `market-regime-timing`,
-  `market-expectations`, `report-quality`, and compatibility-only
+  `competition-triage`, `strategic-economics`, `macro-context`,
+  `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
+  `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
+  `market-regime-timing`, `market-expectations`, `report-quality`, and
+  compatibility-only
   `valuation-specialist` — with JSON schema validation,
   per-run and per-agent call budgets, and JSONL traces under `data/traces/`.
 - Implemented: HK public market-data providers (Tencent / Yahoo) and macro

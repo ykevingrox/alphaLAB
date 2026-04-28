@@ -519,6 +519,13 @@ Purpose: explain how a biotech company captures shareholder value from its
 science. This role is broader than a BD extractor and only analyzes platform
 reuse when there is company-specific evidence.
 
+Current implementation note: the first LLM scaffold is wired as optional
+`strategic-economics`. It consumes pipeline facts, optional pipeline and
+competition triage payloads, financial/valuation snapshots, macro context,
+source-text excerpts, and fallback evidence. Its payload is available to
+`market-expectations` and `valuation-committee` when requested in the same
+company-report run.
+
 Inputs:
 
 - `pipeline_assets` and `pipeline_triage_payload`

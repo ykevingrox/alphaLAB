@@ -510,6 +510,7 @@ SUPPORTED_LLM_AGENTS = (
     "pipeline-triage",
     "financial-triage",
     "competition-triage",
+    "strategic-economics",
     "macro-context",
     "market-regime-timing",
     "market-expectations",
@@ -558,6 +559,7 @@ def _run_llm_agent_pipeline(
         ProvisionalPipelineLLMAgent,
         ReportQualityLLMAgent,
         ScientificSkepticLLMAgent,
+        StrategicEconomicsLLMAgent,
         ValuationBalanceSheetLLMAgent,
         ValuationCommercialLLMAgent,
         ValuationCommitteeLLMAgent,
@@ -664,6 +666,18 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "strategic-economics" in llm_agents:
+        strategic_deps = ["publish_research_facts"]
+        if "pipeline-triage" in llm_agents:
+            strategic_deps.append("pipeline_triage_llm_agent")
+        if "competition-triage" in llm_agents:
+            strategic_deps.append("competition_triage_llm_agent")
+        graph.add(
+            StrategicEconomicsLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(strategic_deps),
+            )
+        )
     if "macro-context" in llm_agents:
         graph.add(
             MacroContextLLMAgent(
@@ -683,6 +697,8 @@ def _run_llm_agent_pipeline(
         )
     if "market-expectations" in llm_agents:
         expectations_deps = ["publish_research_facts"]
+        if "strategic-economics" in llm_agents:
+            expectations_deps.append("strategic_economics_llm_agent")
         if "valuation-committee" in llm_agents:
             expectations_deps.append("valuation_committee_llm_agent")
         if "market-regime-timing" in llm_agents:
@@ -739,6 +755,8 @@ def _run_llm_agent_pipeline(
         )
     if "valuation-committee" in llm_agents:
         committee_deps = ["publish_research_facts"]
+        if "strategic-economics" in llm_agents:
+            committee_deps.append("strategic_economics_llm_agent")
         if "valuation-commercial" in llm_agents:
             committee_deps.append("valuation_commercial_llm_agent")
         if "valuation-rnpv" in llm_agents:
@@ -759,6 +777,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("investment_thesis_llm_agent")
         if "valuation-specialist" in llm_agents:
             quality_deps.append("valuation_specialist_llm_agent")
+        if "strategic-economics" in llm_agents:
+            quality_deps.append("strategic_economics_llm_agent")
         if "valuation-commercial" in llm_agents:
             quality_deps.append("valuation_commercial_llm_agent")
         if "valuation-rnpv" in llm_agents:
