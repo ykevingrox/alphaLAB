@@ -587,9 +587,10 @@ the planned k-line specialist into one timing layer.
 
 Current implementation note: the first LLM scaffold is wired as optional
 `market-regime-timing`. It consumes existing `macro_context`, optional
-`macro_context_payload`, and optional `technical_feature_payload`. It is not
-yet in the quick-report default stack because technical payload collection is
-still opt-in/provider-dependent.
+`macro_context_payload`, and optional `technical_feature_payload`.
+`company-report --technical-features yfinance` can thread the technical payload
+when `market-regime-timing` is requested. It is not yet in the quick-report
+default stack because technical payload collection is still opt-in.
 
 Inputs:
 

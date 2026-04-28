@@ -490,6 +490,21 @@ For code paths that already installed the optional `market` extra,
 technical-feature layer. It is intentionally not wired into the default report
 path yet; failures return `None` rather than aborting the report.
 
+The opt-in report path is:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
+  --ticker 09606.HK \
+  --auto-inputs \
+  --llm-agents macro-context market-regime-timing \
+  --macro-signals yahoo-hk \
+  --technical-features yfinance \
+  --technical-benchmark-symbol ^HSI
+```
+
+The technical provider is only consulted when `market-regime-timing` is
+requested. Quick `report` still does not fetch yfinance history by default.
+
 ## Troubleshooting
 
 If ClinicalTrials.gov calls fail:

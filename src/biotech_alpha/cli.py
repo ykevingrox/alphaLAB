@@ -297,6 +297,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     company_report_parser.add_argument(
+        "--technical-features",
+        choices=("none", "yfinance"),
+        default="none",
+        help=(
+            "Optional historical price feature provider for "
+            "market-regime-timing. 'yfinance' requires installing the "
+            "optional market extra and degrades silently when unavailable."
+        ),
+    )
+    company_report_parser.add_argument(
+        "--technical-benchmark-symbol",
+        default="^HSI",
+        help=(
+            "Benchmark symbol for technical relative strength when "
+            "--technical-features is enabled. Defaults to ^HSI."
+        ),
+    )
+    company_report_parser.add_argument(
         "--macro-signals-cache-ttl-hours",
         type=float,
         default=6.0,
@@ -952,6 +970,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             disable_cache=getattr(args, "no_macro_signals_cache", False),
         )
+        technical_features_provider = _resolve_technical_features_provider(
+            getattr(args, "technical_features", "none"),
+            benchmark_symbol=getattr(args, "technical_benchmark_symbol", None),
+        )
         llm_agents = tuple(getattr(args, "llm_agents", ()) or ())
         llm_client = _build_llm_client(llm_agents)
         result = run_company_report(
@@ -982,6 +1004,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             llm_client=llm_client,
             llm_trace_path=getattr(args, "llm_trace_path", None),
             macro_signals_provider=macro_signals_provider,
+            technical_features_provider=technical_features_provider,
             hkexnews_feed_url=getattr(args, "hkexnews_feed_url", None),
             hkexnews_feed_file=getattr(args, "hkexnews_feed_file", None),
             hkexnews_state_file=getattr(
@@ -1628,6 +1651,29 @@ def _resolve_macro_signals_provider(
         cache_dir=DEFAULT_CACHE_DIR,
         ttl=ttl,
     )
+
+
+def _resolve_technical_features_provider(
+    choice: str,
+    *,
+    benchmark_symbol: str | None = "^HSI",
+):
+    """Return a technical-feature provider for a CLI choice, or None."""
+
+    if choice != "yfinance":
+        return None
+
+    def _provider(identity):  # noqa: ANN001 - simple CLI adapter
+        from biotech_alpha.yfinance_provider import (
+            yfinance_technical_feature_payload_for_identity,
+        )
+
+        return yfinance_technical_feature_payload_for_identity(
+            identity,
+            benchmark_symbol=benchmark_symbol,
+        )
+
+    return _provider
 
 
 def _build_llm_client(llm_agents: tuple[str, ...]):

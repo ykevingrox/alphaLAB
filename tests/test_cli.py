@@ -14,6 +14,7 @@ from biotech_alpha.cli import (
     _split_company_or_ticker,
     _resolve_macro_signals_provider,
     _resolve_market_data_provider,
+    _resolve_technical_features_provider,
     main,
 )
 
@@ -1019,6 +1020,76 @@ class CompanyReportMacroSignalsCliTest(unittest.TestCase):
             self.assertIsNone(
                 run.call_args.kwargs["macro_signals_provider"]
             )
+
+
+class CompanyReportTechnicalFeaturesCliTest(unittest.TestCase):
+    def test_yfinance_flag_passes_provider_to_run_company_report(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            exit_code = main(
+                [
+                    "company-report",
+                    "--ticker",
+                    "09606.HK",
+                    "--technical-features",
+                    "yfinance",
+                    "--technical-benchmark-symbol",
+                    "^HSI",
+                    "--no-save",
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIsNotNone(
+                run.call_args.kwargs["technical_features_provider"]
+            )
+
+    def test_default_has_no_technical_features_provider(self) -> None:
+        with patch(
+            "biotech_alpha.cli.run_company_report"
+        ) as run, patch(
+            "biotech_alpha.cli._build_llm_client", return_value=None
+        ), patch(
+            "biotech_alpha.cli.company_report_summary",
+            return_value={"identity": {}, "status": "ok"},
+        ):
+            run.return_value = object()
+            main(["company-report", "--ticker", "09606.HK", "--no-save"])
+
+            self.assertIsNone(
+                run.call_args.kwargs["technical_features_provider"]
+            )
+
+    def test_resolved_provider_uses_yfinance_adapter(self) -> None:
+        from biotech_alpha.company_report import CompanyIdentity
+
+        with patch(
+            "biotech_alpha.yfinance_provider."
+            "yfinance_technical_feature_payload_for_identity",
+            return_value={"technical_state": "constructive"},
+        ) as adapter:
+            provider = _resolve_technical_features_provider(
+                "yfinance", benchmark_symbol="^HSI"
+            )
+            self.assertIsNotNone(provider)
+            assert provider is not None
+            payload = provider(
+                CompanyIdentity(company="DualityBio", ticker="09606.HK")
+            )
+
+            self.assertEqual(payload, {"technical_state": "constructive"})
+            adapter.assert_called_once()
+            self.assertEqual(adapter.call_args.kwargs["benchmark_symbol"], "^HSI")
+
+    def test_none_resolves_to_no_technical_provider(self) -> None:
+        self.assertIsNone(_resolve_technical_features_provider("none"))
 
 
 class QuickReportCliTest(unittest.TestCase):

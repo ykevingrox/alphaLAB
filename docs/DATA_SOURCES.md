@@ -188,6 +188,9 @@ Optional historical adapter:
   `biotech_alpha.technical_features` layer. The adapter is installed only with
   the optional `market` extra and returns `None` if yfinance is absent or
   history fetches fail.
+- `company-report --technical-features yfinance` can attach this payload to
+  LLM facts for opt-in `market-regime-timing` runs. Quick `report` does not
+  fetch yfinance history by default.
 
 ### Macro Signal Providers
 

@@ -11,6 +11,7 @@ from unittest.mock import patch
 from biotech_alpha.auto_inputs import AutoInputArtifacts, SourceDocument
 from biotech_alpha.company_report import (
     _build_source_text_excerpt,
+    _run_llm_agent_pipeline,
     _run_date_from_run_id,
     _valuation_pod_payload_from_llm_facts,
     build_llm_agent_facts,
@@ -38,6 +39,37 @@ class FakeClinicalTrialsClient:
     ) -> dict[str, Any]:
         self.search_terms.append(term)
         return {"studies": []}
+
+
+def _minimal_research_stub():
+    class _Memo:
+        findings: tuple = ()
+        evidence: tuple = ()
+
+    class _Ctx:
+        company = "Stub"
+        ticker = "09606.HK"
+        market = "HK"
+        as_of_date = None
+
+    class _Research:
+        run_id = "20260428T000000Z"
+        memo = _Memo()
+        context = _Ctx()
+        pipeline_assets = ()
+        trials = ()
+        asset_trial_matches = ()
+        financial_snapshot = None
+        valuation_snapshot = None
+        valuation_metrics = None
+        cash_runway_estimate = None
+        competitor_assets = ()
+        competitive_matches = ()
+        target_price_analysis = None
+        scorecard = None
+        input_validation: dict = {}
+
+    return _Research()
 
 
 class CompanyReportTest(unittest.TestCase):
@@ -857,6 +889,99 @@ class SourceTextExcerptTest(unittest.TestCase):
         market = facts["financials_snapshot"]["market_snapshot"]
         self.assertEqual(market["cash"], 120.0)
         self.assertEqual(market["debt"], 20.0)
+
+    def test_build_llm_agent_facts_threads_technical_features(self) -> None:
+        research = _minimal_research_stub()
+        technical = {
+            "symbol": "9606.HK",
+            "technical_state": "constructive",
+            "provider": "unit-test",
+        }
+
+        facts = build_llm_agent_facts(
+            research_result=research,
+            technical_features=technical,
+        )
+
+        self.assertEqual(facts["technical_feature_payload"], technical)
+
+    def test_llm_pipeline_fetches_technical_features_for_timing_agent(self) -> None:
+        technical = {
+            "symbol": "9606.HK",
+            "technical_state": "constructive",
+            "provider": "unit-test",
+        }
+        calls: list[str | None] = []
+
+        def provider(identity):
+            calls.append(identity.ticker)
+            return technical
+
+        client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "timing_view": "neutral",
+                    "horizon": "3-6 months",
+                    "macro_regime": "insufficient_data",
+                    "technical_state": "constructive",
+                    "sentiment_state": "unknown",
+                    "key_triggers": ["monitor technical feature stability"],
+                    "invalidation_signals": ["technical payload disappears"],
+                    "confidence": 0.4,
+                    "needs_human_review": True,
+                }
+            )
+        )
+
+        result, _trace = _run_llm_agent_pipeline(
+            research_result=_minimal_research_stub(),
+            identity=resolve_company_identity(
+                ticker="09606.HK", registry_path=None
+            ),
+            llm_agents=("market-regime-timing",),
+            llm_client=client,
+            output_dir="data",
+            save=False,
+            llm_trace_path=None,
+            technical_features_provider=provider,
+        )
+
+        self.assertEqual(calls, ["09606.HK"])
+        self.assertEqual(result.facts["technical_feature_payload"], technical)
+        self.assertIn("market_regime_timing_payload", result.facts)
+
+    def test_llm_pipeline_skips_technical_provider_without_timing_agent(self) -> None:
+        def provider(_identity):
+            raise AssertionError("technical provider should not be called")
+
+        client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "macro_regime": "insufficient_data",
+                    "summary": "Macro context unavailable.",
+                    "sector_drivers": [],
+                    "sector_headwinds": ["missing live macro data"],
+                    "confidence": 0.2,
+                }
+            )
+        )
+
+        result, _trace = _run_llm_agent_pipeline(
+            research_result=_minimal_research_stub(),
+            identity=resolve_company_identity(
+                ticker="09606.HK", registry_path=None
+            ),
+            llm_agents=("macro-context",),
+            llm_client=client,
+            output_dir="data",
+            save=False,
+            llm_trace_path=None,
+            technical_features_provider=provider,
+        )
+
+        self.assertIsNone(result.facts["technical_feature_payload"])
 
     def test_valuation_pod_summary_flags_duplicate_ranges(self) -> None:
         payload = _valuation_pod_payload_from_llm_facts(

@@ -125,14 +125,14 @@ multi-LLM investment committee.
 
 ## Key Gaps (Must Fix First)
 
-1. Real technical-feature payloads are not yet threaded into default report
-   LLM facts.
+1. Technical-feature payloads are threaded for opt-in company-report runs, but
+   not yet quick-report defaults.
 2. Missing strategic-economics and market-expectations layers, so reports
    cannot yet explain sustained biotech valuation bands above conservative
    rNPV.
 3. Missing LLM catalyst specialist.
 4. Market regime/timing scaffold exists but is not in quick-report defaults
-   and still lacks live technical/sentiment payloads.
+   and still lacks sentiment/fund-flow payloads.
 5. Data-collector role not represented as an explicit LLM agent contract.
 
 ## Migration Plan
@@ -211,7 +211,7 @@ The staging below is the committed plan. Sprint-level execution lives in
   - Outputs research-only timing labels such as `favorable`, `neutral`,
     `fragile`, `avoid_chasing`, and `de_risk_watch`.
   - First opt-in scaffold is implemented; default report integration awaits
-    source-backed technical feature threading.
+    broader calibration and sentiment/fund-flow inputs.
 
 ### Stage C (Sprint 8)
 

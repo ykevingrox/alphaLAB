@@ -1166,7 +1166,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 ### Stage B Prework: Market Technical Feature Layer
 
 **Sprint status:** implemented as deterministic baseline plus optional
-yfinance adapter prototype.
+yfinance adapter and report fact threading.
 
 Build deterministic market features before adding the LLM timing agent. This
 keeps provider volatility out of prompts and gives both
@@ -1189,8 +1189,10 @@ keeps provider volatility out of prompts and gives both
 - **Done** — First `market-regime-timing-agent` scaffold consumes macro
   context plus optional `technical_feature_payload` and emits research-only
   timing labels. It is opt-in, not quick-report default.
-- **Next** — Thread real technical-feature payloads into report runs, then add
-  `market-expectations-agent`.
+- **Done** — `company-report --technical-features yfinance` threads real
+  technical-feature payloads into LLM facts when `market-regime-timing` is
+  requested. Quick `report` remains unchanged.
+- **Next** — Add `market-expectations-agent`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 

@@ -201,7 +201,12 @@ def run_company_report(
     llm_agents: tuple[str, ...] = (),
     llm_client: Any | None = None,
     llm_trace_path: str | Path | None = None,
-    macro_signals_provider: Callable[[str], dict[str, Any] | None] | None = None,
+    macro_signals_provider: Callable[[str], dict[str, Any] | None]
+    | None = None,
+    technical_features_provider: Callable[
+        [CompanyIdentity], dict[str, Any] | None
+    ]
+    | None = None,
     hkexnews_feed_url: str | None = None,
     hkexnews_feed_file: str | Path | None = None,
     hkexnews_state_file: str | Path = "data/cache/hkexnews/seen_guids.json",
@@ -315,6 +320,7 @@ def run_company_report(
             llm_trace_path=llm_trace_path,
             auto_input_artifacts=auto_input_artifacts,
             macro_signals_provider=macro_signals_provider,
+            technical_features_provider=technical_features_provider,
         )
         if save:
             write_llm_memo_addendum(
@@ -527,6 +533,10 @@ def _run_llm_agent_pipeline(
     llm_trace_path: str | Path | None,
     auto_input_artifacts: Any | None = None,
     macro_signals_provider: Callable[[str], dict[str, Any] | None] | None = None,
+    technical_features_provider: Callable[
+        [CompanyIdentity], dict[str, Any] | None
+    ]
+    | None = None,
 ) -> tuple[Any, Path | None]:
     """Run the opt-in LLM agent graph over a finished research result."""
 
@@ -568,10 +578,21 @@ def _run_llm_agent_pipeline(
         except Exception:  # noqa: BLE001 - never fail the run on a live feed
             macro_signals = None
 
+    technical_features: dict[str, Any] | None = None
+    if (
+        technical_features_provider is not None
+        and "market-regime-timing" in llm_agents
+    ):
+        try:
+            technical_features = technical_features_provider(identity)
+        except Exception:  # noqa: BLE001 - live/history feeds are optional
+            technical_features = None
+
     facts = build_llm_agent_facts(
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
         macro_signals=macro_signals,
+        technical_features=technical_features,
     )
     context = AgentContext(
         company=identity.company,
@@ -774,6 +795,7 @@ def build_llm_agent_facts(
     research_result: SingleCompanyResearchResult,
     auto_input_artifacts: Any | None = None,
     macro_signals: dict[str, Any] | None = None,
+    technical_features: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
@@ -897,6 +919,7 @@ def build_llm_agent_facts(
         "financials_snapshot": financials_snapshot,
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
+        "technical_feature_payload": technical_features,
         "fallback_context": fallback_context,
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
