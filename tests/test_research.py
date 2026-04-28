@@ -87,6 +87,27 @@ class SingleCompanyResearchTest(unittest.TestCase):
         self.assertIn("publish_gate: `review_required`", memo_text)
         self.assertIn("估值口径与风险段落有潜在冲突", memo_text)
 
+    def test_memo_includes_report_synthesizer_text_when_payload_present(self) -> None:
+        result = run_single_company_research(
+            company="Example Biotech",
+            save=False,
+            client=FakeClinicalTrialsClient({"studies": []}),
+            now=datetime(2026, 4, 20, tzinfo=UTC),
+        )
+        memo_text = memo_to_markdown(
+            result.memo,
+            report_synthesizer_payload={
+                "executive_verdict_paragraph": "这是综合编辑后的执行结论。",
+                "section_transitions": {
+                    "investment_thesis": "投资主线过渡句。",
+                    "risks": "风险过渡句。",
+                },
+            },
+        )
+        self.assertIn("这是综合编辑后的执行结论。", memo_text)
+        self.assertIn("投资主线过渡句。", memo_text)
+        self.assertIn("风险过渡句。", memo_text)
+
     def test_core_asset_deep_dive_prefers_phase2_plus_assets(self) -> None:
         client = FakeClinicalTrialsClient({"studies": []})
         assets = (

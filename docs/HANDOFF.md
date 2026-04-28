@@ -91,21 +91,23 @@ Decision for now:
 Current task: continue Stage C without introducing unnecessary external
 dependencies.
 
-Next action: add `report-synthesizer-agent` with deterministic fallback
-preserved.
+Next action: calibrate the opt-in Stage B/C stack on `09606.HK` and
+`09887.HK`.
 
 Recommended scope:
 
-1. Add an LLM agent contract and prompt for `report-synthesizer-agent`.
-2. Inputs: deterministic memo scaffold or memo markdown, upstream findings,
-   data-collector payload, report-quality payload, scorecard/action-plan, and
-   Stage B payloads.
-3. Outputs should be limited to executive-verdict prose and section
-   transition snippets; numeric tables and structured facts remain
-   deterministic.
-4. Keep deterministic memo rendering as the fallback and quick-report default
-   until calibrated.
-5. Tests should use `FakeLLMClient`; no live market or LLM calls.
+1. Run an opt-in company-report path that includes `data-collector`,
+   `strategic-economics`, `catalyst`, `market-expectations`,
+   `market-regime-timing`, `report-synthesizer`, and `report-quality` when LLM
+   credentials are available.
+2. Inspect whether prompts overstate current price, BD economics, platform
+   claims, catalyst certainty, or section prose.
+3. Keep quick `report` defaults unchanged until Stage B/C outputs are
+   calibrated on both tickers.
+4. Tighten prompts/contracts if any agent invents facts or rewrites
+   deterministic numbers.
+5. No generated runtime files, caches, memos, traces, or raw downloads should
+   be committed.
 
 Acceptance criteria:
 
@@ -137,9 +139,8 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. `report-synthesizer-agent`.
-2. Calibrate opt-in Stage B/C stack on 09606.HK / 09887.HK.
-3. TradingAgents-inspired bull/bear debate and decision-log memory, after the
+1. Calibrate opt-in Stage B/C stack on 09606.HK / 09887.HK.
+2. TradingAgents-inspired bull/bear debate and decision-log memory, after the
    Stage B agents have stable payloads.
 
 ## Do Not Break

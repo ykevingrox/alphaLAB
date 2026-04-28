@@ -391,12 +391,22 @@ def write_llm_memo_addendum(
         if isinstance(llm_facts, dict)
         else None
     )
+    report_synthesizer_payload = (
+        llm_facts.get("report_synthesizer_payload")
+        if isinstance(llm_facts, dict)
+        else None
+    )
     base = memo_to_markdown(
         research_result.memo,
         llm_findings=llm_findings,
         report_quality_payload=(
             report_quality_payload
             if isinstance(report_quality_payload, dict)
+            else None
+        ),
+        report_synthesizer_payload=(
+            report_synthesizer_payload
+            if isinstance(report_synthesizer_payload, dict)
             else None
         ),
     ).rstrip()
@@ -517,6 +527,7 @@ SUPPORTED_LLM_AGENTS = (
     "market-regime-timing",
     "market-expectations",
     "investment-thesis",
+    "report-synthesizer",
     "valuation-specialist",
     "valuation-commercial",
     "valuation-rnpv",
@@ -562,6 +573,7 @@ def _run_llm_agent_pipeline(
         ProvisionalFinancialLLMAgent,
         ProvisionalPipelineLLMAgent,
         ReportQualityLLMAgent,
+        ReportSynthesizerLLMAgent,
         ScientificSkepticLLMAgent,
         StrategicEconomicsLLMAgent,
         ValuationBalanceSheetLLMAgent,
@@ -750,6 +762,26 @@ def _run_llm_agent_pipeline(
                 depends_on=("publish_research_facts",),
             )
         )
+    if "report-synthesizer" in llm_agents:
+        synthesizer_deps = ["publish_research_facts"]
+        for requested, agent_name in (
+            ("scientific-skeptic", "scientific_skeptic_llm_agent"),
+            ("investment-thesis", "investment_thesis_llm_agent"),
+            ("data-collector", "data_collector_llm_agent"),
+            ("strategic-economics", "strategic_economics_llm_agent"),
+            ("catalyst", "catalyst_llm_agent"),
+            ("market-expectations", "market_expectations_llm_agent"),
+            ("market-regime-timing", "market_regime_timing_llm_agent"),
+            ("valuation-committee", "valuation_committee_llm_agent"),
+        ):
+            if requested in llm_agents:
+                synthesizer_deps.append(agent_name)
+        graph.add(
+            ReportSynthesizerLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(dict.fromkeys(synthesizer_deps)),
+            )
+        )
     if "valuation-specialist" in llm_agents:
         graph.add(
             ValuationSpecialistLLMAgent(
@@ -802,6 +834,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("scientific_skeptic_llm_agent")
         if "investment-thesis" in llm_agents:
             quality_deps.append("investment_thesis_llm_agent")
+        if "report-synthesizer" in llm_agents:
+            quality_deps.append("report_synthesizer_llm_agent")
         if "valuation-specialist" in llm_agents:
             quality_deps.append("valuation_specialist_llm_agent")
         if "strategic-economics" in llm_agents:
@@ -1000,6 +1034,50 @@ def build_llm_agent_facts(
         "fallback_context": fallback_context,
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
+        "memo_scaffold_payload": _build_memo_scaffold_payload(research_result),
+    }
+
+
+def _build_memo_scaffold_payload(
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any]:
+    memo = research_result.memo
+    context = getattr(research_result, "context", None)
+    key_assets = getattr(memo, "key_assets", ()) or ()
+    catalysts = getattr(memo, "catalysts", ()) or ()
+    return {
+        "company": getattr(memo, "company", None)
+        or getattr(context, "company", None),
+        "ticker": getattr(memo, "ticker", None) or getattr(context, "ticker", None),
+        "market": getattr(memo, "market", None) or getattr(context, "market", None),
+        "decision": getattr(memo, "decision", None),
+        "deterministic_summary": getattr(memo, "summary", None),
+        "bull_case": list(getattr(memo, "bull_case", ()) or ()),
+        "bear_case": list(getattr(memo, "bear_case", ()) or ()),
+        "key_assets": [
+            {
+                "name": asset.name,
+                "target": asset.target,
+                "indication": asset.indication,
+                "phase": asset.phase,
+                "next_milestone": asset.next_milestone,
+                "next_binary_event": asset.next_binary_event,
+            }
+            for asset in key_assets[:5]
+        ],
+        "catalyst_count": len(catalysts),
+        "finding_summaries": [
+            {
+                "agent_name": finding.agent_name,
+                "summary": finding.summary,
+                "confidence": finding.confidence,
+                "needs_human_review": finding.needs_human_review,
+            }
+            for finding in (getattr(memo, "findings", ()) or ())[:20]
+        ],
+        "follow_up_questions": list(
+            getattr(memo, "follow_up_questions", ()) or ()
+        ),
     }
 
 

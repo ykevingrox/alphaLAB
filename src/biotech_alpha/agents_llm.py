@@ -2087,6 +2087,287 @@ def _data_collector_finding_from_payload(
     )
 
 
+REPORT_SYNTHESIZER_PROMPT = StructuredPrompt(
+    name="report_synthesizer",
+    tags=("report", "synthesis", "memo", "llm"),
+    system=(
+        "你是研究报告综合编辑。你的权限很窄：只能生成执行结论段落和各章节"
+        "过渡句，帮助确定性报告读起来更连贯。你不得改写结构化事实、不得"
+        "改写数字、不得新增估值、不得新增市场事实。\n\n"
+        "硬约束:\n"
+        "- 只能使用输入 payload 中已经出现的信息。\n"
+        "- 不得输出买入、卖出、建仓、止损、仓位等交易指令。\n"
+        "- 不得修改或覆盖确定性 memo 的结构、表格、数字、代码、日期、"
+        "目标价或估值范围。\n"
+        "- 如果上游结论冲突，必须在 synthesis_warnings 中点明，不要强行"
+        "抹平。\n\n"
+        "OUTPUT RULES:\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: executive_verdict_paragraph, section_transitions, "
+        "synthesis_warnings, evidence_gaps, confidence, needs_human_review.\n"
+        "- section_transitions must be an object. Allowed keys: "
+        "investment_thesis, core_assets, catalysts, competition, financials, "
+        "valuation, risks.\n"
+        "- Never nest output inside analysis/result/report_synthesizer."
+    ),
+    user_template=(
+        "公司: ${company}\n"
+        "代码: ${ticker}\n"
+        "市场: ${market}\n"
+        "日期: ${as_of}\n\n"
+        "确定性 memo scaffold:\n${memo_scaffold}\n\n"
+        "上游 finding snapshots:\n${upstream_findings}\n\n"
+        "Stage B/C payloads:\n${stage_payloads}\n\n"
+        "估值与目标价摘要:\n${valuation_context}\n\n"
+        "请返回严格 JSON：\n"
+        "{\n"
+        "  \"executive_verdict_paragraph\": \"<1段中文执行结论，不新增数字>\",\n"
+        "  \"section_transitions\": {\n"
+        "    \"investment_thesis\": \"<投资主线过渡句>\",\n"
+        "    \"core_assets\": \"<核心资产过渡句>\",\n"
+        "    \"catalysts\": \"<催化剂过渡句>\",\n"
+        "    \"competition\": \"<竞争格局过渡句>\",\n"
+        "    \"financials\": \"<财务过渡句>\",\n"
+        "    \"valuation\": \"<估值过渡句>\",\n"
+        "    \"risks\": \"<风险过渡句>\"\n"
+        "  },\n"
+        "  \"synthesis_warnings\": [\"<上游冲突或口径提醒>\"],\n"
+        "  \"evidence_gaps\": [\"<缺失证据>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "executive_verdict_paragraph",
+            "section_transitions",
+            "synthesis_warnings",
+            "evidence_gaps",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "executive_verdict_paragraph": {
+                "type": "string",
+                "min_length": 8,
+                "max_length": 900,
+            },
+            "section_transitions": {
+                "type": "object",
+                "properties": {
+                    "investment_thesis": {"type": "string", "max_length": 320},
+                    "core_assets": {"type": "string", "max_length": 320},
+                    "catalysts": {"type": "string", "max_length": 320},
+                    "competition": {"type": "string", "max_length": 320},
+                    "financials": {"type": "string", "max_length": 320},
+                    "valuation": {"type": "string", "max_length": 320},
+                    "risks": {"type": "string", "max_length": 320},
+                },
+                "additionalProperties": False,
+            },
+            "synthesis_warnings": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "evidence_gaps": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class ReportSynthesizerLLMAgent(Agent):
+    """LLM agent that drafts memo prose without changing facts or numbers."""
+
+    llm_client: LLMClient
+    name: str = "report_synthesizer_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "report_synthesizer_llm_finding",
+        "report_synthesizer_payload",
+    )
+    max_tokens: int | None = 1400
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("ReportSynthesizerLLMAgent requires an LLMClient")
+
+    def run(self, context: AgentContext, store: FactStore) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("memo_scaffold_payload"), dict):
+            warnings.append("fallback_context:memo_scaffold_payload")
+
+        system, user = REPORT_SYNTHESIZER_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = REPORT_SYNTHESIZER_PROMPT.parse_response(
+                call.response_text
+            )
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _report_synthesizer_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "report_synthesizer_llm_finding": finding,
+                "report_synthesizer_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        upstream_findings = {
+            "scientific_skeptic": _finding_snapshot(
+                store.get("scientific_skeptic_llm_finding")
+            ),
+            "investment_thesis": _finding_snapshot(
+                store.get("investment_thesis_llm_finding")
+            ),
+            "data_collector": _finding_snapshot(
+                store.get("data_collector_llm_finding")
+            ),
+            "market_expectations": _finding_snapshot(
+                store.get("market_expectations_llm_finding")
+            ),
+            "valuation_committee": _finding_snapshot(
+                store.get("valuation_committee_llm_finding")
+            ),
+        }
+        stage_payloads = {
+            "data_collector": store.get("data_collector_payload"),
+            "strategic_economics": store.get("strategic_economics_payload"),
+            "catalyst": store.get("catalyst_payload"),
+            "market_expectations": store.get("market_expectations_payload"),
+            "market_regime_timing": store.get("market_regime_timing_payload"),
+        }
+        valuation_context = {
+            "target_price_snapshot": store.get("target_price_snapshot"),
+            "scorecard_summary": store.get("scorecard_summary"),
+            "valuation_committee": store.get("valuation_committee_payload"),
+        }
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "memo_scaffold": _json_block(store.get("memo_scaffold_payload")),
+            "upstream_findings": _json_block(upstream_findings),
+            "stage_payloads": _json_block(stage_payloads),
+            "valuation_context": _json_block(valuation_context),
+        }
+
+
+def _report_synthesizer_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    summary = str(
+        payload.get("executive_verdict_paragraph")
+        or "Report synthesis completed."
+    ).strip()
+    risks: list[str] = []
+    for warning in payload.get("synthesis_warnings") or []:
+        text = str(warning).strip()
+        if text:
+            risks.append(f"[synthesis_warning] {text}")
+    for gap in payload.get("evidence_gaps") or []:
+        text = str(gap).strip()
+        if text:
+            risks.append(f"[evidence_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Report synthesis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
 MACRO_CONTEXT_PROMPT = StructuredPrompt(
     name="macro_context",
     tags=("macro", "context", "llm"),
@@ -3782,6 +4063,9 @@ class ReportQualityLLMAgent(Agent):
             "catalyst": _finding_snapshot(store.get("catalyst_llm_finding")),
             "data_collector": _finding_snapshot(
                 store.get("data_collector_llm_finding")
+            ),
+            "report_synthesizer": _finding_snapshot(
+                store.get("report_synthesizer_llm_finding")
             ),
         }
         system, user = REPORT_QUALITY_PROMPT.render(

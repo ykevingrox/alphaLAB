@@ -30,8 +30,9 @@ Current system is **partially aligned**:
   scenarios. Stage B has started with technical features, an optional
   yfinance history adapter, and opt-in market-regime/timing,
   market-expectations, strategic-economics, catalyst, and data-collector
-  scaffolds.
-- **Not aligned yet:** no report synthesizer layer.
+  scaffolds, plus an opt-in report-synthesizer scaffold.
+- **Not aligned yet:** new Stage B/C scaffolds are not calibrated or quick
+  report defaults.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -130,8 +131,8 @@ multi-LLM investment committee.
 1. Stage B/C specialist scaffolds are opt-in and not quick-report defaults;
    calibration is still needed before promoting them.
 2. Market regime/timing still lacks sentiment and fund-flow payloads.
-3. `report-synthesizer-agent` is still missing; memo prose is still mostly
-   deterministic rendering.
+3. `report-synthesizer-agent` exists only as an opt-in scaffold; memo prose is
+   still deterministic by default.
 4. Broader document ingestion beyond HKEX annual results is still pending.
 5. Historical catalyst-reaction calibration and backtests are still pending.
 
@@ -417,6 +418,7 @@ Quality-agent scope MUST NOT include:
 
 Execute Sprint 8 in `docs/ROADMAP.md`:
 
-1. Add `report-synthesizer-agent` with deterministic fallback preserved.
-2. Calibrate the opt-in Stage B/C stack on `09606.HK` and `09887.HK`.
+1. Calibrate the opt-in Stage B/C stack on `09606.HK` and `09887.HK`.
+2. Tighten prompts/contracts if any agent invents facts or rewrites
+   deterministic numbers.
 3. Keep quick `report` defaults unchanged until the new agents are calibrated.

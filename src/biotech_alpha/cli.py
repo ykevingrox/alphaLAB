@@ -407,6 +407,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "market-regime-timing",
             "market-expectations",
             "investment-thesis",
+            "report-synthesizer",
             "valuation-specialist",
             "valuation-commercial",
             "valuation-rnpv",

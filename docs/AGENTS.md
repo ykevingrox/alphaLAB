@@ -642,6 +642,13 @@ Purpose: produce the final committee-style report from all specialist
 outputs. Deterministic-first by default; LLM writes transitions and the
 Executive Verdict paragraph.
 
+Current implementation note: optional `report-synthesizer` is wired for
+`company-report --llm-agents ...`. It consumes a deterministic
+`memo_scaffold_payload`, upstream finding snapshots, Stage B/C payloads,
+scorecard, target-price snapshot, and valuation committee payload. When its
+payload is present during saved LLM runs, the memo renderer inserts only the
+executive verdict paragraph and configured section transitions.
+
 Inputs:
 
 - All upstream agent findings

@@ -323,8 +323,8 @@ with token counts, latency, and a run-level cost summary.
 
 ## Next Execution Plan
 
-**Active sprint:** Stage C — `data-collector-agent` scaffold is implemented;
-next is `report-synthesizer-agent` with deterministic fallback preserved.
+**Active sprint:** Stage B/C calibration — `data-collector-agent` and
+`report-synthesizer-agent` scaffolds are implemented.
 Sprint 6 Stage A and Sprint 7 Stage B are implemented at scaffold level and
 remain open for calibration hardening before quick-report defaults change.
 
@@ -1244,8 +1244,9 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 
-**Sprint status:** started. First data-collector scaffold exists; report
-synthesizer is pending.
+**Sprint status:** scaffold-complete. First data-collector and
+report-synthesizer scaffolds exist; calibration is pending before quick-report
+defaults change.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
@@ -1254,7 +1255,8 @@ synthesizer is pending.
   the `report-quality-agent` when requested.
 - `report-synthesizer-agent`: move the memo's Executive Verdict and
   section transitions from deterministic rendering to an LLM agent, with
-  deterministic fallback preserved.
+  deterministic fallback preserved. First opt-in scaffold is implemented and
+  only inserts executive verdict prose plus section transitions when requested.
 
-Next Sprint-8 task: add `report-synthesizer-agent` with deterministic fallback
-preserved.
+Next Sprint-8 task: calibrate the opt-in Stage B/C stack on 09606.HK and
+09887.HK.

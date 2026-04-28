@@ -532,6 +532,7 @@ def memo_to_markdown(
     llm_findings: tuple[AgentFinding, ...] = (),
     llm_confidence_threshold: float = 0.3,
     report_quality_payload: dict[str, Any] | None = None,
+    report_synthesizer_payload: dict[str, Any] | None = None,
 ) -> str:
     """Render an investment-style memo with LLM findings merged in."""
 
@@ -553,6 +554,13 @@ def memo_to_markdown(
         memo.summary,
         "",
     ]
+    if isinstance(report_synthesizer_payload, dict):
+        verdict = str(
+            report_synthesizer_payload.get("executive_verdict_paragraph")
+            or ""
+        ).strip()
+        if verdict:
+            lines.extend([verdict, ""])
     lines.extend(_executive_observation_lines(memo=memo, findings=tuple(all_findings)))
     valuation_findings = _findings_for(all_findings, "target_price")
     competition_findings = _findings_for(all_findings, "competition")
@@ -564,6 +572,7 @@ def memo_to_markdown(
         lines.append(f"- {scorecard_findings[0].summary}")
 
     lines.extend(["", "## 投资主线", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "investment_thesis")
     lines.append("### 看多驱动")
     lines.extend(_bullet_lines(memo.bull_case))
     lines.extend(["", "### 看空驱动"])
@@ -579,6 +588,7 @@ def memo_to_markdown(
             lines.append(f"- {finding.summary}")
 
     lines.extend(["", "## 核心资产深挖", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "core_assets")
     if memo.key_assets:
         for asset in memo.key_assets[:3]:
             details = []
@@ -613,10 +623,12 @@ def memo_to_markdown(
             lines.append(f"- {finding.summary}")
 
     lines.extend(["", "## 催化剂路线图", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "catalysts")
     for line in _catalyst_lines(memo.catalysts, key_assets=memo.key_assets):
         lines.append(line)
 
     lines.extend(["", "## 竞争格局", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "competition")
     if competition_findings:
         for finding in competition_findings:
             lines.append(f"- {finding.summary}")
@@ -626,6 +638,7 @@ def memo_to_markdown(
         lines.append("- 未提供可用的结构化竞品输入。")
 
     lines.extend(["", "## 财务与现金流", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "financials")
     financial_findings = _findings_for(all_findings, "financial")
     if financial_findings:
         for finding in financial_findings:
@@ -636,6 +649,7 @@ def memo_to_markdown(
         lines.append("- 财务与现金流结论暂不可用。")
 
     lines.extend(["", "## 估值细化", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "valuation")
     if valuation_findings:
         for finding in valuation_findings:
             lines.append(f"- {finding.summary}")
@@ -678,6 +692,7 @@ def memo_to_markdown(
     )
 
     lines.extend(["", "## 关键风险与证伪条件", ""])
+    _append_synth_transition(lines, report_synthesizer_payload, "risks")
     lines.extend(_finding_risk_lines(tuple(all_findings)))
 
     if isinstance(report_quality_payload, dict):
@@ -732,6 +747,21 @@ def memo_to_markdown(
     lines.extend(_bullet_lines(memo.follow_up_questions))
     lines.append("")
     return "\n".join(lines)
+
+
+def _append_synth_transition(
+    lines: list[str],
+    payload: dict[str, Any] | None,
+    key: str,
+) -> None:
+    if not isinstance(payload, dict):
+        return
+    transitions = payload.get("section_transitions")
+    if not isinstance(transitions, dict):
+        return
+    text = str(transitions.get(key) or "").strip()
+    if text:
+        lines.extend([text, ""])
 
 
 def write_trial_summary_csv(

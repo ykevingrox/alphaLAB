@@ -918,6 +918,16 @@ class SourceTextExcerptTest(unittest.TestCase):
             ["cash source stale"],
         )
 
+    def test_build_llm_agent_facts_threads_memo_scaffold_payload(self) -> None:
+        research = _minimal_research_stub()
+
+        facts = build_llm_agent_facts(research_result=research)
+
+        scaffold = facts["memo_scaffold_payload"]
+        self.assertEqual(scaffold["ticker"], "09606.HK")
+        self.assertIn("deterministic_summary", scaffold)
+        self.assertEqual(scaffold["catalyst_count"], 0)
+
     def test_build_llm_agent_facts_threads_catalyst_calendar(self) -> None:
         class _Evidence:
             claim = "company disclosed readout window"

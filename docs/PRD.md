@@ -73,9 +73,9 @@ Current implementation status:
   `competition-triage`, `strategic-economics`, `catalyst`, `data-collector`,
   `macro-context`, `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
   `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
-  `market-regime-timing`, `market-expectations`, `report-quality`, and
-  compatibility-only
-  `valuation-specialist` — with JSON schema validation,
+  `market-regime-timing`, `market-expectations`, `report-quality`,
+  `report-synthesizer`, and compatibility-only `valuation-specialist` — with
+  JSON schema validation,
   per-run and per-agent call budgets, and JSONL traces under `data/traces/`.
 - Implemented: HK public market-data providers (Tencent / Yahoo) and macro
   live-signal providers (Yahoo / Stooq / HKMA) with disk cache and
@@ -97,7 +97,8 @@ Current implementation status:
 - Implemented as opt-in scaffolds (Stage B, Sprint 7):
   `strategic-economics-agent`, `catalyst-agent`,
   `market-expectations-agent`, and `market-regime-timing-agent`.
-- Pending (Stage C, Sprint 8): LLM `report-synthesizer-agent`.
+- Implemented as opt-in scaffold (Stage C, Sprint 8):
+  `data-collector-agent` and `report-synthesizer-agent`.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not
