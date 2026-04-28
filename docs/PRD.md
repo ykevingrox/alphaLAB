@@ -70,8 +70,8 @@ Current implementation status:
 - Implemented: in-process `AgentGraph` + `FactStore` runtime with the
   following opt-in LLM agents — `provisional-pipeline`,
   `provisional-financial`, `pipeline-triage`, `financial-triage`,
-  `competition-triage`, `strategic-economics`, `catalyst`, `macro-context`,
-  `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
+  `competition-triage`, `strategic-economics`, `catalyst`, `data-collector`,
+  `macro-context`, `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
   `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
   `market-regime-timing`, `market-expectations`, `report-quality`, and
   compatibility-only
@@ -94,11 +94,10 @@ Current implementation status:
   owns the publish gate. Latest artifacts show the pod runs, but biotech
   valuation framing still needs calibration so conservative rNPV is not
   treated as the sole fair-value anchor.
-- Pending (Stage B, Sprint 7): LLM `strategic-economics-agent`,
-  `catalyst-agent`, `market-expectations-agent`, and
-  `market-regime-timing-agent`.
-- Pending (Stage C, Sprint 8): LLM `data-collector-agent` and
-  `report-synthesizer-agent`.
+- Implemented as opt-in scaffolds (Stage B, Sprint 7):
+  `strategic-economics-agent`, `catalyst-agent`,
+  `market-expectations-agent`, and `market-regime-timing-agent`.
+- Pending (Stage C, Sprint 8): LLM `report-synthesizer-agent`.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

@@ -29,9 +29,9 @@ Current system is **partially aligned**:
   separates conservative rNPV floor, market-implied value, and repricing
   scenarios. Stage B has started with technical features, an optional
   yfinance history adapter, and opt-in market-regime/timing,
-  market-expectations, strategic-economics, and catalyst scaffolds.
-- **Not aligned yet:** no standalone LLM `data-collector-agent` and no report
-  synthesizer layer.
+  market-expectations, strategic-economics, catalyst, and data-collector
+  scaffolds.
+- **Not aligned yet:** no report synthesizer layer.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -100,6 +100,7 @@ multi-LLM investment committee.
   - `competition-triage`
   - `strategic-economics`
   - `catalyst`
+  - `data-collector`
   - `macro-context`
   - `market-expectations`
   - `market-regime-timing`
@@ -113,7 +114,7 @@ multi-LLM investment committee.
   - `valuation-specialist` (compatibility path, no longer default)
 - Deterministic modules still carrying responsibilities targeted for future
   dedicated LLM agents:
-  - Data collection quality and source triage (extraction audit module).
+  - Report synthesis prose and section transitions.
 
 ## Consistency Scorecard (as of 2026-04-27)
 
@@ -227,6 +228,9 @@ The staging below is the committed plan. Sprint-level execution lives in
 
 - Add `data-collector-agent` as explicit source-evidence triage layer over
   existing deterministic ingestion stack.
+  - First opt-in scaffold is implemented for `company-report --llm-agents
+    data-collector`; it produces per-domain evidence verdicts for
+    `report-quality`.
 - Move final memo body composition from mixed deterministic rendering toward
   `report-synthesizer-agent` with deterministic fallback.
 

@@ -402,6 +402,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "competition-triage",
             "strategic-economics",
             "catalyst",
+            "data-collector",
             "macro-context",
             "market-regime-timing",
             "market-expectations",

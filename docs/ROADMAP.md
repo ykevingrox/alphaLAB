@@ -1244,14 +1244,17 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 
-**Sprint status:** not started. Sprint 7 must close first.
+**Sprint status:** started. First data-collector scaffold exists; report
+synthesizer is pending.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
   produces `publish_ready / needs_more_evidence / insufficient_data`
-  verdicts per input domain. Feeds the `report-quality-agent`.
+  verdicts per input domain. First opt-in scaffold is implemented and feeds
+  the `report-quality-agent` when requested.
 - `report-synthesizer-agent`: move the memo's Executive Verdict and
   section transitions from deterministic rendering to an LLM agent, with
   deterministic fallback preserved.
 
-Sprint-8 execution will be detailed when Sprint 7 closes.
+Next Sprint-8 task: add `report-synthesizer-agent` with deterministic fallback
+preserved.

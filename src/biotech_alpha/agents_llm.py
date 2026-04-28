@@ -1757,6 +1757,336 @@ def _catalyst_finding_from_payload(
     )
 
 
+DATA_COLLECTOR_PROMPT = StructuredPrompt(
+    name="data_collector",
+    tags=("data", "evidence", "quality", "llm"),
+    system=(
+        "You are a source-evidence triage analyst for a biotech research "
+        "workflow. Your job is to audit whether the deterministic ingestion "
+        "outputs are good enough for publication. You do not fetch data and "
+        "you do not rewrite investment conclusions. You classify each input "
+        "domain as publish_ready, needs_more_evidence, or insufficient_data.\n\n"
+        "Ground rules:\n"
+        "- Work only from provided payloads. Do NOT invent missing sources, "
+        "publication dates, trial IDs, financial values, or catalyst dates.\n"
+        "- A domain can be publish_ready only when the provided source and "
+        "validation payloads are specific enough to support report claims.\n"
+        "- Flag stale source dates, placeholder sources, warnings, empty "
+        "payloads, and inferred-only evidence as gaps.\n"
+        "- Do not block the run for ordinary soft warnings; classify the "
+        "domain and explain the review burden.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: run_verdict, domain_verdicts, priority_gaps, "
+        "confidence, needs_human_review.\n"
+        "- run_verdict is publish_ready, needs_more_evidence, or "
+        "insufficient_data.\n"
+        "- domain_verdicts is a list of objects with domain, verdict, "
+        "evidence_quality, stale_sources, missing_evidence, and rationale.\n"
+        "- evidence_quality is high, medium, low, or insufficient_data.\n"
+        "- Never nest output inside analysis/result/data_collector."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Input validation payload:\n${input_validation}\n\n"
+        "Input warnings:\n${input_warnings}\n\n"
+        "Pipeline snapshot:\n${pipeline_snapshot}\n\n"
+        "Financials snapshot:\n${financials_snapshot}\n\n"
+        "Valuation snapshot:\n${valuation_snapshot}\n\n"
+        "Competition snapshot:\n${competition_snapshot}\n\n"
+        "Catalyst calendar payload:\n${catalyst_calendar}\n\n"
+        "Target-price snapshot:\n${target_price_snapshot}\n\n"
+        "Macro context payload:\n${macro_context}\n\n"
+        "Source text excerpt:\n${source_text_excerpt}\n\n"
+        "Fallback context:\n${fallback_context}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"run_verdict\": \"publish_ready|needs_more_evidence|insufficient_data\",\n"
+        "  \"domain_verdicts\": [\n"
+        "    {\"domain\": \"<pipeline|financials|valuation|competition|catalysts|target_price|macro|source_text>\", \"verdict\": \"publish_ready|needs_more_evidence|insufficient_data\", \"evidence_quality\": \"high|medium|low|insufficient_data\", \"stale_sources\": [\"<stale source>\"], \"missing_evidence\": [\"<missing evidence>\"], \"rationale\": \"<brief rationale>\"}\n"
+        "  ],\n"
+        "  \"priority_gaps\": [\"<highest priority evidence gap>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "run_verdict",
+            "domain_verdicts",
+            "priority_gaps",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "run_verdict": {
+                "type": "string",
+                "enum": [
+                    "publish_ready",
+                    "needs_more_evidence",
+                    "insufficient_data",
+                ],
+            },
+            "domain_verdicts": {
+                "type": "array",
+                "min_items": 1,
+                "max_items": 16,
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "domain",
+                        "verdict",
+                        "evidence_quality",
+                        "stale_sources",
+                        "missing_evidence",
+                        "rationale",
+                    ],
+                    "properties": {
+                        "domain": {"type": "string", "min_length": 2},
+                        "verdict": {
+                            "type": "string",
+                            "enum": [
+                                "publish_ready",
+                                "needs_more_evidence",
+                                "insufficient_data",
+                            ],
+                        },
+                        "evidence_quality": {
+                            "type": "string",
+                            "enum": [
+                                "high",
+                                "medium",
+                                "low",
+                                "insufficient_data",
+                            ],
+                        },
+                        "stale_sources": {
+                            "type": "array",
+                            "max_items": 12,
+                            "items": {
+                                "type": "string",
+                                "min_length": 3,
+                                "max_length": 260,
+                            },
+                        },
+                        "missing_evidence": {
+                            "type": "array",
+                            "max_items": 12,
+                            "items": {
+                                "type": "string",
+                                "min_length": 3,
+                                "max_length": 260,
+                            },
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 420,
+                        },
+                    },
+                },
+            },
+            "priority_gaps": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class DataCollectorLLMAgent(Agent):
+    """LLM source-evidence triage layer over deterministic ingestion."""
+
+    llm_client: LLMClient
+    name: str = "data_collector_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "data_collector_llm_finding",
+        "data_collector_payload",
+    )
+    max_tokens: int | None = 1500
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("DataCollectorLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("input_validation_payload"), dict):
+            warnings.append("fallback_context:input_validation_payload")
+        if not store.get("source_text_excerpt"):
+            warnings.append("fallback_context:source_text_excerpt")
+
+        system, user = DATA_COLLECTOR_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = DATA_COLLECTOR_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _data_collector_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "data_collector_llm_finding": finding,
+                "data_collector_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "input_validation": _json_block(
+                store.get("input_validation_payload")
+            ),
+            "input_warnings": _format_lines(store.get("input_warnings") or []),
+            "pipeline_snapshot": _json_block(store.get("pipeline_snapshot")),
+            "financials_snapshot": _json_block(store.get("financials_snapshot")),
+            "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+            "competition_snapshot": _json_block(
+                store.get("competition_snapshot")
+            ),
+            "catalyst_calendar": _json_block(
+                store.get("catalyst_calendar_payload")
+            ),
+            "target_price_snapshot": _json_block(
+                store.get("target_price_snapshot")
+            ),
+            "macro_context": _json_block(store.get("macro_context")),
+            "source_text_excerpt": _source_text_block(
+                store.get("source_text_excerpt")
+            ),
+            "fallback_context": _json_block(store.get("fallback_context")),
+        }
+
+
+def _data_collector_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    verdict = str(payload.get("run_verdict") or "needs_more_evidence").strip()
+    domains = payload.get("domain_verdicts") or []
+    summary = f"Data collection verdict: {verdict} across {len(domains)} domain(s)."
+
+    risks: list[str] = []
+    if verdict != "publish_ready":
+        risks.append(f"[run_verdict] {verdict}")
+    for item in domains:
+        if not isinstance(item, dict):
+            continue
+        domain = str(item.get("domain") or "unknown").strip()
+        domain_verdict = str(item.get("verdict") or "").strip()
+        quality = str(item.get("evidence_quality") or "").strip()
+        if domain_verdict != "publish_ready":
+            risks.append(f"[domain_verdict][{domain}] {domain_verdict}/{quality}")
+        for stale in item.get("stale_sources") or []:
+            text = str(stale).strip()
+            if text:
+                risks.append(f"[stale_source][{domain}] {text}")
+        for missing in item.get("missing_evidence") or []:
+            text = str(missing).strip()
+            if text:
+                risks.append(f"[missing_evidence][{domain}] {text}")
+    for gap in payload.get("priority_gaps") or []:
+        text = str(gap).strip()
+        if text:
+            risks.append(f"[priority_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Data collection triage produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
 MACRO_CONTEXT_PROMPT = StructuredPrompt(
     name="macro_context",
     tags=("macro", "context", "llm"),
@@ -3450,6 +3780,9 @@ class ReportQualityLLMAgent(Agent):
                 store.get("strategic_economics_llm_finding")
             ),
             "catalyst": _finding_snapshot(store.get("catalyst_llm_finding")),
+            "data_collector": _finding_snapshot(
+                store.get("data_collector_llm_finding")
+            ),
         }
         system, user = REPORT_QUALITY_PROMPT.render(
             {

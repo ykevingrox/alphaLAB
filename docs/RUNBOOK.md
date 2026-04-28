@@ -563,7 +563,8 @@ If validation warns about placeholders:
 - `scientific-skeptic` and `investment-thesis` agents produce LLM-backed
   counter-thesis and thesis summaries, but they do not yet evaluate trial
   design, endpoints, efficacy, or safety from source documents directly.
-- No LLM `strategic-economics-agent`, `catalyst-agent`,
-  `market-expectations-agent`, or `data-collector-agent` yet; tracked as
-  Stage B / Stage C in `docs/ROADMAP.md`. `market-regime-timing` exists as an
-  opt-in scaffold, but is not quick-report default yet.
+- LLM `strategic-economics-agent`, `catalyst-agent`,
+  `market-expectations-agent`, `market-regime-timing-agent`, and
+  `data-collector-agent` exist as opt-in scaffolds, but are not quick-report
+  defaults yet. `report-synthesizer-agent` remains pending in
+  `docs/ROADMAP.md`.

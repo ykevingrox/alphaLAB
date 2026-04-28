@@ -905,6 +905,19 @@ class SourceTextExcerptTest(unittest.TestCase):
 
         self.assertEqual(facts["technical_feature_payload"], technical)
 
+    def test_build_llm_agent_facts_threads_input_validation_payload(self) -> None:
+        research = _minimal_research_stub()
+        research.input_validation = {
+            "financials": {"warnings": ["cash source stale"]},
+        }
+
+        facts = build_llm_agent_facts(research_result=research)
+
+        self.assertEqual(
+            facts["input_validation_payload"]["financials"]["warnings"],
+            ["cash source stale"],
+        )
+
     def test_build_llm_agent_facts_threads_catalyst_calendar(self) -> None:
         class _Evidence:
             claim = "company disclosed readout window"

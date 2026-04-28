@@ -512,6 +512,7 @@ SUPPORTED_LLM_AGENTS = (
     "competition-triage",
     "strategic-economics",
     "catalyst",
+    "data-collector",
     "macro-context",
     "market-regime-timing",
     "market-expectations",
@@ -549,9 +550,10 @@ def _run_llm_agent_pipeline(
     )
     from biotech_alpha.agents import AgentContext
     from biotech_alpha.agents_llm import (
-        CompetitionTriageLLMAgent,
-        FinancialTriageLLMAgent,
         CatalystLLMAgent,
+        CompetitionTriageLLMAgent,
+        DataCollectorLLMAgent,
+        FinancialTriageLLMAgent,
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
         MarketExpectationsLLMAgent,
@@ -692,6 +694,13 @@ def _run_llm_agent_pipeline(
                 depends_on=tuple(catalyst_deps),
             )
         )
+    if "data-collector" in llm_agents:
+        graph.add(
+            DataCollectorLLMAgent(
+                llm_client=llm_client,
+                depends_on=("publish_research_facts",),
+            )
+        )
     if "macro-context" in llm_agents:
         graph.add(
             MacroContextLLMAgent(
@@ -799,6 +808,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("strategic_economics_llm_agent")
         if "catalyst" in llm_agents:
             quality_deps.append("catalyst_llm_agent")
+        if "data-collector" in llm_agents:
+            quality_deps.append("data_collector_llm_agent")
         if "valuation-commercial" in llm_agents:
             quality_deps.append("valuation_commercial_llm_agent")
         if "valuation-rnpv" in llm_agents:
@@ -976,6 +987,7 @@ def build_llm_agent_facts(
         "trial_summary": trial_summary,
         "valuation_snapshot": valuation_snapshot or None,
         "input_warnings": input_warnings,
+        "input_validation_payload": dict(research_result.input_validation or {}),
         "source_text_excerpt": source_text_excerpt,
         "financials_snapshot": financials_snapshot,
         "competition_snapshot": competition_snapshot,

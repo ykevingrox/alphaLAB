@@ -661,6 +661,36 @@ Boundaries:
 - When upstream findings conflict, must surface the conflict rather than
   silently pick one side.
 
+## Data Collector Agent
+
+Purpose: audit whether deterministic ingestion and source evidence are good
+enough to support publication. It does not fetch new data and does not rewrite
+investment conclusions.
+
+Current implementation note: optional `data-collector` is wired for
+`company-report --llm-agents ...`. It consumes `input_validation_payload`,
+source-text excerpts, fallback source documents, pipeline/financial/valuation
+snapshots, competition, catalyst calendar, target-price snapshot, and macro
+context. Its payload feeds `report-quality` when both agents are requested.
+
+Outputs:
+
+- `run_verdict`: `publish_ready`, `needs_more_evidence`, or
+  `insufficient_data`.
+- `domain_verdicts`: per-domain verdicts with evidence quality, stale sources,
+  missing evidence, and rationale.
+- `priority_gaps`: highest-priority evidence gaps.
+- `confidence`.
+- `needs_human_review`.
+
+Boundaries:
+
+- Must NOT invent missing source dates, trial IDs, financial values, or
+  catalyst dates.
+- Must NOT block on ordinary soft warnings; classify the domain and explain
+  review burden.
+- Must NOT change upstream facts or memo text.
+
 ## Report Quality Agent
 
 Purpose: independent editorial and consistency audit over the fully composed
