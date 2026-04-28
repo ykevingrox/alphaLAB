@@ -99,6 +99,8 @@ multi-LLM investment committee.
   - `financial-triage`
   - `competition-triage`
   - `macro-context`
+  - `market-expectations`
+  - `market-regime-timing`
   - `scientific-skeptic`
   - `investment-thesis`
   - `valuation-commercial`
@@ -109,10 +111,9 @@ multi-LLM investment committee.
   - `valuation-specialist` (compatibility path, no longer default)
 - Deterministic modules still carrying responsibilities targeted for future
   dedicated LLM agents:
-  - Technical timing (`technical-timing` command).
   - Catalyst generation/ranking (`target_price.py`, `pipeline.py`).
   - Data collection quality and source triage (extraction audit module).
-  - Strategic economics and market expectations.
+  - Strategic economics.
 
 ## Consistency Scorecard (as of 2026-04-27)
 
@@ -205,6 +206,9 @@ The staging below is the committed plan. Sprint-level execution lives in
     catalyst assumptions appear priced in.
   - Compares market-implied assumptions against evidence instead of declaring
     the market wrong whenever rNPV is lower than price.
+  - First opt-in scaffold is implemented for `company-report --llm-agents
+    market-expectations`; calibration will improve once strategic-economics
+    and catalyst payloads exist.
 - Add `market-regime-timing-agent`:
   - Absorbs current `macro-context`, future k-line framing, sector sentiment,
     liquidity, and fund-flow signals.

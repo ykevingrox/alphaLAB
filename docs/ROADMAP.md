@@ -1190,16 +1190,19 @@ keeps provider volatility out of prompts and gives both
   context plus optional `technical_feature_payload` and emits research-only
   timing labels. It is opt-in, not quick-report default.
 - **Done** — `company-report --technical-features yfinance` threads real
-  technical-feature payloads into LLM facts when `market-regime-timing` is
-  requested. Quick `report` remains unchanged.
-- **Next** — Add `market-expectations-agent`.
+  technical-feature payloads into LLM facts when `market-regime-timing` or
+  `market-expectations` is requested. Quick `report` remains unchanged.
+- **Done** — First `market-expectations-agent` scaffold explains
+  market-implied assumptions, valuation-band context, rNPV gaps,
+  expectation-risk flags, and evidence gaps.
+- **Next** — Add `strategic-economics-agent`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** started. Market-regime/timing scaffold exists; market
-expectations and strategic/catalyst layers are pending.
+**Sprint status:** started. Market-regime/timing and market-expectations
+scaffolds exist; strategic/catalyst layers are pending.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1212,13 +1215,15 @@ expectations and strategic/catalyst layers are pending.
 - `market-expectations-agent`: explains what the current market cap appears
   to imply. It asks why the stock has sustained its valuation band before the
   system labels the gap versus conservative rNPV as overvaluation, including
-  which catalyst assumptions appear priced in.
+  which catalyst assumptions appear priced in. First opt-in scaffold is
+  implemented; it will become more useful after strategic economics and
+  catalyst payloads land.
 - `market-regime-timing-agent`: combines the existing `macro-context` role,
   planned k-line framing, sector sentiment, liquidity, and fund-flow proxies
   into research-only timing labels (`favorable`, `neutral`, `fragile`,
   `avoid_chasing`, `de_risk_watch`). First opt-in scaffold is implemented;
-  live technical-feature collection still needs to be threaded into report
-  facts.
+  live technical-feature collection is available through the opt-in yfinance
+  adapter.
 
 Sprint-7 agent execution should keep two conclusions separate:
 

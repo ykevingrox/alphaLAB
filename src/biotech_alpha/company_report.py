@@ -512,6 +512,7 @@ SUPPORTED_LLM_AGENTS = (
     "competition-triage",
     "macro-context",
     "market-regime-timing",
+    "market-expectations",
     "investment-thesis",
     "valuation-specialist",
     "valuation-commercial",
@@ -550,6 +551,7 @@ def _run_llm_agent_pipeline(
         FinancialTriageLLMAgent,
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
+        MarketExpectationsLLMAgent,
         MarketRegimeTimingLLMAgent,
         PipelineTriageLLMAgent,
         ProvisionalFinancialLLMAgent,
@@ -581,7 +583,10 @@ def _run_llm_agent_pipeline(
     technical_features: dict[str, Any] | None = None
     if (
         technical_features_provider is not None
-        and "market-regime-timing" in llm_agents
+        and (
+            "market-regime-timing" in llm_agents
+            or "market-expectations" in llm_agents
+        )
     ):
         try:
             technical_features = technical_features_provider(identity)
@@ -676,6 +681,20 @@ def _run_llm_agent_pipeline(
                 depends_on=tuple(timing_deps),
             )
         )
+    if "market-expectations" in llm_agents:
+        expectations_deps = ["publish_research_facts"]
+        if "valuation-committee" in llm_agents:
+            expectations_deps.append("valuation_committee_llm_agent")
+        if "market-regime-timing" in llm_agents:
+            expectations_deps.append("market_regime_timing_llm_agent")
+        elif "macro-context" in llm_agents:
+            expectations_deps.append("macro_context_llm_agent")
+        graph.add(
+            MarketExpectationsLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(dict.fromkeys(expectations_deps)),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
         graph.add(
             ScientificSkepticLLMAgent(
@@ -750,6 +769,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("valuation_committee_llm_agent")
         if "market-regime-timing" in llm_agents:
             quality_deps.append("market_regime_timing_llm_agent")
+        if "market-expectations" in llm_agents:
+            quality_deps.append("market_expectations_llm_agent")
         graph.add(
             ReportQualityLLMAgent(
                 llm_client=llm_client,

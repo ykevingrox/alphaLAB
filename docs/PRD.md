@@ -72,8 +72,9 @@ Current implementation status:
   `provisional-financial`, `pipeline-triage`, `financial-triage`,
   `competition-triage`, `macro-context`, `scientific-skeptic`,
   `investment-thesis`, `valuation-commercial`, `valuation-rnpv`,
-  `valuation-balance-sheet`, `valuation-committee`, `report-quality`, and
-  compatibility-only `valuation-specialist` — with JSON schema validation,
+  `valuation-balance-sheet`, `valuation-committee`, `market-regime-timing`,
+  `market-expectations`, `report-quality`, and compatibility-only
+  `valuation-specialist` — with JSON schema validation,
   per-run and per-agent call budgets, and JSONL traces under `data/traces/`.
 - Implemented: HK public market-data providers (Tencent / Yahoo) and macro
   live-signal providers (Yahoo / Stooq / HKMA) with disk cache and

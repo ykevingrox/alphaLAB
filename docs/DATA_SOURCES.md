@@ -189,8 +189,8 @@ Optional historical adapter:
   the optional `market` extra and returns `None` if yfinance is absent or
   history fetches fail.
 - `company-report --technical-features yfinance` can attach this payload to
-  LLM facts for opt-in `market-regime-timing` runs. Quick `report` does not
-  fetch yfinance history by default.
+  LLM facts for opt-in `market-regime-timing` or `market-expectations` runs.
+  Quick `report` does not fetch yfinance history by default.
 
 ### Macro Signal Providers
 

@@ -48,8 +48,10 @@ investment committee.
   - `biotech_alpha.yfinance_provider` is an optional historical-data adapter
     behind graceful import and the `market` optional dependency extra.
   - Optional `market-regime-timing` LLM scaffold is wired for company-report.
+  - Optional `market-expectations` LLM scaffold is wired for company-report.
   - `company-report --technical-features yfinance` now threads source-backed
-    technical payloads into LLM facts when `market-regime-timing` is requested.
+    technical payloads into LLM facts when `market-regime-timing` or
+    `market-expectations` is requested.
 - Working tree should be clean before new development. Check with:
 
 ```bash
@@ -83,18 +85,18 @@ Decision for now:
 Current task: continue Stage B without introducing unnecessary external
 dependencies.
 
-Next action: start `market-expectations-agent`.
+Next action: start `strategic-economics-agent`.
 
 Recommended scope:
 
-1. Add an LLM agent contract and prompt for `market-expectations-agent`.
-2. Inputs: valuation pod/committee payloads, valuation snapshot, macro context,
-   technical feature payload, and optional market-regime/timing payload.
-3. Outputs: `market_implied_assumptions`, `valuation_band_context`,
-   `rnpv_gap_explanation`, `expectation_risk_flags`, `evidence_gaps`,
-   `confidence`, and `needs_human_review`.
-4. Keep it explanatory; current price is not proof of fair value, and
-   conservative rNPV below price is not by itself overvaluation.
+1. Add an LLM agent contract and prompt for `strategic-economics-agent`.
+2. Inputs: pipeline/competition facts, source-text excerpts, valuation pod
+   outputs, known BD/partner evidence, financial snapshot, and macro context.
+3. Outputs should distinguish retained economics, regional rights, BD/licensing
+   economics, partner quality, development cost sharing, commercialization
+   path, and platform reuse only when platform evidence exists.
+4. Feed its payload into `market-expectations-agent`,
+   `valuation-committee-agent`, and later `catalyst-agent`.
 5. Tests should use `FakeLLMClient`; no live market or LLM calls.
 
 Acceptance criteria:
@@ -127,10 +129,10 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. `market-expectations-agent` explaining market-implied assumptions and
-   valuation-band context.
-2. `strategic-economics-agent`.
-3. `catalyst-agent`.
+1. `strategic-economics-agent`.
+2. `catalyst-agent`.
+3. Improve `market-expectations-agent` with strategic economics and catalyst
+   payloads once those exist.
 4. TradingAgents-inspired bull/bear debate and decision-log memory, after the
    Stage B agents have stable payloads.
 

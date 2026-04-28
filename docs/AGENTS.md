@@ -554,6 +554,13 @@ Boundaries:
 Purpose: explain what the current market cap appears to imply before any
 agent declares the stock cheap or expensive.
 
+Current implementation note: the first LLM scaffold is wired as optional
+`market-expectations`. It consumes valuation snapshot, valuation pod and
+committee payloads, macro context, optional `technical_feature_payload`, and
+optional `market_regime_timing_payload`. `company-report --technical-features
+yfinance` can thread the technical payload when `market-expectations` or
+`market-regime-timing` is requested.
+
 Inputs:
 
 - `market_snapshot`, `valuation_snapshot`, historical price and market-cap
@@ -589,8 +596,9 @@ Current implementation note: the first LLM scaffold is wired as optional
 `market-regime-timing`. It consumes existing `macro_context`, optional
 `macro_context_payload`, and optional `technical_feature_payload`.
 `company-report --technical-features yfinance` can thread the technical payload
-when `market-regime-timing` is requested. It is not yet in the quick-report
-default stack because technical payload collection is still opt-in.
+when `market-regime-timing` or `market-expectations` is requested. It is not
+yet in the quick-report default stack because technical payload collection is
+still opt-in.
 
 Inputs:
 

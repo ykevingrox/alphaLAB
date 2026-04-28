@@ -1562,6 +1562,306 @@ def _market_regime_timing_finding_from_payload(
     )
 
 
+MARKET_EXPECTATIONS_PROMPT = StructuredPrompt(
+    name="market_expectations",
+    tags=("market", "valuation", "expectations", "llm"),
+    system=(
+        "You are a biotech market-expectations analyst. Your job is to "
+        "explain what the current market value appears to imply before any "
+        "research memo labels the stock cheap or expensive. You bridge "
+        "valuation-pod outputs, conservative rNPV, current market cap, macro "
+        "context, technical features, and timing labels.\n\n"
+        "Ground rules:\n"
+        "- Work only from provided payloads. Do NOT invent prices, peer "
+        "multiples, historical bands, deal terms, or catalyst dates.\n"
+        "- Current price is not proof of fair value.\n"
+        "- Conservative rNPV below current market value is not by itself "
+        "overvaluation for a biotech company.\n"
+        "- Explicitly name which strategic economics, BD/licensing, platform, "
+        "commercialization, catalyst-window, or liquidity assumptions would "
+        "need to be true for the market value to make sense. If an assumption "
+        "is not evidenced in the inputs, label it as an evidence gap.\n"
+        "- No trading instructions. Do NOT say buy, sell, enter, exit, stop "
+        "loss, or position size.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: market_implied_assumptions, valuation_band_context, "
+        "rnpv_gap_explanation, expectation_risk_flags, evidence_gaps, "
+        "confidence, needs_human_review.\n"
+        "- valuation_band_context is exactly one of: historical_floor, "
+        "mid_band, extended_band, unknown.\n"
+        "- Arrays must contain concise strings.\n"
+        "- Never nest output inside analysis/result/market_expectations."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Valuation snapshot:\n${valuation_snapshot}\n\n"
+        "Target-price snapshot:\n${target_price_snapshot}\n\n"
+        "Valuation pod payloads:\n${valuation_pod_payloads}\n\n"
+        "Macro context payload:\n${macro_context}\n\n"
+        "Technical feature payload:\n${technical_payload}\n\n"
+        "Market-regime/timing payload:\n${timing_payload}\n\n"
+        "Catalyst payload, if available:\n${catalyst_payload}\n\n"
+        "Scorecard summary:\n${scorecard_summary}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"market_implied_assumptions\": [\"<assumption implied by market value>\"],\n"
+        "  \"valuation_band_context\": \"historical_floor|mid_band|extended_band|unknown\",\n"
+        "  \"rnpv_gap_explanation\": \"<why the gap vs conservative rNPV may or may not be justified>\",\n"
+        "  \"expectation_risk_flags\": [\"<risk that priced-in expectations are too high>\"],\n"
+        "  \"evidence_gaps\": [\"<missing evidence needed before calling value fair/cheap/expensive>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "market_implied_assumptions",
+            "valuation_band_context",
+            "rnpv_gap_explanation",
+            "expectation_risk_flags",
+            "evidence_gaps",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "market_implied_assumptions": {
+                "type": "array",
+                "min_items": 1,
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "valuation_band_context": {
+                "type": "string",
+                "enum": [
+                    "historical_floor",
+                    "mid_band",
+                    "extended_band",
+                    "unknown",
+                ],
+            },
+            "rnpv_gap_explanation": {
+                "type": "string",
+                "min_length": 6,
+                "max_length": 700,
+            },
+            "expectation_risk_flags": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "evidence_gaps": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class MarketExpectationsLLMAgent(Agent):
+    """LLM agent that explains market-implied biotech valuation assumptions."""
+
+    llm_client: LLMClient
+    name: str = "market_expectations_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "market_expectations_llm_finding",
+        "market_expectations_payload",
+    )
+    max_tokens: int | None = 1300
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("MarketExpectationsLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("valuation_snapshot"), dict):
+            warnings.append("fallback_context:valuation_snapshot")
+        if not isinstance(store.get("valuation_committee_payload"), dict):
+            warnings.append("fallback_context:valuation_committee_payload")
+
+        system, user = MARKET_EXPECTATIONS_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = MARKET_EXPECTATIONS_PROMPT.parse_response(
+                call.response_text
+            )
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _market_expectations_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "market_expectations_llm_finding": finding,
+                "market_expectations_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "valuation_snapshot": _json_block(store.get("valuation_snapshot")),
+            "target_price_snapshot": _json_block(
+                store.get("target_price_snapshot")
+            ),
+            "valuation_pod_payloads": _json_block(
+                {
+                    "commercial": store.get("valuation_commercial_payload"),
+                    "rnpv": store.get("valuation_rnpv_payload"),
+                    "balance_sheet": store.get("valuation_balance_sheet_payload"),
+                    "committee": store.get("valuation_committee_payload"),
+                }
+            ),
+            "macro_context": _json_block(
+                store.get("macro_context_payload")
+                or store.get("macro_context")
+            ),
+            "technical_payload": _json_block(
+                store.get("technical_feature_payload")
+            ),
+            "timing_payload": _json_block(
+                store.get("market_regime_timing_payload")
+            ),
+            "catalyst_payload": _json_block(
+                store.get("catalyst_payload")
+                or store.get("catalyst_calendar_payload")
+            ),
+            "scorecard_summary": _json_block(store.get("scorecard_summary")),
+        }
+
+
+def _market_expectations_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    band = str(payload.get("valuation_band_context") or "unknown").strip()
+    gap = str(payload.get("rnpv_gap_explanation") or "").strip()
+    if gap:
+        summary = f"Market expectations: {band}. {gap}"
+    else:
+        summary = f"Market expectations: {band}."
+
+    risks: list[str] = []
+    if band in {"extended_band", "unknown"}:
+        risks.append(f"[valuation_band_context] {band}")
+    for line in payload.get("market_implied_assumptions") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[market_implied_assumption] {text}")
+    for line in payload.get("expectation_risk_flags") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[expectation_risk] {text}")
+    for line in payload.get("evidence_gaps") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[evidence_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Market-expectations analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
 def _macro_context_finding_from_payload(
     *,
     payload: dict[str, Any],
@@ -2451,6 +2751,9 @@ class ReportQualityLLMAgent(Agent):
             ),
             "market_regime_timing": _finding_snapshot(
                 store.get("market_regime_timing_llm_finding")
+            ),
+            "market_expectations": _finding_snapshot(
+                store.get("market_expectations_llm_finding")
             ),
         }
         system, user = REPORT_QUALITY_PROMPT.render(

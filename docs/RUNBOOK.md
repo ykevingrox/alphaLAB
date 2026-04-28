@@ -120,8 +120,9 @@ Quick-mode behavior:
 - The monolithic `valuation-specialist` remains available for
   reproducibility via `company-report --llm-agents valuation-specialist`,
   but is no longer the default quick-report valuation path.
-- `market-regime-timing` is available as an opt-in Stage B scaffold for
-  `company-report --llm-agents ...`; it is not in quick `report` defaults yet.
+- `market-regime-timing` and `market-expectations` are available as opt-in
+  Stage B scaffolds for `company-report --llm-agents ...`; they are not in
+  quick `report` defaults yet.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
   explicit terminal fallback output.
 
@@ -131,8 +132,8 @@ Architecture note:
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
 - Planned next upgrades are biotech valuation framing calibration,
-  `strategic-economics-agent`, `catalyst-agent`,
-  `market-expectations-agent`, and `market-regime-timing-agent`.
+  `strategic-economics-agent`, `catalyst-agent`, and deeper Stage B
+  market-context calibration.
 
 Expected behavior:
 
@@ -496,14 +497,15 @@ The opt-in report path is:
 PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --ticker 09606.HK \
   --auto-inputs \
-  --llm-agents macro-context market-regime-timing \
+  --llm-agents macro-context market-regime-timing market-expectations \
   --macro-signals yahoo-hk \
   --technical-features yfinance \
   --technical-benchmark-symbol ^HSI
 ```
 
-The technical provider is only consulted when `market-regime-timing` is
-requested. Quick `report` still does not fetch yfinance history by default.
+The technical provider is only consulted when `market-regime-timing` or
+`market-expectations` is requested. Quick `report` still does not fetch
+yfinance history by default.
 
 ## Troubleshooting
 

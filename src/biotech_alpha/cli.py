@@ -302,8 +302,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="none",
         help=(
             "Optional historical price feature provider for "
-            "market-regime-timing. 'yfinance' requires installing the "
-            "optional market extra and degrades silently when unavailable."
+            "market-regime-timing and market-expectations. 'yfinance' "
+            "requires installing the optional market extra and degrades "
+            "silently when unavailable."
         ),
     )
     company_report_parser.add_argument(
@@ -401,6 +402,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "competition-triage",
             "macro-context",
             "market-regime-timing",
+            "market-expectations",
             "investment-thesis",
             "valuation-specialist",
             "valuation-commercial",

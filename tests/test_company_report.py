@@ -951,7 +951,60 @@ class SourceTextExcerptTest(unittest.TestCase):
         self.assertEqual(result.facts["technical_feature_payload"], technical)
         self.assertIn("market_regime_timing_payload", result.facts)
 
-    def test_llm_pipeline_skips_technical_provider_without_timing_agent(self) -> None:
+    def test_llm_pipeline_fetches_technical_features_for_expectations_agent(
+        self,
+    ) -> None:
+        technical = {
+            "symbol": "9606.HK",
+            "technical_state": "constructive",
+            "provider": "unit-test",
+        }
+        calls: list[str | None] = []
+
+        def provider(identity):
+            calls.append(identity.ticker)
+            return technical
+
+        client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "market_implied_assumptions": [
+                        "Market value requires strategic optionality."
+                    ],
+                    "valuation_band_context": "unknown",
+                    "rnpv_gap_explanation": (
+                        "Conservative rNPV below market value is not enough "
+                        "to call overvaluation."
+                    ),
+                    "expectation_risk_flags": ["BD evidence is incomplete."],
+                    "evidence_gaps": ["Need disclosed partner economics."],
+                    "confidence": 0.35,
+                    "needs_human_review": True,
+                }
+            )
+        )
+
+        result, _trace = _run_llm_agent_pipeline(
+            research_result=_minimal_research_stub(),
+            identity=resolve_company_identity(
+                ticker="09606.HK", registry_path=None
+            ),
+            llm_agents=("market-expectations",),
+            llm_client=client,
+            output_dir="data",
+            save=False,
+            llm_trace_path=None,
+            technical_features_provider=provider,
+        )
+
+        self.assertEqual(calls, ["09606.HK"])
+        self.assertEqual(result.facts["technical_feature_payload"], technical)
+        self.assertIn("market_expectations_payload", result.facts)
+
+    def test_llm_pipeline_skips_technical_provider_without_market_agent(
+        self,
+    ) -> None:
         def provider(_identity):
             raise AssertionError("technical provider should not be called")
 
