@@ -1198,14 +1198,19 @@ keeps provider volatility out of prompts and gives both
 - **Done** — First `strategic-economics-agent` scaffold explains retained
   economics, BD validation, partner quality, commercialization path,
   value-capture score, premium/discount drivers, and evidence gaps.
-- **Next** — Add `catalyst-agent`.
+- **Done** — First `catalyst-agent` scaffold ranks catalyst event quality,
+  binary risk, expectation risk, repricing paths, and evidence gaps while
+  keeping numerical deltas in `target_price.py`.
+- **Next** — Calibrate an opt-in Stage B stack run, then start Stage C
+  `data-collector-agent`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
   current custom `AgentGraph`.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** started. Market-regime/timing, market-expectations, and
-strategic-economics scaffolds exist; catalyst layer is pending.
+**Sprint status:** scaffold-complete. Market-regime/timing,
+market-expectations, strategic-economics, and catalyst scaffolds exist; default
+quick-report inclusion still requires calibration.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1215,13 +1220,14 @@ strategic-economics scaffolds exist; catalyst layer is pending.
 - `catalyst-agent`: independent LLM narrative over deterministic catalyst
   calendar. It ranks clinical, regulatory, BD, and conference/data-readout
   events by evidence quality, binary risk, expectation risk, and repricing
-  paths. Numerical deltas still come from `target_price.py`.
+  paths. Numerical deltas still come from `target_price.py`. First opt-in
+  scaffold is implemented.
 - `market-expectations-agent`: explains what the current market cap appears
   to imply. It asks why the stock has sustained its valuation band before the
   system labels the gap versus conservative rNPV as overvaluation, including
   which catalyst assumptions appear priced in. First opt-in scaffold is
-  implemented; it will become more useful after strategic economics and
-  catalyst payloads land.
+  implemented and can consume strategic economics / catalyst payloads when
+  requested in the same run.
 - `market-regime-timing-agent`: combines the existing `macro-context` role,
   planned k-line framing, sector sentiment, liquidity, and fund-flow proxies
   into research-only timing labels (`favorable`, `neutral`, `fragile`,

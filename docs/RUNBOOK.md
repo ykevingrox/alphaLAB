@@ -120,8 +120,8 @@ Quick-mode behavior:
 - The monolithic `valuation-specialist` remains available for
   reproducibility via `company-report --llm-agents valuation-specialist`,
   but is no longer the default quick-report valuation path.
-- `strategic-economics`, `market-regime-timing`, and `market-expectations`
-  are available as opt-in Stage B scaffolds for
+- `strategic-economics`, `catalyst`, `market-regime-timing`, and
+  `market-expectations` are available as opt-in Stage B scaffolds for
   `company-report --llm-agents ...`; they are not in quick `report` defaults
   yet.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
@@ -498,7 +498,7 @@ The opt-in report path is:
 PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --ticker 09606.HK \
   --auto-inputs \
-  --llm-agents strategic-economics macro-context market-regime-timing market-expectations \
+  --llm-agents strategic-economics catalyst macro-context market-regime-timing market-expectations \
   --macro-signals yahoo-hk \
   --technical-features yfinance \
   --technical-benchmark-symbol ^HSI

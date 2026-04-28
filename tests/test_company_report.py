@@ -905,6 +905,44 @@ class SourceTextExcerptTest(unittest.TestCase):
 
         self.assertEqual(facts["technical_feature_payload"], technical)
 
+    def test_build_llm_agent_facts_threads_catalyst_calendar(self) -> None:
+        class _Evidence:
+            claim = "company disclosed readout window"
+            source = "annual_results"
+            source_date = "2026-03-25"
+            confidence = 0.7
+            is_inferred = False
+
+        class _Catalyst:
+            title = "DB-1303 Phase 3 readout"
+            category = "clinical"
+            expected_date = None
+            expected_window = "2H 2026"
+            related_asset = "DB-1303"
+            confidence = 0.7
+            evidence = (_Evidence(),)
+
+        class _Memo:
+            findings: tuple = ()
+            evidence: tuple = ()
+            catalysts = (_Catalyst(),)
+
+        research = _minimal_research_stub()
+        research.memo = _Memo()
+
+        facts = build_llm_agent_facts(research_result=research)
+
+        payload = facts["catalyst_calendar_payload"]
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(
+            payload["catalysts"][0]["title"],
+            "DB-1303 Phase 3 readout",
+        )
+        self.assertEqual(
+            payload["catalysts"][0]["evidence"][0]["source"],
+            "annual_results",
+        )
+
     def test_llm_pipeline_fetches_technical_features_for_timing_agent(self) -> None:
         technical = {
             "symbol": "9606.HK",

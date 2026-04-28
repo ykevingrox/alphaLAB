@@ -511,6 +511,7 @@ SUPPORTED_LLM_AGENTS = (
     "financial-triage",
     "competition-triage",
     "strategic-economics",
+    "catalyst",
     "macro-context",
     "market-regime-timing",
     "market-expectations",
@@ -550,6 +551,7 @@ def _run_llm_agent_pipeline(
     from biotech_alpha.agents_llm import (
         CompetitionTriageLLMAgent,
         FinancialTriageLLMAgent,
+        CatalystLLMAgent,
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
         MarketExpectationsLLMAgent,
@@ -678,6 +680,18 @@ def _run_llm_agent_pipeline(
                 depends_on=tuple(strategic_deps),
             )
         )
+    if "catalyst" in llm_agents:
+        catalyst_deps = ["publish_research_facts"]
+        if "pipeline-triage" in llm_agents:
+            catalyst_deps.append("pipeline_triage_llm_agent")
+        if "strategic-economics" in llm_agents:
+            catalyst_deps.append("strategic_economics_llm_agent")
+        graph.add(
+            CatalystLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(catalyst_deps),
+            )
+        )
     if "macro-context" in llm_agents:
         graph.add(
             MacroContextLLMAgent(
@@ -699,6 +713,8 @@ def _run_llm_agent_pipeline(
         expectations_deps = ["publish_research_facts"]
         if "strategic-economics" in llm_agents:
             expectations_deps.append("strategic_economics_llm_agent")
+        if "catalyst" in llm_agents:
+            expectations_deps.append("catalyst_llm_agent")
         if "valuation-committee" in llm_agents:
             expectations_deps.append("valuation_committee_llm_agent")
         if "market-regime-timing" in llm_agents:
@@ -757,6 +773,8 @@ def _run_llm_agent_pipeline(
         committee_deps = ["publish_research_facts"]
         if "strategic-economics" in llm_agents:
             committee_deps.append("strategic_economics_llm_agent")
+        if "catalyst" in llm_agents:
+            committee_deps.append("catalyst_llm_agent")
         if "valuation-commercial" in llm_agents:
             committee_deps.append("valuation_commercial_llm_agent")
         if "valuation-rnpv" in llm_agents:
@@ -779,6 +797,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("valuation_specialist_llm_agent")
         if "strategic-economics" in llm_agents:
             quality_deps.append("strategic_economics_llm_agent")
+        if "catalyst" in llm_agents:
+            quality_deps.append("catalyst_llm_agent")
         if "valuation-commercial" in llm_agents:
             quality_deps.append("valuation_commercial_llm_agent")
         if "valuation-rnpv" in llm_agents:
@@ -961,10 +981,89 @@ def build_llm_agent_facts(
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
         "technical_feature_payload": technical_features,
+        "catalyst_calendar_payload": _build_catalyst_calendar_payload(
+            research_result
+        ),
+        "event_impact_payload": _build_event_impact_payload(research_result),
         "fallback_context": fallback_context,
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
     }
+
+
+def _build_catalyst_calendar_payload(
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any] | None:
+    memo = getattr(research_result, "memo", None)
+    catalysts = getattr(memo, "catalysts", ()) if memo is not None else ()
+    if not catalysts:
+        return None
+    rows: list[dict[str, Any]] = []
+    for catalyst in catalysts:
+        evidence_rows = []
+        for evidence in getattr(catalyst, "evidence", ()) or ():
+            evidence_rows.append(
+                {
+                    "claim": getattr(evidence, "claim", None),
+                    "source": getattr(evidence, "source", None),
+                    "source_date": getattr(evidence, "source_date", None),
+                    "confidence": getattr(evidence, "confidence", None),
+                    "is_inferred": getattr(evidence, "is_inferred", None),
+                }
+            )
+        rows.append(
+            {
+                "title": getattr(catalyst, "title", None),
+                "category": getattr(catalyst, "category", None),
+                "expected_date": (
+                    catalyst.expected_date.isoformat()
+                    if getattr(catalyst, "expected_date", None)
+                    else None
+                ),
+                "expected_window": getattr(catalyst, "expected_window", None),
+                "related_asset": getattr(catalyst, "related_asset", None),
+                "confidence": getattr(catalyst, "confidence", None),
+                "evidence": evidence_rows,
+            }
+        )
+    return {"catalysts": rows, "count": len(rows)}
+
+
+def _build_event_impact_payload(
+    research_result: SingleCompanyResearchResult,
+) -> dict[str, Any] | None:
+    assumptions = getattr(research_result, "target_price_assumptions", None)
+    analysis = getattr(research_result, "target_price_analysis", None)
+    event_impacts = (
+        list(getattr(assumptions, "event_impacts", ()) or ())
+        if assumptions is not None
+        else []
+    )
+    if not event_impacts and analysis is None:
+        return None
+    payload: dict[str, Any] = {
+        "event_impacts": [asdict(item) for item in event_impacts],
+    }
+    if analysis is not None:
+        payload.update(
+            {
+                "as_of_date": getattr(analysis, "as_of_date", None),
+                "currency": getattr(analysis, "currency", None),
+                "pre_event_equity_value": getattr(
+                    analysis, "pre_event_equity_value", None
+                ),
+                "post_event_base_equity_value": getattr(
+                    getattr(analysis, "base", None), "equity_value", None
+                ),
+                "event_value_delta": getattr(analysis, "event_value_delta", None),
+                "asset_value_delta": getattr(analysis, "asset_value_delta", None),
+                "key_drivers": list(getattr(analysis, "key_drivers", ()) or ()),
+                "needs_human_review": getattr(
+                    analysis, "needs_human_review", None
+                ),
+            }
+        )
+    return payload
 
 
 def _build_fallback_context(

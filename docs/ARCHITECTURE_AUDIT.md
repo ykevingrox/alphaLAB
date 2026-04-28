@@ -29,9 +29,9 @@ Current system is **partially aligned**:
   separates conservative rNPV floor, market-implied value, and repricing
   scenarios. Stage B has started with technical features, an optional
   yfinance history adapter, and opt-in market-regime/timing,
-  market-expectations, and strategic-economics scaffolds.
-- **Not aligned yet:** no standalone LLM `data-collector-agent`, no
-  standalone LLM `catalyst-agent`, and no report synthesizer layer.
+  market-expectations, strategic-economics, and catalyst scaffolds.
+- **Not aligned yet:** no standalone LLM `data-collector-agent` and no report
+  synthesizer layer.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -99,6 +99,7 @@ multi-LLM investment committee.
   - `financial-triage`
   - `competition-triage`
   - `strategic-economics`
+  - `catalyst`
   - `macro-context`
   - `market-expectations`
   - `market-regime-timing`
@@ -112,7 +113,6 @@ multi-LLM investment committee.
   - `valuation-specialist` (compatibility path, no longer default)
 - Deterministic modules still carrying responsibilities targeted for future
   dedicated LLM agents:
-  - Catalyst generation/ranking (`target_price.py`, `pipeline.py`).
   - Data collection quality and source triage (extraction audit module).
 
 ## Consistency Scorecard (as of 2026-04-27)
@@ -203,6 +203,9 @@ The staging below is the committed plan. Sprint-level execution lives in
     paths.
   - Feeds market expectations, market-regime/timing, and valuation committee;
     it does not produce buy/sell timing by itself.
+  - First opt-in scaffold is implemented for `company-report --llm-agents
+    catalyst`; deterministic target-price/event-impact code still owns
+    numerical deltas.
 - Add `market-expectations-agent`:
   - Explains what the current market cap appears to imply and why the stock
     may have held a valuation band above conservative rNPV, including what

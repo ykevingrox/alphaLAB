@@ -401,6 +401,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "financial-triage",
             "competition-triage",
             "strategic-economics",
+            "catalyst",
             "macro-context",
             "market-regime-timing",
             "market-expectations",

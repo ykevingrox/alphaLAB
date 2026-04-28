@@ -263,8 +263,11 @@ with `catalyst-alerts`. Curated target-price assumptions can then map a catalyst
 event to probability of success, launch timing, peak sales, or discount-rate
 deltas through the `event-impact` command.
 
-Stage B upgrade note: the planned LLM `catalyst-agent` is an independent input
-layer, not a final decision layer. It evaluates event quality before
+Stage B implementation note: optional `catalyst` is wired for
+`company-report --llm-agents ...` as an independent input layer, not a final
+decision layer. It consumes `catalyst_calendar_payload`, `event_impact_payload`,
+`target_price_snapshot`, pipeline facts, source-text excerpts, and optional
+strategic/market/timing payloads. It evaluates event quality before
 `market-expectations-agent`, `market-regime-timing-agent`, and
 `valuation-committee-agent` consume the catalyst payload.
 

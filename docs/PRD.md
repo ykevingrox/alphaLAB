@@ -70,7 +70,7 @@ Current implementation status:
 - Implemented: in-process `AgentGraph` + `FactStore` runtime with the
   following opt-in LLM agents — `provisional-pipeline`,
   `provisional-financial`, `pipeline-triage`, `financial-triage`,
-  `competition-triage`, `strategic-economics`, `macro-context`,
+  `competition-triage`, `strategic-economics`, `catalyst`, `macro-context`,
   `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
   `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
   `market-regime-timing`, `market-expectations`, `report-quality`, and

@@ -1413,6 +1413,350 @@ def _strategic_economics_finding_from_payload(
     )
 
 
+CATALYST_PROMPT = StructuredPrompt(
+    name="catalyst",
+    tags=("catalyst", "event", "expectations", "llm"),
+    system=(
+        "You are a biotech catalyst analyst. Your job is to rank and explain "
+        "source-backed upcoming events using the deterministic catalyst "
+        "calendar and target-price event-impact payloads. You may discuss "
+        "event quality, binary risk, expectation risk, and plausible repricing "
+        "paths, but numerical valuation deltas must come from the provided "
+        "target-price/event-impact payloads.\n\n"
+        "Ground rules:\n"
+        "- Work only from provided payloads. Do NOT invent catalyst dates, "
+        "conference names, regulatory actions, event impacts, probabilities, "
+        "or target-price changes.\n"
+        "- Keep clinical, regulatory, BD, commercial, financial, and "
+        "conference events separate when the inputs allow.\n"
+        "- Flag stale, vague, missing-date, or inferred catalysts as evidence "
+        "gaps instead of treating them as hard events.\n"
+        "- No trading instructions.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: catalyst_events, priority_events, "
+        "market_priced_in_flags, evidence_gaps, confidence, "
+        "needs_human_review.\n"
+        "- catalyst_events is a list of objects with event, category, asset, "
+        "window, evidence_quality, binary_risk, expectation_risk, and "
+        "repricing_path.\n"
+        "- evidence_quality is high, medium, low, or insufficient_data.\n"
+        "- binary_risk is high, medium, low, or not_binary.\n"
+        "- Never nest output inside analysis/result/catalyst."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Catalyst calendar payload:\n${catalyst_calendar}\n\n"
+        "Target-price event-impact payload:\n${event_impact}\n\n"
+        "Target-price snapshot:\n${target_price_snapshot}\n\n"
+        "Pipeline snapshot:\n${pipeline_snapshot}\n\n"
+        "Pipeline triage payload:\n${pipeline_triage}\n\n"
+        "Strategic economics payload:\n${strategic_economics}\n\n"
+        "Market expectations payload:\n${market_expectations}\n\n"
+        "Market-regime/timing payload:\n${timing_payload}\n\n"
+        "Source text excerpt:\n${source_text_excerpt}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"catalyst_events\": [\n"
+        "    {\"event\": \"<event title>\", \"category\": \"clinical|regulatory|commercial|financial|conference|corporate|unknown\", \"asset\": \"<asset or null>\", \"window\": \"<date/window or unknown>\", \"evidence_quality\": \"high|medium|low|insufficient_data\", \"binary_risk\": \"high|medium|low|not_binary\", \"expectation_risk\": \"<priced-in or evidence risk>\", \"repricing_path\": \"<path using provided event-impact payload or qualitative if missing>\"}\n"
+        "  ],\n"
+        "  \"priority_events\": [\"<highest priority event>\"],\n"
+        "  \"market_priced_in_flags\": [\"<expectation risk flag>\"],\n"
+        "  \"evidence_gaps\": [\"<missing evidence>\"],\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "catalyst_events",
+            "priority_events",
+            "market_priced_in_flags",
+            "evidence_gaps",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "catalyst_events": {
+                "type": "array",
+                "max_items": 20,
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "event",
+                        "category",
+                        "asset",
+                        "window",
+                        "evidence_quality",
+                        "binary_risk",
+                        "expectation_risk",
+                        "repricing_path",
+                    ],
+                    "properties": {
+                        "event": {"type": "string", "min_length": 3},
+                        "category": {
+                            "type": "string",
+                            "enum": [
+                                "clinical",
+                                "regulatory",
+                                "commercial",
+                                "financial",
+                                "conference",
+                                "corporate",
+                                "unknown",
+                            ],
+                        },
+                        "asset": {"type": ["string", "null"]},
+                        "window": {"type": "string", "min_length": 2},
+                        "evidence_quality": {
+                            "type": "string",
+                            "enum": [
+                                "high",
+                                "medium",
+                                "low",
+                                "insufficient_data",
+                            ],
+                        },
+                        "binary_risk": {
+                            "type": "string",
+                            "enum": [
+                                "high",
+                                "medium",
+                                "low",
+                                "not_binary",
+                            ],
+                        },
+                        "expectation_risk": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 320,
+                        },
+                        "repricing_path": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 320,
+                        },
+                    },
+                },
+            },
+            "priority_events": {
+                "type": "array",
+                "max_items": 10,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "market_priced_in_flags": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "evidence_gaps": {
+                "type": "array",
+                "max_items": 12,
+                "items": {
+                    "type": "string",
+                    "min_length": 3,
+                    "max_length": 260,
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class CatalystLLMAgent(Agent):
+    """LLM agent that ranks source-backed catalysts and expectation risk."""
+
+    llm_client: LLMClient
+    name: str = "catalyst_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "catalyst_llm_finding",
+        "catalyst_payload",
+    )
+    max_tokens: int | None = 1500
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("CatalystLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("catalyst_calendar_payload"), dict):
+            warnings.append("fallback_context:catalyst_calendar_payload")
+        if not isinstance(store.get("event_impact_payload"), dict):
+            warnings.append("fallback_context:event_impact_payload")
+
+        system, user = CATALYST_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"LLM call failed: {exc}",
+            )
+
+        try:
+            payload = CATALYST_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            return AgentStepResult(
+                agent_name=self.name,
+                error=f"response did not match schema: {exc}",
+                warnings=(
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+            )
+
+        finding = _catalyst_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "catalyst_llm_finding": finding,
+                "catalyst_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "catalyst_calendar": _json_block(
+                store.get("catalyst_calendar_payload")
+            ),
+            "event_impact": _json_block(store.get("event_impact_payload")),
+            "target_price_snapshot": _json_block(
+                store.get("target_price_snapshot")
+            ),
+            "pipeline_snapshot": _json_block(store.get("pipeline_snapshot")),
+            "pipeline_triage": _json_block(store.get("pipeline_triage_payload")),
+            "strategic_economics": _json_block(
+                store.get("strategic_economics_payload")
+            ),
+            "market_expectations": _json_block(
+                store.get("market_expectations_payload")
+            ),
+            "timing_payload": _json_block(
+                store.get("market_regime_timing_payload")
+            ),
+            "source_text_excerpt": _source_text_block(
+                store.get("source_text_excerpt")
+            ),
+        }
+
+
+def _catalyst_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    events = payload.get("catalyst_events") or []
+    summary = f"Catalyst review covered {len(events)} event(s)."
+
+    risks: list[str] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        title = str(event.get("event") or "unknown event").strip()
+        quality = str(event.get("evidence_quality") or "").strip()
+        binary = str(event.get("binary_risk") or "").strip()
+        repricing = str(event.get("repricing_path") or "").strip()
+        risks.append(f"[catalyst_event][{quality}][{binary}] {title}")
+        if repricing:
+            risks.append(f"[repricing_path] {title}: {repricing}")
+    for line in payload.get("priority_events") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[priority_event] {text}")
+    for line in payload.get("market_priced_in_flags") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[expectation_risk] {text}")
+    for line in payload.get("evidence_gaps") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[evidence_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Catalyst analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
 MACRO_CONTEXT_PROMPT = StructuredPrompt(
     name="macro_context",
     tags=("macro", "context", "llm"),
@@ -2618,6 +2962,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "竞争分诊:\n${competition_triage}\n\n"
         "宏观上下文:\n${macro_context}\n\n"
         "战略经济payload:\n${strategic_economics}\n\n"
+        "催化剂payload:\n${catalyst_payload}\n\n"
         "上游估值分项(仅 committee 可用):\n${upstream_valuation_payloads}\n\n"
         "角色硬约束:\n"
         "- valuation-commercial-agent: 只评估已商业化产品、经常性收入、"
@@ -2785,6 +3130,7 @@ class _ValuationPodLLMAgentBase(Agent):
                 "strategic_economics": _json_block(
                     store.get("strategic_economics_payload")
                 ),
+                "catalyst_payload": _json_block(store.get("catalyst_payload")),
                 "upstream_valuation_payloads": _json_block(
                     {
                         "commercial": store.get("valuation_commercial_payload"),
@@ -3103,6 +3449,7 @@ class ReportQualityLLMAgent(Agent):
             "strategic_economics": _finding_snapshot(
                 store.get("strategic_economics_llm_finding")
             ),
+            "catalyst": _finding_snapshot(store.get("catalyst_llm_finding")),
         }
         system, user = REPORT_QUALITY_PROMPT.render(
             {
