@@ -598,6 +598,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Print a Markdown review checklist.",
     )
+    stage_c_review_parser.add_argument(
+        "--output",
+        help=(
+            "Optional output path. Requires --json or --markdown and writes "
+            "the selected review payload/checklist."
+        ),
+    )
     quick_report_parser.add_argument(
         "--hkexnews-feed-url",
         help="Optional HKEXnews RSS URL for change tracking artifacts.",
@@ -1297,10 +1304,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             sort_by=getattr(args, "sort", "run-id"),
             limit=max(1, int(getattr(args, "limit", 20) or 20)),
         )
+        if args.output and not (args.json or args.markdown):
+            parser.error("stage-c-review --output requires --json or --markdown")
         if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+            if args.output:
+                _write_text_output(args.output, rendered)
+            else:
+                print(rendered, end="")
         elif args.markdown:
-            print(stage_c_review_markdown(payload), end="")
+            rendered = stage_c_review_markdown(payload)
+            if args.output:
+                _write_text_output(args.output, rendered)
+            else:
+                print(rendered, end="")
         else:
             _print_stage_c_review(payload)
         return 0
@@ -2219,6 +2236,14 @@ def _print_stage_c_review(payload: dict[str, object]) -> None:
         ]
         if missing:
             print(f"  missing: {', '.join(missing)}")
+
+
+def _write_text_output(path: str | Path, text: str) -> Path:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(text, encoding="utf-8")
+    print(f"Wrote {output_path}")
+    return output_path
 
 
 def _publish_quick_report_shortcuts(
