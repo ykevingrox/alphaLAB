@@ -1287,7 +1287,8 @@ decision log lacks observable next-review triggers.
 `decision_log` artifacts without running LLMs, giving reviewers a compact local
 view of missing artifacts, quality gates, valuation method/language drift,
 valuation role-boundary guardrails, market-bridge coverage, and decision-log
-trigger coverage.
+trigger coverage. It supports flag/severity filters, latest-per-identity mode,
+and Markdown checklist output for calibration review.
 Valuation role postprocessing records `role_boundary_flags` when commercial or
 balance-sheet sub-agents are corrected away from rNPV leakage, so future
 artifacts show the guardrail that fired instead of silently normalizing.
