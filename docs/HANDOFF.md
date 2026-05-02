@@ -53,6 +53,9 @@ investment committee.
     and feeds market expectations / valuation committee when requested.
   - Optional `catalyst` LLM scaffold is wired for company-report and consumes
     catalyst calendar plus target-price event-impact payloads.
+  - Report-quality now receives `memo_review_payload` plus any
+    `report_synthesizer_payload`, allowing it to inspect final report language
+    for valuation, BD/platform, catalyst, timing, or trading-advice drift.
   - Optional `data-collector` LLM scaffold is wired for company-report and
     feeds per-domain evidence verdicts into report quality when requested.
   - `company-report --technical-features yfinance` now threads source-backed
@@ -102,9 +105,9 @@ Recommended scope:
    `strategic-economics`, `catalyst`, `market-expectations`,
    `market-regime-timing`, `decision-debate`, `report-synthesizer`, and
    `report-quality` when LLM credentials are available.
-2. Inspect whether prompts overstate current price, BD economics, platform
-   claims, catalyst certainty, timing signals, decision-log confidence, or
-   section prose.
+2. Inspect whether the latest opt-in outputs still overstate current price, BD
+   economics, platform claims, catalyst certainty, timing signals,
+   decision-log confidence, or section prose.
 3. Keep quick `report` defaults unchanged until Stage B/C decision-support
    outputs are reviewed across both tickers.
 4. Tighten prompts/contracts if any agent invents facts or rewrites

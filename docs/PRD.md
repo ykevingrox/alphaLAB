@@ -102,6 +102,9 @@ Current implementation status:
   `data-collector-agent`, `report-synthesizer-agent`, and
   `decision-debate-agent`. Decision-debate output is artifact-only for now and
   can feed later same-company runs as lightweight decision-log memory.
+  `report-quality-agent` now also receives a capped memo review excerpt plus
+  synthesizer payload so it can review final report language for valuation,
+  BD/platform, catalyst, timing, or trading-advice drift.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

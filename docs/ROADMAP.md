@@ -1215,8 +1215,8 @@ keeps provider volatility out of prompts and gives both
 
 **Sprint status:** scaffold-complete with first two-ticker opt-in calibration.
 Market-regime/timing, market-expectations, strategic-economics, and catalyst
-scaffolds exist; quick-report default inclusion still requires broader output
-review.
+scaffolds exist; quick-report default inclusion still requires full output
+review across calibration tickers.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1252,8 +1252,9 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 **Sprint status:** scaffold-complete and calibration-started. First
 data-collector, report-synthesizer, and decision-debate scaffolds exist;
-decision-debate has passed two opt-in live calibration runs. Quick-report
-defaults remain unchanged until broader output review.
+decision-debate has passed two opt-in live calibration runs, and report-quality
+now receives memo language context. Quick-report defaults remain unchanged until
+full output review.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
@@ -1275,5 +1276,12 @@ links when requested, but does not change memo prose yet. Recent decision-log
 artifacts for the same company are fed back as lightweight memory in later
 `decision-debate` runs.
 
-Next Sprint-8 task: broaden output review and decide later whether a compact
-decision-log subsection belongs in the memo body.
+Report-quality review has been broadened to receive a capped deterministic
+memo excerpt (`memo_review_payload`) plus any `report_synthesizer_payload`, so
+the quality gate can inspect final report language for overstated valuation,
+BD/platform, catalyst, timing, or trading-advice drift without changing memo
+prose.
+
+Next Sprint-8 task: review the full opt-in output across calibration tickers
+and decide later whether a compact decision-log subsection belongs in the memo
+body.

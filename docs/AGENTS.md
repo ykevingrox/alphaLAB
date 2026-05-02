@@ -750,6 +750,9 @@ Inputs:
 - Structured target-price and valuation pod outputs
 - `decision_debate_payload`, when present, so timing labels and decision-log
   triggers can be checked for trading-language drift or missing observability
+- `memo_review_payload` and `report_synthesizer_payload`, when present, so the
+  quality gate can inspect final report language for overstated price, BD,
+  platform, catalyst, timing, or trading-advice drift without rewriting prose
 
 Outputs:
 
@@ -796,7 +799,8 @@ topology is tracked in `docs/ROADMAP.md`.
   - `valuation-committee-agent`
 - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
 - `report-synthesizer-agent` (Stage C)
-- `report-quality-agent` (Stage A)
+- `report-quality-agent` (Stage A; reviews memo language context plus
+  decision/synthesizer payloads when available)
 
 Detailed gap analysis, contracts, and migration staging live in
 `docs/ARCHITECTURE_AUDIT.md`.

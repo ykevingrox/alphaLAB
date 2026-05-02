@@ -212,6 +212,48 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
 
 
 class ReportQualityLLMAgentTest(unittest.TestCase):
+    def test_report_quality_prompt_includes_memo_review_payload(self) -> None:
+        client = FakeLLMClient()
+        client.queue(
+            """{
+              "summary": "memo language review completed",
+              "publish_gate": "review_required",
+              "critical_issues": [],
+              "consistency_findings": [],
+              "missing_evidence_findings": [],
+              "language_quality_findings": ["需要避免把观察信号写成交易建议。"],
+              "valuation_coherence_findings": [],
+              "recommended_fixes": ["复核执行结论中的市场语言。"],
+              "issue_classification": [],
+              "confidence": 0.61
+            }"""
+        )
+        agent = ReportQualityLLMAgent(llm_client=client)
+        context = AgentContext(company="DualityBio", ticker="09606.HK")
+        store = FactStore(
+            {
+                "scorecard_summary": {"watchlist_score": 70},
+                "memo_review_payload": {
+                    "available": True,
+                    "markdown_excerpt": "## 执行结论\n市场语言需要复核。",
+                },
+                "report_synthesizer_payload": {
+                    "executive_verdict_paragraph": "维持观察名单。"
+                },
+            }
+        )
+
+        step = agent.run(context, store)
+
+        self.assertTrue(step.ok)
+        self.assertEqual(
+            step.outputs["report_quality_payload"]["publish_gate"],
+            "review_required",
+        )
+        self.assertIn("Memo review payload", client.calls[0].prompt)
+        self.assertIn("市场语言需要复核", client.calls[0].prompt)
+        self.assertIn("Report synthesizer payload", client.calls[0].prompt)
+
     def test_report_quality_falls_back_to_review_required_on_llm_error(self) -> None:
         client = FakeLLMClient()
         client.queue(raise_error=LLMError("simulated failure"))

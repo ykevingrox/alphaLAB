@@ -1143,6 +1143,17 @@ class SourceTextExcerptTest(unittest.TestCase):
         self.assertIn("deterministic_summary", scaffold)
         self.assertEqual(scaffold["catalyst_count"], 0)
 
+    def test_build_llm_agent_facts_threads_memo_review_payload(self) -> None:
+        research = _minimal_research_stub()
+
+        facts = build_llm_agent_facts(research_result=research)
+
+        review = facts["memo_review_payload"]
+        self.assertTrue(review["available"])
+        self.assertIn("markdown_excerpt", review)
+        self.assertIn("## 执行结论", review["markdown_excerpt"])
+        self.assertEqual(review["render_mode"], "fallback_fields")
+
     def test_build_llm_agent_facts_threads_catalyst_calendar(self) -> None:
         class _Evidence:
             claim = "company disclosed readout window"

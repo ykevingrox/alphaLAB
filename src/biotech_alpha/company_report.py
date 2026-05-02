@@ -1078,6 +1078,7 @@ def build_llm_agent_facts(
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
         "memo_scaffold_payload": _build_memo_scaffold_payload(research_result),
+        "memo_review_payload": _build_memo_review_payload(research_result),
     }
 
 
@@ -1122,6 +1123,71 @@ def _build_memo_scaffold_payload(
             getattr(memo, "follow_up_questions", ()) or ()
         ),
     }
+
+
+def _build_memo_review_payload(
+    research_result: SingleCompanyResearchResult,
+    *,
+    max_chars: int = 7000,
+) -> dict[str, Any] | None:
+    memo = getattr(research_result, "memo", None)
+    if memo is None:
+        return None
+
+    try:
+        markdown = memo_to_markdown(memo)
+        render_mode = "deterministic_markdown"
+    except (AttributeError, TypeError, ValueError):
+        markdown = _fallback_memo_review_markdown(memo)
+        render_mode = "fallback_fields"
+
+    excerpt = markdown[:max_chars]
+    headings = [
+        line.strip()
+        for line in markdown.splitlines()
+        if line.startswith("#")
+    ][:20]
+    return {
+        "available": bool(excerpt.strip()),
+        "render_mode": render_mode,
+        "markdown_chars": len(markdown),
+        "excerpt_chars": len(excerpt),
+        "truncated": len(markdown) > max_chars,
+        "section_headings": headings,
+        "decision": str(getattr(memo, "decision", "") or ""),
+        "summary": str(getattr(memo, "summary", "") or ""),
+        "markdown_excerpt": excerpt,
+    }
+
+
+def _fallback_memo_review_markdown(memo: Any) -> str:
+    lines = [
+        f"# {getattr(memo, 'company', None) or 'Unknown'} 研究报告",
+        "",
+        f"- 代码: {getattr(memo, 'ticker', None) or '未识别'}",
+        f"- 市场: {getattr(memo, 'market', None) or 'unknown'}",
+        f"- 结论: `{getattr(memo, 'decision', None) or 'unknown'}`",
+        "",
+        "## 执行结论",
+        "",
+        str(getattr(memo, "summary", "") or ""),
+    ]
+    for section, attr in (
+        ("看多驱动", "bull_case"),
+        ("看空驱动", "bear_case"),
+        ("后续问题", "follow_up_questions"),
+    ):
+        values = [
+            str(item).strip()
+            for item in (getattr(memo, attr, ()) or ())
+            if str(item).strip()
+        ]
+        if not values:
+            continue
+        lines.extend(["", f"## {section}", ""])
+        lines.extend(f"- {item}" for item in values[:8])
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _build_catalyst_calendar_payload(

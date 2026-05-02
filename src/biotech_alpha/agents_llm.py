@@ -4496,6 +4496,10 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "估值分项输出:\n${valuation_pod_payloads}\n\n"
         "LLM findings:\n${llm_findings}\n\n"
         "Decision debate payload:\n${decision_debate_payload}\n\n"
+        "Memo review payload (deterministic memo excerpt plus render metadata):\n"
+        "${memo_review_payload}\n\n"
+        "Report synthesizer payload, if final memo prose was inserted:\n"
+        "${report_synthesizer_payload}\n\n"
         "估值标准化结果:\n${normalized_valuation}\n\n"
         "审阅规则:\n"
         "- 若问题只是缺少战略经济/市场预期解释，优先给review_required，"
@@ -4506,6 +4510,9 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "valuation_coherence_findings。\n\n"
         "- 若decision debate把timing_view写成交易指令，或decision_log"
         "缺少可观察复核触发条件，请列入recommended_fixes。\n\n"
+        "- 审阅memo_review_payload和report_synthesizer_payload时，只检查"
+        "最终报告语言是否夸大价格、BD/platform确定性、催化剂确定性、"
+        "或把观察/复核信号写成买卖建议；不要重写报告正文。\n\n"
         "请返回严格 JSON：\n"
         "{\n"
         "  \"summary\": \"<1-3句审查结论>\",\n"
@@ -4669,6 +4676,12 @@ class ReportQualityLLMAgent(Agent):
                 "llm_findings": _json_block(llm_findings),
                 "decision_debate_payload": _json_block(
                     store.get("decision_debate_payload")
+                ),
+                "memo_review_payload": _json_block(
+                    store.get("memo_review_payload")
+                ),
+                "report_synthesizer_payload": _json_block(
+                    store.get("report_synthesizer_payload")
                 ),
                 "normalized_valuation": _json_block(
                     _normalized_valuation_for_review(store)

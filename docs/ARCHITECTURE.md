@@ -224,7 +224,8 @@ Target agent topology (canonical):
   - `investment-thesis-agent` (retain)
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)
-  - `report-quality-agent` (Stage A)
+  - `report-quality-agent` (Stage A; now reviews capped memo language context
+    plus synthesizer and decision-debate payloads when available)
 
 Deterministic backbone agents that feed the LLM layers:
 
