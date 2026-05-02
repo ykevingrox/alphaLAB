@@ -21,6 +21,7 @@ from biotech_alpha.company_report import (
     discover_company_inputs,
     resolve_company_identity,
     run_company_report,
+    stage_c_review_index,
 )
 from biotech_alpha.llm import FakeLLMClient
 
@@ -532,6 +533,124 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(index["count"], 2)
             self.assertEqual(index["entries"][0]["run_id"], "20260428T000000Z")
             self.assertEqual(index["entries"][0]["identity"]["ticker"], "09887.HK")
+
+    def test_stage_c_review_index_groups_support_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "single_company" / "09606-hk"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_report_quality.json").write_text(
+                json.dumps(
+                    {
+                        "summary": "Needs review.",
+                        "publish_gate": "review_required",
+                        "critical_issues": [
+                            "report_quality_unavailable: schema error"
+                        ],
+                        "recommended_fixes": ["rerun quality"],
+                        "language_quality_findings": [],
+                        "valuation_coherence_findings": [],
+                        "confidence": 0.2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "20260428T000000Z_valuation_pod.json").write_text(
+                json.dumps(
+                    {
+                        "available": True,
+                        "summary": {
+                            "component_count": 4,
+                            "has_committee": True,
+                            "committee_publishable": False,
+                        },
+                        "payload": {
+                            "commercial": {
+                                "method": "rNPV",
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "rnpv": {
+                                "method": "rNPV",
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "committee": {"method": "sotp_committee"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(
+                output_dir=root,
+                query="09606.HK",
+                limit=5,
+            )
+
+            self.assertTrue(review["available"])
+            self.assertEqual(review["count"], 1)
+            entry = review["entries"][0]
+            self.assertEqual(entry["identity"]["ticker"], "09606.HK")
+            self.assertIn("report_quality_unavailable", entry["review_flags"])
+            self.assertIn(
+                "valuation_committee_not_publishable",
+                entry["review_flags"],
+            )
+            self.assertIn(
+                "valuation_commercial_method_drift",
+                entry["review_flags"],
+            )
+            self.assertIn("missing_decision_log_artifact", entry["review_flags"])
+            self.assertEqual(
+                review["summary"]["publish_gate_counts"]["review_required"],
+                1,
+            )
+
+    def test_stage_c_review_index_reads_decision_log_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "company_report" / "duality"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_decision_log.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260428T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "neutral",
+                            "current_decision": "watchlist",
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(output_dir=root, query="映恩")
+
+            self.assertTrue(review["available"])
+            self.assertEqual(review["entries"][0]["identity"]["ticker"], "09606.HK")
+            self.assertNotIn(
+                "decision_log_missing_next_review_trigger",
+                review["entries"][0]["review_flags"],
+            )
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

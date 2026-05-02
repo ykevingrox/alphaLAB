@@ -154,6 +154,8 @@ Optional LLM smoke when `.env` has credentials:
    `PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK` to
    inspect local history and latest-vs-previous changes without running a new
    report. Use `decision-log --all` for a portfolio-wide local index.
+   Use `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK`
+   to review saved Stage B/C support artifacts without running LLMs.
 2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
    report defaults.
 

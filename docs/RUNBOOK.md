@@ -528,6 +528,24 @@ When at least two logs exist for the same company, the command also summarizes
 whether the latest decision, fundamental view, or timing view changed, plus new
 and repeated evidence gaps / invalidation triggers.
 
+Review saved Stage B/C support artifacts without running a new report or LLM:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review
+
+# Filter to one ticker/company/run_id/artifact directory
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK
+
+# Machine-readable form
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK --json
+```
+
+The review index groups saved `report_quality`, `valuation_pod`, and
+`decision_log` artifacts by run. It flags missing artifacts, quality gates that
+still block or require review, unavailable quality-agent fallbacks, valuation
+pod method drift, duplicate component ranges, missing market-implied/scenario
+repricing context, and decision logs without observable next-review triggers.
+
 The technical provider is only consulted when `market-regime-timing` or
 `market-expectations` is requested. Quick `report` still does not fetch
 yfinance history by default.

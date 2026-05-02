@@ -756,6 +756,9 @@ Inputs:
 - Deterministic postprocessing also downgrades `pass` to `review_required` if
   decision/memo/synthesizer text contains trading-instruction language, or if
   decision logs lack observable `next_review_triggers`
+- Offline review support: `stage-c-review` groups saved `report_quality`,
+  `valuation_pod`, and `decision_log` artifacts by run so calibration review
+  can happen without another LLM call
 
 Outputs:
 

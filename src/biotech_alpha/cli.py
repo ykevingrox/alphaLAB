@@ -30,6 +30,7 @@ from biotech_alpha.company_report import (
     decision_log_history,
     decision_log_index,
     run_company_report,
+    stage_c_review_index,
 )
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
@@ -540,6 +541,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Maximum number of prior decision logs to show. Defaults to 5.",
     )
     decision_log_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
+    )
+    stage_c_review_parser = subparsers.add_parser(
+        "stage-c-review",
+        help="Review saved Stage B/C support artifacts without running LLMs.",
+    )
+    stage_c_review_parser.add_argument(
+        "query",
+        nargs="?",
+        help="Optional company, ticker, run_id, or artifact directory filter.",
+    )
+    stage_c_review_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory containing report artifacts. Defaults to data.",
+    )
+    stage_c_review_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of saved runs to show. Defaults to 20.",
+    )
+    stage_c_review_parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
@@ -1231,6 +1257,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             _print_decision_log_history(payload)
+        return 0
+
+    if args.command == "stage-c-review":
+        payload = stage_c_review_index(
+            output_dir=args.output_dir,
+            query=getattr(args, "query", None),
+            limit=max(1, int(getattr(args, "limit", 20) or 20)),
+        )
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_stage_c_review(payload)
         return 0
 
     if args.command == "pipeline-template":
@@ -2047,6 +2085,85 @@ def _print_decision_log_history(payload: dict[str, object]) -> None:
             values = change.get(key)
             if isinstance(values, list) and values:
                 print(f"- {label_text}: {', '.join(str(v) for v in values[:3])}")
+
+
+def _print_stage_c_review(payload: dict[str, object]) -> None:
+    query = payload.get("query")
+    title = "Stage C artifact review"
+    if isinstance(query, str) and query.strip():
+        title = f"{title}: {query.strip()}"
+    print(title)
+
+    summary = _dict_value(payload, "summary")
+    entry_count = summary.get("entry_count", payload.get("count", 0))
+    print(f"- Runs: {entry_count}")
+    gate_counts = summary.get("publish_gate_counts")
+    if isinstance(gate_counts, dict) and gate_counts:
+        parts = [f"{key}={value}" for key, value in sorted(gate_counts.items())]
+        print(f"- Quality gates: {', '.join(parts)}")
+    flag_counts = summary.get("flag_counts")
+    if isinstance(flag_counts, dict) and flag_counts:
+        parts = [
+            f"{key}={value}"
+            for key, value in sorted(
+                flag_counts.items(),
+                key=lambda item: (-int(item[1]), str(item[0])),
+            )[:8]
+        ]
+        print(f"- Top flags: {', '.join(parts)}")
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or not entries:
+        print("- No Stage C support artifacts found.")
+        return
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        identity = _dict_value(entry, "identity")
+        label = (
+            _string_value(identity, "ticker")
+            or _string_value(identity, "company")
+            or _string_value(entry, "artifact_dir")
+            or "unknown"
+        )
+        report_quality = _dict_value(entry, "report_quality")
+        valuation_pod = _dict_value(entry, "valuation_pod")
+        decision_log = _dict_value(entry, "decision_log")
+        artifacts = _dict_value(entry, "artifacts")
+        flags = entry.get("review_flags")
+        if not isinstance(flags, list):
+            flags = []
+        print(f"- {entry.get('run_id') or 'unknown'} {label}")
+        gate = report_quality.get("publish_gate") or "missing"
+        critical_count = report_quality.get("critical_issue_count")
+        fix_count = report_quality.get("recommended_fix_count")
+        print(f"  quality: gate={gate}, critical={critical_count}, fixes={fix_count}")
+        if valuation_pod:
+            duplicate_count = valuation_pod.get("duplicate_component_range_count")
+            committee = valuation_pod.get("committee_publishable")
+            print(
+                "  valuation: "
+                f"committee_publishable={committee}, duplicates={duplicate_count}"
+            )
+        if decision_log:
+            decision_summary = _dict_value(decision_log, "summary")
+            print(
+                "  decision: "
+                f"{decision_summary.get('current_decision') or 'unknown'}, "
+                f"timing={decision_summary.get('timing_view') or 'unknown'}"
+            )
+        else:
+            print("  decision: missing artifact")
+        if flags:
+            print(f"  flags: {', '.join(str(flag) for flag in flags[:8])}")
+        missing = [
+            key
+            for key in ("report_quality", "valuation_pod", "decision_log")
+            if key not in artifacts
+        ]
+        if missing:
+            print(f"  missing: {', '.join(missing)}")
 
 
 def _publish_quick_report_shortcuts(

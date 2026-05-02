@@ -106,7 +106,8 @@ Current implementation status:
   synthesizer payload so it can review final report language for valuation,
   BD/platform, catalyst, timing, or trading-advice drift; deterministic
   postprocessing forces review if trading-instruction wording slips through or
-  decision logs lack observable review triggers.
+  decision logs lack observable review triggers. Saved Stage B/C support
+  artifacts can be inspected offline with `stage-c-review`.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

@@ -439,7 +439,9 @@ Execute Sprint 8 in `docs/ROADMAP.md`:
 
 1. Review the artifact-only `decision-debate` output path
    (`<run_id>_decision_log.json`) and the `decision-log --all` local index
-   before deciding whether to feed a small memo subsection.
+   before deciding whether to feed a small memo subsection. Use
+   `stage-c-review` to group saved report-quality, valuation-pod, and
+   decision-log artifacts for offline calibration review.
 2. Use the broadened report-quality context (`memo_review_payload`,
    `report_synthesizer_payload`, and `decision_debate_payload`) to tighten
    prompts/contracts if any agent invents facts, rewrites deterministic

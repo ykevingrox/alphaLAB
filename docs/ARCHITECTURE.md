@@ -229,6 +229,12 @@ Target agent topology (canonical):
     deterministic guardrails for trading-language drift and missing review
     triggers)
 
+Offline support:
+
+- `stage-c-review` groups saved `report_quality`, `valuation_pod`, and
+  `decision_log` artifacts by run for calibration review without another LLM
+  call.
+
 Deterministic backbone agents that feed the LLM layers:
 
 - Clinical Trial Agent (deterministic registry matching)

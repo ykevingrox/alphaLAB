@@ -3306,6 +3306,382 @@ def decision_log_index(
     }
 
 
+def stage_c_review_index(
+    *,
+    output_dir: str | Path = "data",
+    query: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return an offline review index for saved Stage B/C support artifacts."""
+
+    entries = _iter_stage_c_review_entries(output_dir=output_dir)
+    if query:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_entry_matches_query(entry, query)
+        ]
+    entries = entries[: max(1, limit)]
+    return {
+        "available": bool(entries),
+        "count": len(entries),
+        "query": query,
+        "entries": entries,
+        "summary": _stage_c_review_summary(entries),
+    }
+
+
+_STAGE_C_ARTIFACT_SUFFIXES = {
+    "report_quality": "_report_quality",
+    "valuation_pod": "_valuation_pod",
+    "decision_log": "_decision_log",
+}
+
+
+def _iter_stage_c_review_entries(
+    *,
+    output_dir: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(output_dir)
+    if not root.exists():
+        return []
+
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for artifact_key, suffix in _STAGE_C_ARTIFACT_SUFFIXES.items():
+        for path in root.glob(f"**/*{suffix}.json"):
+            run_id = _run_id_from_stage_artifact_name(path, suffix=suffix)
+            if not run_id:
+                continue
+            group_key = (str(path.parent), run_id)
+            group = grouped.setdefault(
+                group_key,
+                {
+                    "run_id": run_id,
+                    "artifact_dir": str(path.parent),
+                    "identity": _identity_from_artifact_slug(path.parent.name),
+                    "artifacts": {},
+                },
+            )
+            artifacts = group.setdefault("artifacts", {})
+            if isinstance(artifacts, dict):
+                artifacts[artifact_key] = str(path)
+
+    entries: list[dict[str, Any]] = []
+    for group in grouped.values():
+        entry = _stage_c_review_entry_from_group(group)
+        if entry is not None:
+            entries.append(entry)
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    return entries
+
+
+def _run_id_from_stage_artifact_name(path: Path, *, suffix: str) -> str | None:
+    stem = path.stem
+    if not stem.endswith(suffix):
+        return None
+    run_id = stem[: -len(suffix)]
+    return run_id or None
+
+
+def _identity_from_artifact_slug(slug: str) -> dict[str, Any]:
+    parts = [part for part in re.split(r"[-_]+", slug.strip()) if part]
+    ticker = None
+    if len(parts) >= 2 and parts[-1].isalpha() and parts[-2].isdigit():
+        ticker = f"{parts[-2]}.{parts[-1].upper()}"
+    return {
+        "company": slug,
+        "ticker": ticker,
+        "market": ticker.split(".")[-1] if ticker else None,
+    }
+
+
+def _stage_c_review_entry_from_group(
+    group: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifacts = group.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return None
+
+    report_quality = _stage_c_report_quality_entry(
+        _load_json_artifact(artifacts.get("report_quality"))
+    )
+    valuation_pod = _stage_c_valuation_pod_entry(
+        _load_json_artifact(artifacts.get("valuation_pod"))
+    )
+    decision_log = _stage_c_decision_log_entry(
+        _load_json_artifact(artifacts.get("decision_log"))
+    )
+    identity = group.get("identity") if isinstance(group.get("identity"), dict) else {}
+    if decision_log and isinstance(decision_log.get("identity"), dict):
+        identity = decision_log["identity"]
+    flags = _stage_c_review_flags(
+        artifacts=artifacts,
+        report_quality=report_quality,
+        valuation_pod=valuation_pod,
+        decision_log=decision_log,
+    )
+    return {
+        "run_id": group.get("run_id"),
+        "artifact_dir": group.get("artifact_dir"),
+        "identity": identity,
+        "artifacts": dict(artifacts),
+        "report_quality": report_quality,
+        "valuation_pod": valuation_pod,
+        "decision_log": decision_log,
+        "review_flags": flags,
+        "review_flag_count": len(flags),
+    }
+
+
+def _load_json_artifact(path_value: Any) -> dict[str, Any] | None:
+    if not isinstance(path_value, str) or not path_value.strip():
+        return None
+    path = Path(path_value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _stage_c_report_quality_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "publish_gate": payload.get("publish_gate"),
+        "summary": payload.get("summary"),
+        "confidence": payload.get("confidence"),
+        "critical_issue_count": len(payload.get("critical_issues") or []),
+        "recommended_fix_count": len(payload.get("recommended_fixes") or []),
+        "critical_issues": _string_list(payload.get("critical_issues"))[:5],
+        "recommended_fixes": _string_list(payload.get("recommended_fixes"))[:5],
+        "language_quality_findings": _string_list(
+            payload.get("language_quality_findings")
+        )[:5],
+        "valuation_coherence_findings": _string_list(
+            payload.get("valuation_coherence_findings")
+        )[:5],
+    }
+
+
+def _stage_c_valuation_pod_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    pod_payload = payload.get("payload")
+    if not isinstance(pod_payload, dict):
+        pod_payload = {}
+    component_methods = _valuation_pod_component_methods(summary, pod_payload)
+    component_ranges = _valuation_pod_component_ranges(summary, pod_payload)
+    duplicate_count = summary.get("duplicate_component_range_count")
+    if duplicate_count is None:
+        duplicate_count = _duplicate_component_range_count(component_ranges)
+    committee = pod_payload.get("committee")
+    if not isinstance(committee, dict):
+        committee = {}
+    committee_publishable = summary.get("committee_publishable")
+    if committee_publishable is None and committee:
+        committee_publishable = not bool(committee.get("needs_human_review", True))
+    return {
+        "available": bool(payload.get("available")),
+        "component_count": summary.get("component_count")
+        or sum(1 for value in pod_payload.values() if isinstance(value, dict)),
+        "has_committee": summary.get("has_committee")
+        if "has_committee" in summary
+        else bool(committee),
+        "committee_method": summary.get("committee_method")
+        or committee.get("method"),
+        "committee_currency": summary.get("committee_currency")
+        or committee.get("currency"),
+        "committee_publishable": committee_publishable,
+        "component_methods": component_methods,
+        "duplicate_component_range_count": duplicate_count,
+        "has_market_implied_value": bool(
+            summary.get("market_implied_value") or committee.get("market_implied_value")
+        ),
+        "has_scenario_repricing_range": bool(
+            summary.get("scenario_repricing_range")
+            or committee.get("scenario_repricing_range")
+        ),
+    }
+
+
+def _valuation_pod_component_methods(
+    summary: dict[str, Any],
+    pod_payload: dict[str, Any],
+) -> dict[str, Any]:
+    methods = summary.get("component_methods")
+    if isinstance(methods, dict):
+        return dict(methods)
+    return {
+        key: value.get("method")
+        for key, value in pod_payload.items()
+        if isinstance(value, dict)
+    }
+
+
+def _valuation_pod_component_ranges(
+    summary: dict[str, Any],
+    pod_payload: dict[str, Any],
+) -> dict[str, Any]:
+    ranges = summary.get("component_ranges")
+    if isinstance(ranges, dict):
+        return dict(ranges)
+    return {
+        key: value.get("valuation_range")
+        for key, value in pod_payload.items()
+        if isinstance(value, dict) and isinstance(value.get("valuation_range"), dict)
+    }
+
+
+def _duplicate_component_range_count(component_ranges: dict[str, Any]) -> int:
+    signatures: dict[tuple[float | None, float | None, float | None], int] = {}
+    for value in component_ranges.values():
+        if not isinstance(value, dict):
+            continue
+        signature = (
+            _optional_float(value.get("bear")),
+            _optional_float(value.get("base")),
+            _optional_float(value.get("bull")),
+        )
+        signatures[signature] = signatures.get(signature, 0) + 1
+    return sum(count - 1 for count in signatures.values() if count > 1)
+
+
+def _stage_c_decision_log_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    entry = _decision_log_entry_from_artifact(
+        path=Path(str(payload.get("run_id") or "decision_log")),
+        payload=payload,
+    )
+    if entry is None:
+        return None
+    return {
+        "identity": entry.get("identity"),
+        "summary": entry.get("summary"),
+        "decision_log": entry.get("decision_log"),
+    }
+
+
+def _stage_c_review_flags(
+    *,
+    artifacts: dict[str, Any],
+    report_quality: dict[str, Any] | None,
+    valuation_pod: dict[str, Any] | None,
+    decision_log: dict[str, Any] | None,
+) -> list[str]:
+    flags: list[str] = []
+    if "report_quality" not in artifacts:
+        flags.append("missing_report_quality_artifact")
+    elif report_quality is None:
+        flags.append("unreadable_report_quality_artifact")
+    else:
+        gate = str(report_quality.get("publish_gate") or "").strip()
+        if gate == "block":
+            flags.append("report_quality_block")
+        elif gate == "review_required":
+            flags.append("report_quality_review_required")
+        critical = " ".join(report_quality.get("critical_issues") or [])
+        if "report_quality_unavailable" in critical:
+            flags.append("report_quality_unavailable")
+
+    if "valuation_pod" not in artifacts:
+        flags.append("missing_valuation_pod_artifact")
+    elif valuation_pod is None:
+        flags.append("unreadable_valuation_pod_artifact")
+    else:
+        if valuation_pod.get("committee_publishable") is False:
+            flags.append("valuation_committee_not_publishable")
+        if int(valuation_pod.get("duplicate_component_range_count") or 0) > 0:
+            flags.append("valuation_duplicate_component_ranges")
+        methods = valuation_pod.get("component_methods")
+        if isinstance(methods, dict):
+            if str(methods.get("commercial") or "").casefold() == "rnpv":
+                flags.append("valuation_commercial_method_drift")
+            if str(methods.get("balance_sheet") or "").casefold() == "rnpv":
+                flags.append("valuation_balance_sheet_method_drift")
+        if not valuation_pod.get("has_market_implied_value"):
+            flags.append("valuation_missing_market_implied_value")
+        if not valuation_pod.get("has_scenario_repricing_range"):
+            flags.append("valuation_missing_scenario_repricing_range")
+
+    if "decision_log" not in artifacts:
+        flags.append("missing_decision_log_artifact")
+    elif decision_log is None:
+        flags.append("unreadable_decision_log_artifact")
+    else:
+        log = decision_log.get("decision_log")
+        next_triggers = (
+            log.get("next_review_triggers") if isinstance(log, dict) else None
+        )
+        if not _has_nonempty_string(next_triggers):
+            flags.append("decision_log_missing_next_review_trigger")
+    return flags
+
+
+def _stage_c_review_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    flag_counts: dict[str, int] = {}
+    gate_counts: dict[str, int] = {}
+    for entry in entries:
+        for flag in entry.get("review_flags") or []:
+            text = str(flag)
+            flag_counts[text] = flag_counts.get(text, 0) + 1
+        report_quality = entry.get("report_quality")
+        if isinstance(report_quality, dict):
+            gate = str(report_quality.get("publish_gate") or "unknown")
+        else:
+            gate = "missing"
+        gate_counts[gate] = gate_counts.get(gate, 0) + 1
+    return {
+        "entry_count": len(entries),
+        "flag_counts": flag_counts,
+        "publish_gate_counts": gate_counts,
+    }
+
+
+def _stage_c_review_entry_matches_query(
+    entry: dict[str, Any],
+    query: str,
+) -> bool:
+    needle = _norm_artifact_query(query)
+    if not needle:
+        return True
+    identity = entry.get("identity")
+    identity_values = []
+    if isinstance(identity, dict):
+        identity_values.extend(
+            str(identity.get(key) or "")
+            for key in ("company", "ticker", "market")
+        )
+    values = [
+        str(entry.get("artifact_dir") or ""),
+        str(entry.get("run_id") or ""),
+        *identity_values,
+    ]
+    return any(needle in _norm_artifact_query(value) for value in values)
+
+
+def _norm_artifact_query(value: str) -> str:
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+
+def _has_nonempty_string(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
+
+
 def _decision_log_history_change_summary(
     entries: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
