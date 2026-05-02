@@ -323,17 +323,17 @@ with token counts, latency, and a run-level cost summary.
 
 ## Next Execution Plan
 
-**Active sprint:** Stage B/C calibration — `data-collector-agent` and
-`report-synthesizer-agent` scaffolds are implemented.
-Sprint 6 Stage A and Sprint 7 Stage B are implemented at scaffold level and
-remain open for calibration hardening before quick-report defaults change.
+**Active sprint:** Stage C decision support — Stage B/C opt-in stack
+calibration on `09606.HK` and `09887.HK` passed with `.env`-loaded LLM
+configuration, including the first `decision-debate-agent` scaffold.
 
 **Doc discipline:** Each sprint below lists **implementation status** so
 this section stays aligned with the repo. Update statuses when scope
 changes.
 
-**Last status pass:** 2026-04-27 (Stage A+ valuation calibration committed;
-external repo review added for `yfinance` and `TradingAgents`).
+**Last status pass:** 2026-05-02 (Stage B/C opt-in calibration completed;
+TradingAgents-inspired decision-debate scaffold added and calibrated without
+new orchestration dependencies).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -1201,10 +1201,12 @@ keeps provider volatility out of prompts and gives both
 - **Done** — First `catalyst-agent` scaffold ranks catalyst event quality,
   binary risk, expectation risk, repricing paths, and evidence gaps while
   keeping numerical deltas in `target_price.py`.
-- **Next** — Calibrate an opt-in Stage B stack run, then start Stage C
-  `data-collector-agent`.
+- **Done** — Calibrated opt-in Stage B/C stack runs on `09606.HK` and
+  `09887.HK` using `.env`-loaded LLM configuration.
+- **Done** — Calibrated the new `decision-debate-agent` in the same opt-in
+  stack on `09606.HK` and `09887.HK`.
 - `TradingAgents` is not a dependency for this checkpoint. Keep using the
-  current custom `AgentGraph`.
+  current custom `AgentGraph`; borrow only debate/decision-log patterns.
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
@@ -1244,9 +1246,10 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 
-**Sprint status:** scaffold-complete. First data-collector and
-report-synthesizer scaffolds exist; calibration is pending before quick-report
-defaults change.
+**Sprint status:** scaffold-complete and calibration-started. First
+data-collector, report-synthesizer, and decision-debate scaffolds exist;
+decision-debate has passed two opt-in live calibration runs. Quick-report
+defaults remain unchanged until broader output review.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
@@ -1257,6 +1260,10 @@ defaults change.
   section transitions from deterministic rendering to an LLM agent, with
   deterministic fallback preserved. First opt-in scaffold is implemented and
   only inserts executive verdict prose plus section transitions when requested.
+- `decision-debate-agent`: TradingAgents-inspired bull/bear debate and
+  decision-log layer. First opt-in scaffold is implemented; it separates
+  fundamental view from timing view and feeds report synthesis/quality when
+  requested.
 
-Next Sprint-8 task: calibrate the opt-in Stage B/C stack on 09606.HK and
-09887.HK.
+Next Sprint-8 task: decide whether any decision-log summary should appear in
+the memo body or stay as an LLM findings artifact only.

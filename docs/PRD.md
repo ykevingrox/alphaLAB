@@ -73,7 +73,8 @@ Current implementation status:
   `competition-triage`, `strategic-economics`, `catalyst`, `data-collector`,
   `macro-context`, `scientific-skeptic`, `investment-thesis`, `valuation-commercial`,
   `valuation-rnpv`, `valuation-balance-sheet`, `valuation-committee`,
-  `market-regime-timing`, `market-expectations`, `report-quality`,
+  `market-regime-timing`, `market-expectations`, `decision-debate`,
+  `report-quality`,
   `report-synthesizer`, and compatibility-only `valuation-specialist` — with
   JSON schema validation,
   per-run and per-agent call budgets, and JSONL traces under `data/traces/`.
@@ -98,7 +99,8 @@ Current implementation status:
   `strategic-economics-agent`, `catalyst-agent`,
   `market-expectations-agent`, and `market-regime-timing-agent`.
 - Implemented as opt-in scaffold (Stage C, Sprint 8):
-  `data-collector-agent` and `report-synthesizer-agent`.
+  `data-collector-agent`, `report-synthesizer-agent`, and
+  `decision-debate-agent`.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

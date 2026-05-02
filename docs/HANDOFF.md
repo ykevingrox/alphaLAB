@@ -91,19 +91,22 @@ Decision for now:
 Current task: continue Stage C without introducing unnecessary external
 dependencies.
 
-Next action: calibrate the opt-in Stage B/C stack on `09606.HK` and
-`09887.HK`.
+Recent checkpoint: opt-in Stage B/C stack calibration on `09606.HK` and
+`09887.HK` passed when run with LLM configuration loaded explicitly from
+`.env`, including the TradingAgents-inspired `decision-debate` scaffold. The
+custom `AgentGraph` remains the orchestration layer.
 
 Recommended scope:
 
-1. Run an opt-in company-report path that includes `data-collector`,
+1. Keep calibrating an opt-in company-report path that includes `data-collector`,
    `strategic-economics`, `catalyst`, `market-expectations`,
-   `market-regime-timing`, `report-synthesizer`, and `report-quality` when LLM
-   credentials are available.
+   `market-regime-timing`, `decision-debate`, `report-synthesizer`, and
+   `report-quality` when LLM credentials are available.
 2. Inspect whether prompts overstate current price, BD economics, platform
-   claims, catalyst certainty, or section prose.
-3. Keep quick `report` defaults unchanged until Stage B/C outputs are
-   calibrated on both tickers.
+   claims, catalyst certainty, timing signals, decision-log confidence, or
+   section prose.
+3. Keep quick `report` defaults unchanged until Stage B/C decision-support
+   outputs are reviewed across both tickers.
 4. Tighten prompts/contracts if any agent invents facts or rewrites
    deterministic numbers.
 5. No generated runtime files, caches, memos, traces, or raw downloads should
@@ -139,9 +142,10 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Calibrate opt-in Stage B/C stack on 09606.HK / 09887.HK.
-2. TradingAgents-inspired bull/bear debate and decision-log memory, after the
-   Stage B agents have stable payloads.
+1. Decide whether decision-log summaries should remain artifact-only or feed
+   a small memo subsection later.
+2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
+   report defaults.
 
 ## Do Not Break
 

@@ -121,7 +121,8 @@ Quick-mode behavior:
   reproducibility via `company-report --llm-agents valuation-specialist`,
   but is no longer the default quick-report valuation path.
 - `strategic-economics`, `catalyst`, `market-regime-timing`,
-  `market-expectations`, `data-collector`, and `report-synthesizer` are
+  `market-expectations`, `decision-debate`, `data-collector`, and
+  `report-synthesizer` are
   available as opt-in scaffolds for `company-report --llm-agents ...`; they
   are not in quick `report` defaults yet.
 - Auto-degrades to deterministic mode when LLM env is missing or invalid, with
@@ -132,8 +133,9 @@ Architecture note:
 - The target runtime is a multi-LLM-agent collaborative topology (see
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
-- Planned next upgrades are opt-in Stage B/C calibration and deeper
-  market-context payloads such as sentiment and fund-flow signals.
+- Planned next upgrades are broader decision-support review, deciding whether
+  decision-log output remains artifact-only, and deeper market-context payloads
+  such as sentiment and fund-flow signals.
 
 Expected behavior:
 
@@ -497,7 +499,7 @@ The opt-in report path is:
 PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --ticker 09606.HK \
   --auto-inputs \
-  --llm-agents data-collector strategic-economics catalyst macro-context market-regime-timing market-expectations report-synthesizer report-quality \
+  --llm-agents data-collector strategic-economics catalyst macro-context market-regime-timing market-expectations decision-debate report-synthesizer report-quality \
   --macro-signals yahoo-hk \
   --technical-features yfinance \
   --technical-benchmark-symbol ^HSI
@@ -564,5 +566,6 @@ If validation warns about placeholders:
   design, endpoints, efficacy, or safety from source documents directly.
 - LLM `strategic-economics-agent`, `catalyst-agent`,
   `market-expectations-agent`, `market-regime-timing-agent`, and
-  `data-collector-agent` and `report-synthesizer-agent` exist as opt-in
-  scaffolds, but are not quick-report defaults yet.
+  `data-collector-agent`, `decision-debate-agent`, and
+  `report-synthesizer-agent` exist as opt-in scaffolds, but are not
+  quick-report defaults yet.

@@ -190,8 +190,11 @@ The runtime is a small in-process orchestrator, not a distributed framework:
 - Deterministic agents (pipeline, competition, financials, skeptic, scorecard,
   ...) still run first. Opt-in LLM agents
   (`pipeline-triage`, `financial-triage`, `competition-triage`,
-  `macro-context`, `scientific-skeptic`) consume the deterministic outputs
-  and return structured findings validated against JSON schema.
+  `macro-context`, `strategic-economics`, `catalyst`,
+  `market-expectations`, `market-regime-timing`, `decision-debate`,
+  `report-synthesizer`, `report-quality`, `scientific-skeptic`) consume the
+  deterministic outputs and return structured findings validated against JSON
+  schema.
 - Per-run total and per-agent call budgets are enforced pre-dispatch by
   `BudgetEnforcingLLMClient`, and every LLM call is appended as JSONL under
   `data/traces/` for audit.
@@ -215,6 +218,7 @@ Target agent topology (canonical):
   - `valuation-balance-sheet-agent`
   - `valuation-committee-agent`
 - Layer 4 — Decision and publishing:
+  - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
   - `investment-thesis-agent` (retain)
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)

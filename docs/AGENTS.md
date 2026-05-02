@@ -636,6 +636,35 @@ Boundaries:
   payloads and deterministic feature outputs so provider failures stay outside
   the prompt.
 
+## Decision Debate Agent
+
+Purpose: add a TradingAgents-inspired bull/bear debate and decision log without
+adding a new orchestration framework. It records why the research view stays
+avoid/watchlist/core-research/insufficient-data and keeps that fundamental view
+separate from market timing.
+
+Current implementation note: optional `decision-debate` is wired for
+`company-report --llm-agents ...`. It consumes data quality, strategic
+economics, catalyst, valuation pod, market expectations, market-regime/timing,
+scorecard, and deterministic memo scaffold payloads. It can feed
+`report-synthesizer` and `report-quality` when requested in the same run.
+
+Outputs:
+
+- `bull_case` and `bear_case`: concise source-keyed debate claims.
+- `fundamental_view`: `avoid`, `watchlist`, `core_research`, or
+  `insufficient_data`.
+- `timing_view`: `favorable`, `neutral`, `fragile`, `avoid_chasing`,
+  `de_risk_watch`, or `unknown`.
+- `decision_log`: assumptions, revisit reasons, invalidation triggers,
+  evidence gaps, and next review triggers.
+
+Boundaries:
+
+- Must NOT output buy/sell/entry/exit/position-size instructions.
+- Must NOT change deterministic memo decisions or numeric valuation outputs.
+- Must keep debate claims tied to supplied payload keys.
+
 ## Report Synthesizer Agent
 
 Purpose: produce the final committee-style report from all specialist
@@ -753,6 +782,7 @@ topology is tracked in `docs/ROADMAP.md`.
   - `valuation-pipeline-rnpv-agent`
   - `valuation-balance-sheet-agent`
   - `valuation-committee-agent`
+- `decision-debate-agent` (Stage C; bull/bear debate and decision log)
 - `report-synthesizer-agent` (Stage C)
 - `report-quality-agent` (Stage A)
 

@@ -406,6 +406,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "macro-context",
             "market-regime-timing",
             "market-expectations",
+            "decision-debate",
             "investment-thesis",
             "report-synthesizer",
             "valuation-specialist",

@@ -526,6 +526,7 @@ SUPPORTED_LLM_AGENTS = (
     "macro-context",
     "market-regime-timing",
     "market-expectations",
+    "decision-debate",
     "investment-thesis",
     "report-synthesizer",
     "valuation-specialist",
@@ -564,6 +565,7 @@ def _run_llm_agent_pipeline(
         CatalystLLMAgent,
         CompetitionTriageLLMAgent,
         DataCollectorLLMAgent,
+        DecisionDebateLLMAgent,
         FinancialTriageLLMAgent,
         InvestmentThesisLLMAgent,
         MacroContextLLMAgent,
@@ -748,6 +750,27 @@ def _run_llm_agent_pipeline(
                 depends_on=tuple(dict.fromkeys(expectations_deps)),
             )
         )
+    if "decision-debate" in llm_agents:
+        debate_deps = ["publish_research_facts"]
+        for requested, agent_name in (
+            ("data-collector", "data_collector_llm_agent"),
+            ("strategic-economics", "strategic_economics_llm_agent"),
+            ("catalyst", "catalyst_llm_agent"),
+            ("valuation-commercial", "valuation_commercial_llm_agent"),
+            ("valuation-rnpv", "valuation_rnpv_llm_agent"),
+            ("valuation-balance-sheet", "valuation_balance_sheet_llm_agent"),
+            ("valuation-committee", "valuation_committee_llm_agent"),
+            ("market-regime-timing", "market_regime_timing_llm_agent"),
+            ("market-expectations", "market_expectations_llm_agent"),
+        ):
+            if requested in llm_agents:
+                debate_deps.append(agent_name)
+        graph.add(
+            DecisionDebateLLMAgent(
+                llm_client=llm_client,
+                depends_on=tuple(dict.fromkeys(debate_deps)),
+            )
+        )
     if "scientific-skeptic" in llm_agents:
         graph.add(
             ScientificSkepticLLMAgent(
@@ -773,6 +796,7 @@ def _run_llm_agent_pipeline(
             ("market-expectations", "market_expectations_llm_agent"),
             ("market-regime-timing", "market_regime_timing_llm_agent"),
             ("valuation-committee", "valuation_committee_llm_agent"),
+            ("decision-debate", "decision_debate_llm_agent"),
         ):
             if requested in llm_agents:
                 synthesizer_deps.append(agent_name)
@@ -856,6 +880,8 @@ def _run_llm_agent_pipeline(
             quality_deps.append("market_regime_timing_llm_agent")
         if "market-expectations" in llm_agents:
             quality_deps.append("market_expectations_llm_agent")
+        if "decision-debate" in llm_agents:
+            quality_deps.append("decision_debate_llm_agent")
         graph.add(
             ReportQualityLLMAgent(
                 llm_client=llm_client,

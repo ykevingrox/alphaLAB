@@ -30,9 +30,9 @@ Current system is **partially aligned**:
   scenarios. Stage B has started with technical features, an optional
   yfinance history adapter, and opt-in market-regime/timing,
   market-expectations, strategic-economics, catalyst, and data-collector
-  scaffolds, plus an opt-in report-synthesizer scaffold.
-- **Not aligned yet:** new Stage B/C scaffolds are not calibrated or quick
-  report defaults.
+  scaffolds, plus opt-in report-synthesizer and decision-debate scaffolds.
+- **Not aligned yet:** Stage B/C decision-support scaffolds have passed the
+  first two opt-in calibration runs, but are not quick report defaults.
 
 The current architecture is best described as:
 **LLM-first hybrid with deterministic backbone**, not yet a fully role-complete
@@ -58,6 +58,8 @@ multi-LLM investment committee.
   commercialization path, partner quality, and platform reuse when evidenced).
 - `market-expectations-agent` (LLM, market-implied assumptions and valuation
   band explanation).
+- `decision-debate-agent` (LLM, TradingAgents-inspired bull/bear debate and
+  decision log without trading instructions).
 
 ### Layer 2: Market Context And Timing
 
@@ -77,6 +79,10 @@ multi-LLM investment committee.
 
 ### Layer 4: Decision And Publishing
 
+- `decision-debate-agent` (Stage C) — records source-keyed bull/bear claims,
+  separates fundamental view from timing view, and emits decision-log
+  assumptions, revisit reasons, invalidation triggers, evidence gaps, and next
+  review triggers.
 - `investment-thesis-agent` (retain existing) — bull/bear drivers, assumptions,
   falsification watch. Feeds Executive Verdict.
 - `scientific-skeptic-agent` (retain existing) — bear case + counter-thesis
@@ -105,12 +111,14 @@ multi-LLM investment committee.
   - `macro-context`
   - `market-expectations`
   - `market-regime-timing`
+  - `decision-debate`
   - `scientific-skeptic`
   - `investment-thesis`
   - `valuation-commercial`
   - `valuation-rnpv`
   - `valuation-balance-sheet`
   - `valuation-committee`
+  - `report-synthesizer`
   - `report-quality`
   - `valuation-specialist` (compatibility path, no longer default)
 - Deterministic modules still carrying responsibilities targeted for future
@@ -232,6 +240,9 @@ The staging below is the committed plan. Sprint-level execution lives in
     `report-quality`.
 - Move final memo body composition from mixed deterministic rendering toward
   `report-synthesizer-agent` with deterministic fallback.
+- Add `decision-debate-agent` as an opt-in decision-support layer. It borrows
+  bull/bear debate and decision-log patterns from TradingAgents, but keeps the
+  current `AgentGraph` and remains research-only.
 
 ## Valuation Pod Contract (Required)
 
@@ -418,7 +429,9 @@ Quality-agent scope MUST NOT include:
 
 Execute Sprint 8 in `docs/ROADMAP.md`:
 
-1. Calibrate the opt-in Stage B/C stack on `09606.HK` and `09887.HK`.
-2. Tighten prompts/contracts if any agent invents facts or rewrites
-   deterministic numbers.
-3. Keep quick `report` defaults unchanged until the new agents are calibrated.
+1. Decide whether `decision-debate` should stay artifact-only or feed a small
+   memo subsection.
+2. Tighten prompts/contracts if any agent invents facts, rewrites
+   deterministic numbers, or turns timing context into trading advice.
+3. Keep quick `report` defaults unchanged until the new decision-support
+   layer is reviewed.

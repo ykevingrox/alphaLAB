@@ -2394,6 +2394,9 @@ class ReportSynthesizerLLMAgent(Agent):
             "valuation_committee": _finding_snapshot(
                 store.get("valuation_committee_llm_finding")
             ),
+            "decision_debate": _finding_snapshot(
+                store.get("decision_debate_llm_finding")
+            ),
         }
         stage_payloads = {
             "data_collector": store.get("data_collector_payload"),
@@ -2401,6 +2404,7 @@ class ReportSynthesizerLLMAgent(Agent):
             "catalyst": store.get("catalyst_payload"),
             "market_expectations": store.get("market_expectations_payload"),
             "market_regime_timing": store.get("market_regime_timing_payload"),
+            "decision_debate": store.get("decision_debate_payload"),
         }
         valuation_context = {
             "target_price_snapshot": store.get("target_price_snapshot"),
@@ -3257,6 +3261,465 @@ def _market_expectations_finding_from_payload(
         confidence=confidence,
         needs_human_review=bool(payload.get("needs_human_review", True)),
     )
+
+
+DECISION_DEBATE_PROMPT = StructuredPrompt(
+    name="decision_debate",
+    tags=("debate", "decision-log", "llm"),
+    system=(
+        "You are a biotech research decision-log moderator. You borrow the "
+        "discipline of a bull/bear analyst debate, but you do not make trading "
+        "calls. Your job is to reconcile deterministic research, valuation "
+        "pod outputs, market expectations, strategic economics, catalyst "
+        "analysis, timing context, and data-quality flags into a concise "
+        "research-decision log.\n\n"
+        "Ground rules:\n"
+        "- Work only from provided payloads. Do NOT invent prices, deal terms, "
+        "clinical outcomes, catalyst dates, market history, or fund flows.\n"
+        "- Keep fundamental view separate from timing view.\n"
+        "- Conservative rNPV below current market cap is not by itself a bear "
+        "case for biotech; debate whether strategic economics, BD validation, "
+        "platform evidence, catalysts, and market expectations justify the gap.\n"
+        "- No trading instructions. Do NOT say buy, sell, enter, exit, stop "
+        "loss, add, trim, or position size.\n\n"
+        "OUTPUT RULES (must follow exactly):\n"
+        "- Return a single JSON object at the TOP LEVEL. No wrapper keys.\n"
+        "- Required keys: bull_case, bear_case, debate_resolution, "
+        "fundamental_view, timing_view, decision_log, confidence, "
+        "needs_human_review.\n"
+        "- fundamental_view is exactly one of: avoid, watchlist, "
+        "core_research, insufficient_data.\n"
+        "- timing_view is exactly one of: favorable, neutral, fragile, "
+        "avoid_chasing, de_risk_watch, unknown.\n"
+        "- Keep arrays concise. Never nest output inside analysis/result/"
+        "decision_debate."
+    ),
+    user_template=(
+        "Company: ${company}\n"
+        "Ticker: ${ticker}\n"
+        "Market: ${market}\n"
+        "As of: ${as_of}\n\n"
+        "Memo scaffold:\n${memo_scaffold}\n\n"
+        "Data quality payload:\n${data_collector}\n\n"
+        "Strategic economics payload:\n${strategic_economics}\n\n"
+        "Catalyst payload:\n${catalyst_payload}\n\n"
+        "Market expectations payload:\n${market_expectations}\n\n"
+        "Market regime/timing payload:\n${timing_payload}\n\n"
+        "Valuation pod payloads:\n${valuation_pod_payloads}\n\n"
+        "Scorecard summary:\n${scorecard_summary}\n\n"
+        "Return EXACTLY this JSON shape (keep keys verbatim):\n"
+        "{\n"
+        "  \"bull_case\": [\n"
+        "    {\"claim\": \"<source-backed bull argument>\", \"evidence_key\": \"<payload/key>\", \"confidence\": 0.0}\n"
+        "  ],\n"
+        "  \"bear_case\": [\n"
+        "    {\"claim\": \"<source-backed bear argument>\", \"evidence_key\": \"<payload/key>\", \"confidence\": 0.0}\n"
+        "  ],\n"
+        "  \"debate_resolution\": \"<balanced conclusion without trading instruction>\",\n"
+        "  \"fundamental_view\": \"avoid|watchlist|core_research|insufficient_data\",\n"
+        "  \"timing_view\": \"favorable|neutral|fragile|avoid_chasing|de_risk_watch|unknown\",\n"
+        "  \"decision_log\": {\n"
+        "    \"current_decision\": \"avoid|watchlist|core_research|insufficient_data|unchanged\",\n"
+        "    \"key_assumptions\": [\"<assumption to monitor>\"],\n"
+        "    \"reasons_to_revisit\": [\"<why the view should be revisited>\"],\n"
+        "    \"invalidation_triggers\": [\"<observable trigger that weakens the view>\"],\n"
+        "    \"evidence_gaps\": [\"<missing evidence>\"],\n"
+        "    \"next_review_triggers\": [\"<event or data release to review next>\"]\n"
+        "  },\n"
+        "  \"confidence\": 0.0,\n"
+        "  \"needs_human_review\": true\n"
+        "}"
+    ),
+    schema={
+        "type": "object",
+        "required": [
+            "bull_case",
+            "bear_case",
+            "debate_resolution",
+            "fundamental_view",
+            "timing_view",
+            "decision_log",
+            "confidence",
+            "needs_human_review",
+        ],
+        "properties": {
+            "bull_case": {
+                "type": "array",
+                "max_items": 8,
+                "items": {
+                    "type": "object",
+                    "required": ["claim", "evidence_key", "confidence"],
+                    "properties": {
+                        "claim": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 260,
+                        },
+                        "evidence_key": {
+                            "type": "string",
+                            "min_length": 1,
+                            "max_length": 120,
+                        },
+                        "confidence": {"type": "number"},
+                    },
+                },
+            },
+            "bear_case": {
+                "type": "array",
+                "max_items": 8,
+                "items": {
+                    "type": "object",
+                    "required": ["claim", "evidence_key", "confidence"],
+                    "properties": {
+                        "claim": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 260,
+                        },
+                        "evidence_key": {
+                            "type": "string",
+                            "min_length": 1,
+                            "max_length": 120,
+                        },
+                        "confidence": {"type": "number"},
+                    },
+                },
+            },
+            "debate_resolution": {
+                "type": "string",
+                "min_length": 6,
+                "max_length": 700,
+            },
+            "fundamental_view": {
+                "type": "string",
+                "enum": [
+                    "avoid",
+                    "watchlist",
+                    "core_research",
+                    "insufficient_data",
+                ],
+            },
+            "timing_view": {
+                "type": "string",
+                "enum": [
+                    "favorable",
+                    "neutral",
+                    "fragile",
+                    "avoid_chasing",
+                    "de_risk_watch",
+                    "unknown",
+                ],
+            },
+            "decision_log": {
+                "type": "object",
+                "required": [
+                    "current_decision",
+                    "key_assumptions",
+                    "reasons_to_revisit",
+                    "invalidation_triggers",
+                    "evidence_gaps",
+                    "next_review_triggers",
+                ],
+                "properties": {
+                    "current_decision": {
+                        "type": "string",
+                        "enum": [
+                            "avoid",
+                            "watchlist",
+                            "core_research",
+                            "insufficient_data",
+                            "unchanged",
+                        ],
+                    },
+                    "key_assumptions": {
+                        "type": "array",
+                        "max_items": 8,
+                        "items": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 240,
+                        },
+                    },
+                    "reasons_to_revisit": {
+                        "type": "array",
+                        "max_items": 8,
+                        "items": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 240,
+                        },
+                    },
+                    "invalidation_triggers": {
+                        "type": "array",
+                        "max_items": 8,
+                        "items": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 240,
+                        },
+                    },
+                    "evidence_gaps": {
+                        "type": "array",
+                        "max_items": 8,
+                        "items": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 240,
+                        },
+                    },
+                    "next_review_triggers": {
+                        "type": "array",
+                        "max_items": 8,
+                        "items": {
+                            "type": "string",
+                            "min_length": 3,
+                            "max_length": 240,
+                        },
+                    },
+                },
+            },
+            "confidence": {"type": "number"},
+            "needs_human_review": {"type": "boolean"},
+        },
+    },
+)
+
+
+@dataclass
+class DecisionDebateLLMAgent(Agent):
+    """LLM agent that records a bull/bear research debate and decision log."""
+
+    llm_client: LLMClient
+    name: str = "decision_debate_llm_agent"
+    depends_on: tuple[str, ...] = ()
+    produces: tuple[str, ...] = (
+        "decision_debate_llm_finding",
+        "decision_debate_payload",
+    )
+    max_tokens: int | None = 1800
+    temperature: float = 0.1
+
+    def __post_init__(self) -> None:
+        if self.llm_client is None:
+            raise ValueError("DecisionDebateLLMAgent requires an LLMClient")
+
+    def run(
+        self, context: AgentContext, store: FactStore
+    ) -> AgentStepResult:
+        warnings: list[str] = []
+        if not isinstance(store.get("memo_scaffold_payload"), dict):
+            warnings.append("fallback_context:memo_scaffold_payload")
+        if not isinstance(store.get("market_expectations_payload"), dict):
+            warnings.append("fallback_context:market_expectations_payload")
+        if not isinstance(store.get("valuation_committee_payload"), dict):
+            warnings.append("fallback_context:valuation_committee_payload")
+
+        system, user = DECISION_DEBATE_PROMPT.render(
+            self._collect_variables(context, store)
+        )
+        _write_debug_prompt(
+            store=store,
+            agent_name=self.name,
+            system=system,
+            user=user,
+        )
+        try:
+            call = self.llm_client.complete(
+                system=system,
+                user=user,
+                agent_name=self.name,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                response_format_json=True,
+                extra_metadata={
+                    "company": context.company,
+                    "ticker": context.ticker,
+                },
+            )
+        except LLMError as exc:
+            payload = _decision_debate_fallback_payload(
+                reason=f"llm_error: {exc}"
+            )
+            finding = _decision_debate_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model="fallback",
+                prompt_tokens=None,
+                completion_tokens=None,
+            )
+            return AgentStepResult(
+                agent_name=self.name,
+                finding=finding,
+                warnings=(
+                    *warnings,
+                    f"decision_debate fallback applied: {exc}",
+                ),
+                outputs={
+                    "decision_debate_llm_finding": finding,
+                    "decision_debate_payload": payload,
+                },
+            )
+
+        try:
+            payload = DECISION_DEBATE_PROMPT.parse_response(call.response_text)
+            payload = _normalize_payload_company(payload, context.company)
+        except SchemaError as exc:
+            payload = _decision_debate_fallback_payload(
+                reason=f"schema_error: {exc}"
+            )
+            finding = _decision_debate_finding_from_payload(
+                payload=payload,
+                agent_name=self.name,
+                model=call.model,
+                prompt_tokens=call.prompt_tokens,
+                completion_tokens=call.completion_tokens,
+            )
+            return AgentStepResult(
+                agent_name=self.name,
+                finding=finding,
+                warnings=(
+                    *warnings,
+                    f"raw response (first 500 chars): "
+                    f"{call.response_text[:500]}",
+                ),
+                outputs={
+                    "decision_debate_llm_finding": finding,
+                    "decision_debate_payload": payload,
+                },
+            )
+
+        finding = _decision_debate_finding_from_payload(
+            payload=payload,
+            agent_name=self.name,
+            model=call.model,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+        )
+        return AgentStepResult(
+            agent_name=self.name,
+            finding=finding,
+            warnings=tuple(warnings),
+            outputs={
+                "decision_debate_llm_finding": finding,
+                "decision_debate_payload": payload,
+            },
+        )
+
+    def _collect_variables(
+        self, context: AgentContext, store: FactStore
+    ) -> dict[str, Any]:
+        return {
+            "company": context.company,
+            "ticker": context.ticker or "n/a",
+            "market": context.market,
+            "as_of": context.as_of_date or "n/a",
+            "memo_scaffold": _json_block(store.get("memo_scaffold_payload")),
+            "data_collector": _json_block(store.get("data_collector_payload")),
+            "strategic_economics": _json_block(
+                store.get("strategic_economics_payload")
+            ),
+            "catalyst_payload": _json_block(store.get("catalyst_payload")),
+            "market_expectations": _json_block(
+                store.get("market_expectations_payload")
+            ),
+            "timing_payload": _json_block(
+                store.get("market_regime_timing_payload")
+            ),
+            "valuation_pod_payloads": _json_block(
+                {
+                    "commercial": store.get("valuation_commercial_payload"),
+                    "rnpv": store.get("valuation_rnpv_payload"),
+                    "balance_sheet": store.get("valuation_balance_sheet_payload"),
+                    "committee": store.get("valuation_committee_payload"),
+                }
+            ),
+            "scorecard_summary": _json_block(store.get("scorecard_summary")),
+        }
+
+
+def _decision_debate_finding_from_payload(
+    *,
+    payload: dict[str, Any],
+    agent_name: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> AgentFinding:
+    fundamental = str(payload.get("fundamental_view") or "insufficient_data")
+    timing = str(payload.get("timing_view") or "unknown")
+    resolution = str(payload.get("debate_resolution") or "").strip()
+    summary = f"Decision debate: {fundamental} / {timing}."
+    if resolution:
+        summary = f"{summary} {resolution}"
+
+    risks: list[str] = []
+    for item in payload.get("bear_case") or []:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or "").strip()
+        evidence_key = str(item.get("evidence_key") or "unknown").strip()
+        if claim:
+            risks.append(f"[bear_case][{evidence_key}] {claim}")
+    decision_log = payload.get("decision_log") or {}
+    if isinstance(decision_log, dict):
+        for trigger in decision_log.get("invalidation_triggers") or []:
+            text = str(trigger).strip()
+            if text:
+                risks.append(f"[invalidation_trigger] {text}")
+        for gap in decision_log.get("evidence_gaps") or []:
+            text = str(gap).strip()
+            if text:
+                risks.append(f"[evidence_gap] {text}")
+
+    try:
+        confidence = float(payload.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    evidence = (
+        Evidence(
+            claim=(
+                "Decision-debate analysis produced by "
+                f"{model} (prompt_tokens={prompt_tokens}, "
+                f"completion_tokens={completion_tokens})"
+            ),
+            source="llm:" + model,
+            confidence=confidence,
+            is_inferred=True,
+        ),
+    )
+    return AgentFinding(
+        agent_name=agent_name,
+        summary=summary,
+        risks=tuple(risks),
+        evidence=evidence,
+        confidence=confidence,
+        needs_human_review=bool(payload.get("needs_human_review", True)),
+    )
+
+
+def _decision_debate_fallback_payload(*, reason: str) -> dict[str, Any]:
+    return {
+        "bull_case": [],
+        "bear_case": [],
+        "debate_resolution": (
+            "Decision debate unavailable; keep the deterministic memo decision "
+            "unchanged and do not infer a trading action."
+        ),
+        "fundamental_view": "insufficient_data",
+        "timing_view": "unknown",
+        "decision_log": {
+            "current_decision": "unchanged",
+            "key_assumptions": [],
+            "reasons_to_revisit": [],
+            "invalidation_triggers": [],
+            "evidence_gaps": [reason],
+            "next_review_triggers": [],
+        },
+        "confidence": 0.0,
+        "needs_human_review": True,
+    }
 
 
 def _macro_context_finding_from_payload(
@@ -4157,6 +4620,9 @@ class ReportQualityLLMAgent(Agent):
             ),
             "market_expectations": _finding_snapshot(
                 store.get("market_expectations_llm_finding")
+            ),
+            "decision_debate": _finding_snapshot(
+                store.get("decision_debate_llm_finding")
             ),
             "strategic_economics": _finding_snapshot(
                 store.get("strategic_economics_llm_finding")

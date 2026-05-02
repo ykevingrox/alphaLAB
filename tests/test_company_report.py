@@ -1063,6 +1063,57 @@ class SourceTextExcerptTest(unittest.TestCase):
         self.assertEqual(result.facts["technical_feature_payload"], technical)
         self.assertIn("market_expectations_payload", result.facts)
 
+    def test_llm_pipeline_runs_decision_debate_agent(self) -> None:
+        client = FakeLLMClient()
+        client.queue(
+            json.dumps(
+                {
+                    "bull_case": [
+                        {
+                            "claim": "Market value may reflect BD validation.",
+                            "evidence_key": "strategic_economics_payload",
+                            "confidence": 0.5,
+                        }
+                    ],
+                    "bear_case": [
+                        {
+                            "claim": "Evidence gaps still limit conviction.",
+                            "evidence_key": "data_collector_payload",
+                            "confidence": 0.6,
+                        }
+                    ],
+                    "debate_resolution": "Keep the existing watchlist stance.",
+                    "fundamental_view": "watchlist",
+                    "timing_view": "unknown",
+                    "decision_log": {
+                        "current_decision": "watchlist",
+                        "key_assumptions": ["BD validation remains relevant"],
+                        "reasons_to_revisit": ["New clinical update"],
+                        "invalidation_triggers": ["Evidence weakens"],
+                        "evidence_gaps": ["Need more source detail"],
+                        "next_review_triggers": ["Next disclosure"],
+                    },
+                    "confidence": 0.52,
+                    "needs_human_review": True,
+                }
+            )
+        )
+
+        result, _trace = _run_llm_agent_pipeline(
+            research_result=_minimal_research_stub(),
+            identity=resolve_company_identity(
+                ticker="09606.HK", registry_path=None
+            ),
+            llm_agents=("decision-debate",),
+            llm_client=client,
+            output_dir="data",
+            save=False,
+            llm_trace_path=None,
+        )
+
+        self.assertIn("decision_debate_payload", result.facts)
+        self.assertIn("decision_debate_llm_finding", result.facts)
+
     def test_llm_pipeline_skips_technical_provider_without_market_agent(
         self,
     ) -> None:
