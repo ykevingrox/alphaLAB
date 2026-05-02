@@ -5845,55 +5845,197 @@ def _postprocess_report_quality_payload(
 ) -> dict[str, Any]:
     normalized = dict(payload)
     gate = str(normalized.get("publish_gate") or "review_required").strip()
-    if gate != "block":
-        return normalized
+    if gate == "block":
+        issue_classification = normalized.get("issue_classification")
+        hard_count = 0
+        if isinstance(issue_classification, list):
+            for item in issue_classification:
+                if isinstance(item, dict) and item.get("severity") == "hard_error":
+                    hard_count += 1
 
-    issue_classification = normalized.get("issue_classification")
-    hard_count = 0
-    if isinstance(issue_classification, list):
-        for item in issue_classification:
-            if isinstance(item, dict) and item.get("severity") == "hard_error":
-                hard_count += 1
-
-    if hard_count == 0:
-        texts: list[str] = []
-        for key in (
-            "critical_issues",
-            "consistency_findings",
-            "missing_evidence_findings",
-            "language_quality_findings",
-            "valuation_coherence_findings",
-        ):
-            texts.extend(str(x) for x in (normalized.get(key) or []))
-        combined = " ".join(texts).lower()
-        hard_tokens = (
-            "计算",
-            "公式",
-            "加总",
-            "单位",
-            "currency",
-            "fx",
-            "冲突",
-            "不一致",
-            "断裂",
-            "漏算",
-            "double count",
-            "shares",
-        )
-        has_hard_signal = any(token in combined for token in hard_tokens)
-        if not has_hard_signal:
-            normalized["publish_gate"] = "review_required"
-            fixes = list(normalized.get("recommended_fixes") or [])
-            fixes.append(
-                "deterministic gate override: downgrade block to review_required "
-                "because only soft warnings were detected"
+        if hard_count == 0:
+            texts: list[str] = []
+            for key in (
+                "critical_issues",
+                "consistency_findings",
+                "missing_evidence_findings",
+                "language_quality_findings",
+                "valuation_coherence_findings",
+            ):
+                texts.extend(str(x) for x in (normalized.get(key) or []))
+            combined = " ".join(texts).lower()
+            hard_tokens = (
+                "计算",
+                "公式",
+                "加总",
+                "单位",
+                "currency",
+                "fx",
+                "冲突",
+                "不一致",
+                "断裂",
+                "漏算",
+                "double count",
+                "shares",
             )
-            normalized["recommended_fixes"] = fixes
+            has_hard_signal = any(token in combined for token in hard_tokens)
+            if not has_hard_signal:
+                normalized["publish_gate"] = "review_required"
+                fixes = list(normalized.get("recommended_fixes") or [])
+                fixes.append(
+                    "deterministic gate override: downgrade block to "
+                    "review_required because only soft warnings were detected"
+                )
+                normalized["recommended_fixes"] = fixes
 
     committee_payload = store.get("valuation_committee_payload")
     if isinstance(committee_payload, dict):
         normalized["committee_unit_basis"] = committee_payload.get("unit_basis")
+    _apply_report_quality_guardrails(normalized=normalized, store=store)
     return normalized
+
+
+_TRADING_ADVICE_TOKENS = (
+    "买入",
+    "卖出",
+    "建仓",
+    "加仓",
+    "减仓",
+    "清仓",
+    "止损",
+    "止盈",
+    "入场",
+    "离场",
+    "买点",
+    "卖点",
+    "仓位",
+    "position size",
+    "entry point",
+    "exit point",
+    "stop loss",
+    "take profit",
+)
+
+
+def _apply_report_quality_guardrails(
+    *,
+    normalized: dict[str, Any],
+    store: FactStore,
+) -> None:
+    decision_payload = store.get("decision_debate_payload")
+    if isinstance(decision_payload, dict):
+        decision_text = " ".join(_nested_strings(decision_payload))
+        if _contains_trading_advice_language(decision_text):
+            _append_unique_quality_item(
+                normalized,
+                "language_quality_findings",
+                (
+                    "deterministic guardrail: decision-debate output contains "
+                    "trading-instruction language"
+                ),
+            )
+            _append_unique_quality_item(
+                normalized,
+                "recommended_fixes",
+                (
+                    "remove buy/sell/position language from decision-debate "
+                    "and restate it as research-only review context"
+                ),
+            )
+        decision_log = decision_payload.get("decision_log")
+        next_triggers = (
+            decision_log.get("next_review_triggers")
+            if isinstance(decision_log, dict)
+            else None
+        )
+        if not _has_nonempty_string_item(next_triggers):
+            _append_unique_quality_item(
+                normalized,
+                "recommended_fixes",
+                (
+                    "deterministic guardrail: decision_log must include at "
+                    "least one observable next_review_trigger"
+                ),
+            )
+
+    report_text = " ".join(
+        (
+            *_nested_strings(store.get("memo_review_payload")),
+            *_nested_strings(store.get("report_synthesizer_payload")),
+        )
+    )
+    if _contains_trading_advice_language(report_text):
+        _append_unique_quality_item(
+            normalized,
+            "language_quality_findings",
+            (
+                "deterministic guardrail: final report language contains "
+                "trading-instruction wording"
+            ),
+        )
+        _append_unique_quality_item(
+            normalized,
+            "recommended_fixes",
+            (
+                "revise memo/synthesizer language to avoid buy/sell/entry/"
+                "exit/position instructions"
+            ),
+        )
+
+
+def _append_unique_quality_item(
+    payload: dict[str, Any],
+    key: str,
+    text: str,
+) -> None:
+    values = payload.get(key)
+    if not isinstance(values, list):
+        values = []
+    if text not in values:
+        values.append(text)
+    payload[key] = values
+    if payload.get("publish_gate") == "pass":
+        payload["publish_gate"] = "review_required"
+
+
+def _contains_trading_advice_language(text: str) -> bool:
+    normalized = text.casefold()
+    return any(token.casefold() in normalized for token in _TRADING_ADVICE_TOKENS)
+
+
+def _has_nonempty_string_item(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
+
+
+def _nested_strings(value: Any, *, limit: int = 80) -> list[str]:
+    strings: list[str] = []
+
+    def visit(item: Any) -> None:
+        if len(strings) >= limit:
+            return
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                strings.append(text)
+            return
+        if isinstance(item, dict):
+            for sub_item in item.values():
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+            return
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+
+    visit(value)
+    return strings
 
 
 def _finding_snapshot(finding: Any) -> dict[str, Any] | None:

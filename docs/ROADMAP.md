@@ -1280,7 +1280,9 @@ Report-quality review has been broadened to receive a capped deterministic
 memo excerpt (`memo_review_payload`) plus any `report_synthesizer_payload`, so
 the quality gate can inspect final report language for overstated valuation,
 BD/platform, catalyst, timing, or trading-advice drift without changing memo
-prose.
+prose. Deterministic quality postprocessing now also forces review when
+decision/memo/synthesizer text contains trading-instruction wording or when a
+decision log lacks observable next-review triggers.
 
 Next Sprint-8 task: review the full opt-in output across calibration tickers
 and decide later whether a compact decision-log subsection belongs in the memo

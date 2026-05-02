@@ -753,6 +753,9 @@ Inputs:
 - `memo_review_payload` and `report_synthesizer_payload`, when present, so the
   quality gate can inspect final report language for overstated price, BD,
   platform, catalyst, timing, or trading-advice drift without rewriting prose
+- Deterministic postprocessing also downgrades `pass` to `review_required` if
+  decision/memo/synthesizer text contains trading-instruction language, or if
+  decision logs lack observable `next_review_triggers`
 
 Outputs:
 

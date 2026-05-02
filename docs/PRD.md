@@ -104,7 +104,9 @@ Current implementation status:
   can feed later same-company runs as lightweight decision-log memory.
   `report-quality-agent` now also receives a capped memo review excerpt plus
   synthesizer payload so it can review final report language for valuation,
-  BD/platform, catalyst, timing, or trading-advice drift.
+  BD/platform, catalyst, timing, or trading-advice drift; deterministic
+  postprocessing forces review if trading-instruction wording slips through or
+  decision logs lack observable review triggers.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

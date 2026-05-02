@@ -443,6 +443,8 @@ Execute Sprint 8 in `docs/ROADMAP.md`:
 2. Use the broadened report-quality context (`memo_review_payload`,
    `report_synthesizer_payload`, and `decision_debate_payload`) to tighten
    prompts/contracts if any agent invents facts, rewrites deterministic
-   numbers, or turns timing context into trading advice.
+   numbers, or turns timing context into trading advice. Deterministic
+   postprocessing now covers trading-language drift and missing decision-log
+   review triggers.
 3. Keep quick `report` defaults unchanged until the new decision-support
    layer is reviewed.

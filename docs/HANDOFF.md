@@ -56,6 +56,8 @@ investment committee.
   - Report-quality now receives `memo_review_payload` plus any
     `report_synthesizer_payload`, allowing it to inspect final report language
     for valuation, BD/platform, catalyst, timing, or trading-advice drift.
+    Deterministic postprocessing forces review if trading-instruction wording
+    appears or a decision log lacks observable next-review triggers.
   - Optional `data-collector` LLM scaffold is wired for company-report and
     feeds per-domain evidence verdicts into report quality when requested.
   - `company-report --technical-features yfinance` now threads source-backed

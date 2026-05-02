@@ -225,7 +225,9 @@ Target agent topology (canonical):
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)
   - `report-quality-agent` (Stage A; now reviews capped memo language context
-    plus synthesizer and decision-debate payloads when available)
+    plus synthesizer and decision-debate payloads when available, with
+    deterministic guardrails for trading-language drift and missing review
+    triggers)
 
 Deterministic backbone agents that feed the LLM layers:
 

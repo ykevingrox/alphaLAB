@@ -315,6 +315,78 @@ class ReportQualityLLMAgentTest(unittest.TestCase):
         )
         self.assertEqual(patched["publish_gate"], "review_required")
 
+    def test_report_quality_guardrails_flag_decision_debate_drift(self) -> None:
+        payload = {
+            "summary": "clean",
+            "publish_gate": "pass",
+            "critical_issues": [],
+            "consistency_findings": [],
+            "missing_evidence_findings": [],
+            "language_quality_findings": [],
+            "valuation_coherence_findings": [],
+            "recommended_fixes": [],
+            "issue_classification": [],
+        }
+        patched = _postprocess_report_quality_payload(
+            payload=payload,
+            store=FactStore(
+                {
+                    "decision_debate_payload": {
+                        "debate_resolution": "建议买入并加仓。",
+                        "decision_log": {"next_review_triggers": []},
+                    }
+                }
+            ),
+        )
+
+        self.assertEqual(patched["publish_gate"], "review_required")
+        self.assertTrue(
+            any(
+                "trading-instruction language" in item
+                for item in patched["language_quality_findings"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "next_review_trigger" in item
+                for item in patched["recommended_fixes"]
+            )
+        )
+
+    def test_report_quality_guardrails_flag_memo_language_drift(self) -> None:
+        payload = {
+            "summary": "clean",
+            "publish_gate": "pass",
+            "critical_issues": [],
+            "consistency_findings": [],
+            "missing_evidence_findings": [],
+            "language_quality_findings": [],
+            "valuation_coherence_findings": [],
+            "recommended_fixes": [],
+            "issue_classification": [],
+        }
+        patched = _postprocess_report_quality_payload(
+            payload=payload,
+            store=FactStore(
+                {
+                    "memo_review_payload": {
+                        "markdown_excerpt": "这里不是研究观察，而是明确买点。"
+                    },
+                    "report_synthesizer_payload": {
+                        "executive_verdict_paragraph": "维持观察名单。"
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(patched["publish_gate"], "review_required")
+        self.assertTrue(
+            any(
+                "final report language" in item
+                for item in patched["language_quality_findings"]
+            )
+        )
+
 
 class ValuationNormalizationTest(unittest.TestCase):
     def test_normalize_payload_sets_required_contract_fields(self) -> None:
