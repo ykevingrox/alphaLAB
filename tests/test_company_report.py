@@ -615,10 +615,23 @@ class CompanyReportTest(unittest.TestCase):
                 entry["review_flags"],
             )
             self.assertIn("missing_decision_log_artifact", entry["review_flags"])
+            self.assertEqual(entry["review_severity"], "critical")
+            self.assertTrue(
+                any("valuation pod roles" in action for action in entry["next_actions"])
+            )
             self.assertEqual(
                 review["summary"]["publish_gate_counts"]["review_required"],
                 1,
             )
+            self.assertEqual(review["summary"]["severity_counts"]["critical"], 1)
+
+            filtered = stage_c_review_index(
+                output_dir=root,
+                flags=("valuation_commercial_method_drift",),
+                latest_per_identity=True,
+                min_severity="critical",
+            )
+            self.assertEqual(filtered["count"], 1)
 
     def test_stage_c_review_index_reads_decision_log_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

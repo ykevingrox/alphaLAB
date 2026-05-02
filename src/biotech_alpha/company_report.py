@@ -3310,6 +3310,9 @@ def stage_c_review_index(
     *,
     output_dir: str | Path = "data",
     query: str | None = None,
+    flags: tuple[str, ...] = (),
+    latest_per_identity: bool = False,
+    min_severity: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
     """Return an offline review index for saved Stage B/C support artifacts."""
@@ -3321,11 +3324,30 @@ def stage_c_review_index(
             for entry in entries
             if _stage_c_review_entry_matches_query(entry, query)
         ]
+    if flags:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_entry_has_flags(entry, flags)
+        ]
+    if min_severity:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_meets_min_severity(entry, min_severity)
+        ]
+    if latest_per_identity:
+        entries = _stage_c_latest_per_identity(entries)
     entries = entries[: max(1, limit)]
     return {
         "available": bool(entries),
         "count": len(entries),
         "query": query,
+        "filters": {
+            "flags": list(flags),
+            "latest_per_identity": latest_per_identity,
+            "min_severity": min_severity,
+        },
         "entries": entries,
         "summary": _stage_c_review_summary(entries),
     }
@@ -3335,6 +3357,34 @@ _STAGE_C_ARTIFACT_SUFFIXES = {
     "report_quality": "_report_quality",
     "valuation_pod": "_valuation_pod",
     "decision_log": "_decision_log",
+}
+
+_STAGE_C_SEVERITY_RANK = {
+    "info": 0,
+    "coverage": 1,
+    "review": 2,
+    "critical": 3,
+}
+
+_STAGE_C_FLAG_SEVERITY = {
+    "report_quality_block": "critical",
+    "report_quality_review_required": "review",
+    "report_quality_unavailable": "review",
+    "missing_report_quality_artifact": "coverage",
+    "unreadable_report_quality_artifact": "coverage",
+    "missing_valuation_pod_artifact": "coverage",
+    "unreadable_valuation_pod_artifact": "coverage",
+    "valuation_committee_not_publishable": "review",
+    "valuation_duplicate_component_ranges": "critical",
+    "valuation_commercial_method_drift": "critical",
+    "valuation_balance_sheet_method_drift": "critical",
+    "valuation_rnpv_as_sole_fair_value_language": "critical",
+    "valuation_overvaluation_language_without_market_bridge": "review",
+    "valuation_missing_market_implied_value": "review",
+    "valuation_missing_scenario_repricing_range": "review",
+    "missing_decision_log_artifact": "coverage",
+    "unreadable_decision_log_artifact": "coverage",
+    "decision_log_missing_next_review_trigger": "review",
 }
 
 
@@ -3430,6 +3480,8 @@ def _stage_c_review_entry_from_group(
         "decision_log": decision_log,
         "review_flags": flags,
         "review_flag_count": len(flags),
+        "review_severity": _stage_c_review_severity(flags),
+        "next_actions": _stage_c_review_next_actions(flags),
     }
 
 
@@ -3710,10 +3762,13 @@ def _stage_c_review_flags(
 def _stage_c_review_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
     flag_counts: dict[str, int] = {}
     gate_counts: dict[str, int] = {}
+    severity_counts: dict[str, int] = {}
     for entry in entries:
         for flag in entry.get("review_flags") or []:
             text = str(flag)
             flag_counts[text] = flag_counts.get(text, 0) + 1
+        severity = str(entry.get("review_severity") or "info")
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
         report_quality = entry.get("report_quality")
         if isinstance(report_quality, dict):
             gate = str(report_quality.get("publish_gate") or "unknown")
@@ -3724,7 +3779,101 @@ def _stage_c_review_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "entry_count": len(entries),
         "flag_counts": flag_counts,
         "publish_gate_counts": gate_counts,
+        "severity_counts": severity_counts,
     }
+
+
+def _stage_c_review_severity(flags: list[str]) -> str:
+    severity = "info"
+    for flag in flags:
+        flag_severity = _STAGE_C_FLAG_SEVERITY.get(str(flag), "review")
+        if _STAGE_C_SEVERITY_RANK[flag_severity] > _STAGE_C_SEVERITY_RANK[severity]:
+            severity = flag_severity
+    return severity
+
+
+def _stage_c_review_next_actions(flags: list[str]) -> list[str]:
+    actions: list[str] = []
+    flag_set = set(flags)
+    if "report_quality_block" in flag_set:
+        actions.append("Review report-quality critical issues before publishing.")
+    if "report_quality_unavailable" in flag_set:
+        actions.append("Rerun report-quality after fixing LLM/schema response.")
+    if {
+        "valuation_commercial_method_drift",
+        "valuation_balance_sheet_method_drift",
+        "valuation_duplicate_component_ranges",
+    } & flag_set:
+        actions.append(
+            "Inspect valuation pod roles for rNPV leakage, duplicated ranges, or double counting."
+        )
+    if {
+        "valuation_missing_market_implied_value",
+        "valuation_missing_scenario_repricing_range",
+        "valuation_overvaluation_language_without_market_bridge",
+    } & flag_set:
+        actions.append(
+            "Add or verify market-implied assumptions and scenario repricing bridge."
+        )
+    if "valuation_rnpv_as_sole_fair_value_language" in flag_set:
+        actions.append("Rewrite rNPV framing as a conservative floor or cross-check.")
+    if {
+        "missing_decision_log_artifact",
+        "decision_log_missing_next_review_trigger",
+    } & flag_set:
+        actions.append(
+            "Run or inspect decision-debate so decision logs include observable review triggers."
+        )
+    if not actions and flags:
+        actions.append("Review flagged Stage B/C artifacts manually.")
+    return actions[:5]
+
+
+def _stage_c_review_entry_has_flags(
+    entry: dict[str, Any],
+    flags: tuple[str, ...],
+) -> bool:
+    entry_flags = {
+        _norm_artifact_query(str(flag))
+        for flag in (entry.get("review_flags") or [])
+    }
+    return all(_norm_artifact_query(flag) in entry_flags for flag in flags)
+
+
+def _stage_c_review_meets_min_severity(
+    entry: dict[str, Any],
+    min_severity: str,
+) -> bool:
+    requested = str(min_severity or "").strip().casefold()
+    if requested not in _STAGE_C_SEVERITY_RANK:
+        return True
+    actual = str(entry.get("review_severity") or "info")
+    return _STAGE_C_SEVERITY_RANK.get(actual, 0) >= _STAGE_C_SEVERITY_RANK[requested]
+
+
+def _stage_c_latest_per_identity(
+    entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        key = _stage_c_identity_key(entry)
+        if key in latest:
+            continue
+        latest[key] = entry
+    return list(latest.values())
+
+
+def _stage_c_identity_key(entry: dict[str, Any]) -> str:
+    identity = entry.get("identity")
+    if isinstance(identity, dict):
+        ticker = str(identity.get("ticker") or "").strip().casefold()
+        if ticker:
+            return f"ticker:{ticker}"
+        company = str(identity.get("company") or "").strip().casefold()
+        if company:
+            return f"company:{company}"
+    artifact_dir = str(entry.get("artifact_dir") or "").strip().casefold()
+    return f"dir:{artifact_dir}"
 
 
 def _stage_c_review_entry_matches_query(

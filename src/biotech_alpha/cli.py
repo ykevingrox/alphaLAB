@@ -566,6 +566,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Maximum number of saved runs to show. Defaults to 20.",
     )
     stage_c_review_parser.add_argument(
+        "--flag",
+        action="append",
+        default=(),
+        help="Require a review flag. May be repeated.",
+    )
+    stage_c_review_parser.add_argument(
+        "--latest-per-identity",
+        action="store_true",
+        help="Show only the latest saved run per ticker/company identity.",
+    )
+    stage_c_review_parser.add_argument(
+        "--min-severity",
+        choices=("coverage", "review", "critical"),
+        help="Only show runs at or above the selected review severity.",
+    )
+    stage_c_review_parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
@@ -1263,6 +1279,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = stage_c_review_index(
             output_dir=args.output_dir,
             query=getattr(args, "query", None),
+            flags=tuple(getattr(args, "flag", ()) or ()),
+            latest_per_identity=bool(getattr(args, "latest_per_identity", False)),
+            min_severity=getattr(args, "min_severity", None),
             limit=max(1, int(getattr(args, "limit", 20) or 20)),
         )
         if args.json:
@@ -2101,6 +2120,12 @@ def _print_stage_c_review(payload: dict[str, object]) -> None:
     if isinstance(gate_counts, dict) and gate_counts:
         parts = [f"{key}={value}" for key, value in sorted(gate_counts.items())]
         print(f"- Quality gates: {', '.join(parts)}")
+    severity_counts = summary.get("severity_counts")
+    if isinstance(severity_counts, dict) and severity_counts:
+        parts = [
+            f"{key}={value}" for key, value in sorted(severity_counts.items())
+        ]
+        print(f"- Severities: {', '.join(parts)}")
     flag_counts = summary.get("flag_counts")
     if isinstance(flag_counts, dict) and flag_counts:
         parts = [
@@ -2134,7 +2159,8 @@ def _print_stage_c_review(payload: dict[str, object]) -> None:
         flags = entry.get("review_flags")
         if not isinstance(flags, list):
             flags = []
-        print(f"- {entry.get('run_id') or 'unknown'} {label}")
+        severity = entry.get("review_severity") or "info"
+        print(f"- {entry.get('run_id') or 'unknown'} {label} [{severity}]")
         gate = report_quality.get("publish_gate") or "missing"
         critical_count = report_quality.get("critical_issue_count")
         fix_count = report_quality.get("recommended_fix_count")
@@ -2157,6 +2183,9 @@ def _print_stage_c_review(payload: dict[str, object]) -> None:
             print("  decision: missing artifact")
         if flags:
             print(f"  flags: {', '.join(str(flag) for flag in flags[:8])}")
+        actions = entry.get("next_actions")
+        if isinstance(actions, list) and actions:
+            print(f"  next: {str(actions[0]).strip()}")
         missing = [
             key
             for key in ("report_quality", "valuation_pod", "decision_log")
