@@ -3488,6 +3488,16 @@ def _stage_c_valuation_pod_entry(
     committee_publishable = summary.get("committee_publishable")
     if committee_publishable is None and committee:
         committee_publishable = not bool(committee.get("needs_human_review", True))
+    language_flags = _valuation_pod_language_flags(
+        pod_payload=pod_payload,
+        has_market_implied_value=bool(
+            summary.get("market_implied_value") or committee.get("market_implied_value")
+        ),
+        has_scenario_repricing_range=bool(
+            summary.get("scenario_repricing_range")
+            or committee.get("scenario_repricing_range")
+        ),
+    )
     return {
         "available": bool(payload.get("available")),
         "component_count": summary.get("component_count")
@@ -3509,6 +3519,7 @@ def _stage_c_valuation_pod_entry(
             summary.get("scenario_repricing_range")
             or committee.get("scenario_repricing_range")
         ),
+        "language_flags": language_flags,
     }
 
 
@@ -3552,6 +3563,70 @@ def _duplicate_component_range_count(component_ranges: dict[str, Any]) -> int:
         )
         signatures[signature] = signatures.get(signature, 0) + 1
     return sum(count - 1 for count in signatures.values() if count > 1)
+
+
+def _valuation_pod_language_flags(
+    *,
+    pod_payload: dict[str, Any],
+    has_market_implied_value: bool,
+    has_scenario_repricing_range: bool,
+) -> list[str]:
+    text = " ".join(_nested_stage_c_strings(pod_payload, limit=160)).casefold()
+    flags: list[str] = []
+    if "rnpv" in text and any(
+        token in text
+        for token in (
+            "唯一公允",
+            "唯一合理",
+            "only fair value",
+            "sole fair value",
+            "sole reasonable value",
+        )
+    ):
+        flags.append("rnpv_as_sole_fair_value_language")
+    has_overvaluation_language = any(
+        token in text
+        for token in (
+            "高估",
+            "下行空间",
+            "估值透支",
+            "远高于",
+            "显著高于",
+            "overvalued",
+            "downside",
+        )
+    )
+    has_gap_context = has_market_implied_value and has_scenario_repricing_range
+    if has_overvaluation_language and not has_gap_context:
+        flags.append("overvaluation_language_without_market_bridge")
+    return flags
+
+
+def _nested_stage_c_strings(value: Any, *, limit: int = 80) -> list[str]:
+    strings: list[str] = []
+
+    def visit(item: Any) -> None:
+        if len(strings) >= limit:
+            return
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                strings.append(text)
+            return
+        if isinstance(item, dict):
+            for sub_item in item.values():
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+            return
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+
+    visit(value)
+    return strings
 
 
 def _stage_c_decision_log_entry(
@@ -3609,6 +3684,10 @@ def _stage_c_review_flags(
                 flags.append("valuation_commercial_method_drift")
             if str(methods.get("balance_sheet") or "").casefold() == "rnpv":
                 flags.append("valuation_balance_sheet_method_drift")
+        language_flags = valuation_pod.get("language_flags")
+        if isinstance(language_flags, list):
+            for language_flag in language_flags:
+                flags.append(f"valuation_{language_flag}")
         if not valuation_pod.get("has_market_implied_value"):
             flags.append("valuation_missing_market_implied_value")
         if not valuation_pod.get("has_scenario_repricing_range"):

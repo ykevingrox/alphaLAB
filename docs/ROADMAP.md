@@ -1285,8 +1285,8 @@ decision/memo/synthesizer text contains trading-instruction wording or when a
 decision log lacks observable next-review triggers.
 `stage-c-review` now scans saved `report_quality`, `valuation_pod`, and
 `decision_log` artifacts without running LLMs, giving reviewers a compact local
-view of missing artifacts, quality gates, valuation method drift, and decision
-log trigger coverage.
+view of missing artifacts, quality gates, valuation method/language drift,
+market-bridge coverage, and decision-log trigger coverage.
 
 Next Sprint-8 task: review the full opt-in output across calibration tickers
 and decide later whether a compact decision-log subsection belongs in the memo
