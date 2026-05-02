@@ -3313,6 +3313,7 @@ def stage_c_review_index(
     flags: tuple[str, ...] = (),
     latest_per_identity: bool = False,
     min_severity: str | None = None,
+    sort_by: str = "run_id",
     limit: int = 20,
 ) -> dict[str, Any]:
     """Return an offline review index for saved Stage B/C support artifacts."""
@@ -3338,6 +3339,7 @@ def stage_c_review_index(
         ]
     if latest_per_identity:
         entries = _stage_c_latest_per_identity(entries)
+    entries = _sort_stage_c_review_entries(entries, sort_by=sort_by)
     entries = entries[: max(1, limit)]
     return {
         "available": bool(entries),
@@ -3347,6 +3349,7 @@ def stage_c_review_index(
             "flags": list(flags),
             "latest_per_identity": latest_per_identity,
             "min_severity": min_severity,
+            "sort_by": sort_by,
         },
         "entries": entries,
         "summary": _stage_c_review_summary(entries),
@@ -4123,6 +4126,45 @@ def _stage_c_latest_per_identity(
             continue
         latest[key] = entry
     return list(latest.values())
+
+
+def _sort_stage_c_review_entries(
+    entries: list[dict[str, Any]],
+    *,
+    sort_by: str,
+) -> list[dict[str, Any]]:
+    mode = str(sort_by or "run_id").strip().casefold().replace("_", "-")
+    if mode == "severity":
+        return sorted(
+            entries,
+            key=lambda item: (
+                _STAGE_C_SEVERITY_RANK.get(
+                    str(item.get("review_severity") or "info"),
+                    0,
+                ),
+                int(item.get("review_flag_count") or 0),
+                str(item.get("run_id") or ""),
+            ),
+            reverse=True,
+        )
+    if mode == "flag-count":
+        return sorted(
+            entries,
+            key=lambda item: (
+                int(item.get("review_flag_count") or 0),
+                _STAGE_C_SEVERITY_RANK.get(
+                    str(item.get("review_severity") or "info"),
+                    0,
+                ),
+                str(item.get("run_id") or ""),
+            ),
+            reverse=True,
+        )
+    return sorted(
+        entries,
+        key=lambda item: str(item.get("run_id") or ""),
+        reverse=True,
+    )
 
 
 def _stage_c_identity_key(entry: dict[str, Any]) -> str:

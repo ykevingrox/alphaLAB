@@ -678,8 +678,10 @@ class CompanyReportTest(unittest.TestCase):
                 flags=("valuation_commercial_method_drift",),
                 latest_per_identity=True,
                 min_severity="critical",
+                sort_by="severity",
             )
             self.assertEqual(filtered["count"], 1)
+            self.assertEqual(filtered["filters"]["sort_by"], "severity")
             markdown = stage_c_review_markdown(filtered)
             self.assertIn("# Stage C Artifact Review", markdown)
             self.assertIn("Checklist:", markdown)

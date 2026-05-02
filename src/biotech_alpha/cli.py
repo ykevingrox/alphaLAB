@@ -583,6 +583,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Only show runs at or above the selected review severity.",
     )
     stage_c_review_parser.add_argument(
+        "--sort",
+        choices=("run-id", "severity", "flag-count"),
+        default="run-id",
+        help="Sort saved runs. Defaults to run-id.",
+    )
+    stage_c_review_parser.add_argument(
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
@@ -1288,6 +1294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             flags=tuple(getattr(args, "flag", ()) or ()),
             latest_per_identity=bool(getattr(args, "latest_per_identity", False)),
             min_severity=getattr(args, "min_severity", None),
+            sort_by=getattr(args, "sort", "run-id"),
             limit=max(1, int(getattr(args, "limit", 20) or 20)),
         )
         if args.json:

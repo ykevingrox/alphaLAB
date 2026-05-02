@@ -157,7 +157,7 @@ Optional LLM smoke when `.env` has credentials:
    Use `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK`
    to review saved Stage B/C support artifacts without running LLMs. For the
    shortest calibration checklist, use
-   `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --markdown`.
+   `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --sort severity --markdown`.
 2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
    report defaults.
 

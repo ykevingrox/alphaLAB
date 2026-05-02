@@ -442,8 +442,8 @@ Execute Sprint 8 in `docs/ROADMAP.md`:
    before deciding whether to feed a small memo subsection. Use
    `stage-c-review` to group saved report-quality, valuation-pod, and
    decision-log artifacts for offline calibration review; add
-   `--latest-per-identity --min-severity critical --markdown` for a compact
-   checklist of the current worst runs.
+   `--latest-per-identity --min-severity critical --sort severity --markdown`
+   for a compact checklist of the current worst runs.
 2. Use the broadened report-quality context (`memo_review_payload`,
    `report_synthesizer_payload`, and `decision_debate_payload`) to tighten
    prompts/contracts if any agent invents facts, rewrites deterministic
