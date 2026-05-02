@@ -142,8 +142,13 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Decide whether decision-log summaries should remain artifact-only or feed
-   a small memo subsection later.
+1. Review the new artifact-only decision log path
+   (`<run_id>_decision_log.json`) and decide later whether a compact memo
+   subsection is warranted. Recent same-company logs now feed later
+   `decision-debate` runs as lightweight memory. Use
+   `PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK` to
+   inspect local history and latest-vs-previous changes without running a new
+   report.
 2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
    report defaults.
 

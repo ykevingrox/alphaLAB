@@ -3001,6 +3001,8 @@ MARKET_EXPECTATIONS_PROMPT = StructuredPrompt(
         "Strategic economics payload:\n${strategic_economics}\n\n"
         "Macro context payload:\n${macro_context}\n\n"
         "Technical feature payload:\n${technical_payload}\n\n"
+        "Market sentiment / fund-flow proxy payload:\n"
+        "${sentiment_payload}\n\n"
         "Market-regime/timing payload:\n${timing_payload}\n\n"
         "Catalyst payload, if available:\n${catalyst_payload}\n\n"
         "Scorecard summary:\n${scorecard_summary}\n\n"
@@ -3193,6 +3195,9 @@ class MarketExpectationsLLMAgent(Agent):
             "technical_payload": _json_block(
                 store.get("technical_feature_payload")
             ),
+            "sentiment_payload": _json_block(
+                store.get("market_sentiment_payload")
+            ),
             "timing_payload": _json_block(
                 store.get("market_regime_timing_payload")
             ),
@@ -3277,6 +3282,9 @@ DECISION_DEBATE_PROMPT = StructuredPrompt(
         "- Work only from provided payloads. Do NOT invent prices, deal terms, "
         "clinical outcomes, catalyst dates, market history, or fund flows.\n"
         "- Keep fundamental view separate from timing view.\n"
+        "- Use prior decision logs only to identify changed assumptions, "
+        "repeated evidence gaps, or newly invalidated triggers; do not anchor "
+        "to an old view if current evidence differs.\n"
         "- Conservative rNPV below current market cap is not by itself a bear "
         "case for biotech; debate whether strategic economics, BD validation, "
         "platform evidence, catalysts, and market expectations justify the gap.\n"
@@ -3305,6 +3313,8 @@ DECISION_DEBATE_PROMPT = StructuredPrompt(
         "Catalyst payload:\n${catalyst_payload}\n\n"
         "Market expectations payload:\n${market_expectations}\n\n"
         "Market regime/timing payload:\n${timing_payload}\n\n"
+        "Prior decision logs for this company, if available:\n"
+        "${prior_decision_logs}\n\n"
         "Valuation pod payloads:\n${valuation_pod_payloads}\n\n"
         "Scorecard summary:\n${scorecard_summary}\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
@@ -3624,6 +3634,9 @@ class DecisionDebateLLMAgent(Agent):
             ),
             "timing_payload": _json_block(
                 store.get("market_regime_timing_payload")
+            ),
+            "prior_decision_logs": _json_block(
+                store.get("prior_decision_logs_payload")
             ),
             "valuation_pod_payloads": _json_block(
                 {
@@ -4482,6 +4495,7 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "摘要指标:\n${result_summary}\n\n"
         "估值分项输出:\n${valuation_pod_payloads}\n\n"
         "LLM findings:\n${llm_findings}\n\n"
+        "Decision debate payload:\n${decision_debate_payload}\n\n"
         "估值标准化结果:\n${normalized_valuation}\n\n"
         "审阅规则:\n"
         "- 若问题只是缺少战略经济/市场预期解释，优先给review_required，"
@@ -4490,6 +4504,8 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "balance_sheet使用rNPV方法，应作为估值口径问题。\n"
         "- 若报告把保守rNPV写成唯一合理股价，请列入"
         "valuation_coherence_findings。\n\n"
+        "- 若decision debate把timing_view写成交易指令，或decision_log"
+        "缺少可观察复核触发条件，请列入recommended_fixes。\n\n"
         "请返回严格 JSON：\n"
         "{\n"
         "  \"summary\": \"<1-3句审查结论>\",\n"
@@ -4651,6 +4667,9 @@ class ReportQualityLLMAgent(Agent):
                     }
                 ),
                 "llm_findings": _json_block(llm_findings),
+                "decision_debate_payload": _json_block(
+                    store.get("decision_debate_payload")
+                ),
                 "normalized_valuation": _json_block(
                     _normalized_valuation_for_review(store)
                 ),

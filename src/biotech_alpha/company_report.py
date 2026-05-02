@@ -86,6 +86,7 @@ class CompanyReportResult:
     llm_trace_path: Path | None = None
     report_quality_path: Path | None = None
     valuation_pod_path: Path | None = None
+    decision_log_path: Path | None = None
     hkexnews_updates_path: Path | None = None
     cde_updates_path: Path | None = None
     hkexnews_event_impacts_path: Path | None = None
@@ -613,11 +614,20 @@ def _run_llm_agent_pipeline(
         except Exception:  # noqa: BLE001 - live/history feeds are optional
             technical_features = None
 
+    prior_decision_logs = None
+    if "decision-debate" in llm_agents:
+        prior_decision_logs = _load_prior_decision_logs(
+            output_dir=output_dir,
+            identity=identity,
+            current_run_id=research_result.run_id,
+        )
+
     facts = build_llm_agent_facts(
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
         macro_signals=macro_signals,
         technical_features=technical_features,
+        prior_decision_logs=prior_decision_logs,
     )
     context = AgentContext(
         company=identity.company,
@@ -928,6 +938,7 @@ def build_llm_agent_facts(
     auto_input_artifacts: Any | None = None,
     macro_signals: dict[str, Any] | None = None,
     technical_features: dict[str, Any] | None = None,
+    prior_decision_logs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
@@ -1033,6 +1044,10 @@ def build_llm_agent_facts(
         auto_input_artifacts=auto_input_artifacts,
         live_signals=macro_signals,
     )
+    market_sentiment = _build_market_sentiment_payload(
+        macro_context=macro_context,
+        technical_features=technical_features,
+    )
     competition_snapshot = _build_competition_snapshot(
         research_result=research_result
     )
@@ -1053,6 +1068,8 @@ def build_llm_agent_facts(
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
         "technical_feature_payload": technical_features,
+        "market_sentiment_payload": market_sentiment,
+        "prior_decision_logs_payload": prior_decision_logs,
         "catalyst_calendar_payload": _build_catalyst_calendar_payload(
             research_result
         ),
@@ -1450,6 +1467,153 @@ def _build_macro_context(
         "live_signals": live_block,
         "known_unknowns": known_unknowns,
     }
+
+
+def _build_market_sentiment_payload(
+    *,
+    macro_context: dict[str, Any] | None,
+    technical_features: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Build a provider-neutral sentiment/fund-flow proxy from existing facts."""
+
+    evidence: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    score = 0
+
+    technical_state = None
+    relative_strength_state = None
+    volume_state = None
+    one_month_return = None
+    three_month_return = None
+    if isinstance(technical_features, dict):
+        technical_state = technical_features.get("technical_state")
+        relative_strength = technical_features.get("relative_strength")
+        if isinstance(relative_strength, dict):
+            relative_strength_state = relative_strength.get("state")
+            spread = relative_strength.get("3m_spread_pct")
+            if spread is not None:
+                evidence.append(
+                    {
+                        "signal": "relative_strength_3m_spread_pct",
+                        "value": spread,
+                        "source": "technical_feature_payload",
+                    }
+                )
+        volume_trend = technical_features.get("volume_trend")
+        if isinstance(volume_trend, dict):
+            volume_state = volume_trend.get("state")
+            evidence.append(
+                {
+                    "signal": "volume_trend",
+                    "value": volume_state,
+                    "source": "technical_feature_payload",
+                }
+            )
+        returns = technical_features.get("returns")
+        if isinstance(returns, dict):
+            one_month_return = returns.get("1m_pct")
+            three_month_return = returns.get("3m_pct")
+            evidence.append(
+                {
+                    "signal": "returns",
+                    "value": {
+                        "1m_pct": one_month_return,
+                        "3m_pct": three_month_return,
+                    },
+                    "source": "technical_feature_payload",
+                }
+            )
+        score += _market_signal_score(technical_state)
+        score += _market_signal_score(relative_strength_state)
+        if volume_state == "rising" and _is_positive_number(three_month_return):
+            score += 1
+        elif volume_state == "rising" and _is_negative_number(three_month_return):
+            score -= 1
+    else:
+        warnings.append("missing technical_feature_payload")
+
+    hsbio_trend = None
+    if isinstance(macro_context, dict):
+        live_signals = macro_context.get("live_signals")
+        if isinstance(live_signals, dict):
+            hsbio = live_signals.get("hsbio")
+            if isinstance(hsbio, dict):
+                hsbio_trend = hsbio.get("trend_30d_pct")
+                evidence.append(
+                    {
+                        "signal": "hsbio_30d_trend",
+                        "value": hsbio_trend,
+                        "source": "macro_context.live_signals",
+                    }
+                )
+                if _is_positive_number(hsbio_trend):
+                    score += 1
+                elif _is_negative_number(hsbio_trend):
+                    score -= 1
+    else:
+        warnings.append("missing macro_context")
+
+    if not evidence:
+        return None
+
+    sentiment_state = "mixed"
+    if score >= 2:
+        sentiment_state = "constructive"
+    elif score <= -2:
+        sentiment_state = "cautious"
+
+    fund_flow_proxy_state = "unknown"
+    if volume_state == "rising" and relative_strength_state == "outperforming":
+        fund_flow_proxy_state = "accumulation_proxy"
+    elif volume_state == "rising" and relative_strength_state == "underperforming":
+        fund_flow_proxy_state = "distribution_proxy"
+    elif volume_state in {"flat", "falling"}:
+        fund_flow_proxy_state = "no_clear_flow_proxy"
+
+    confidence = min(0.75, 0.2 + 0.12 * len(evidence))
+    if warnings:
+        confidence = min(confidence, 0.45)
+
+    return {
+        "sentiment_state": sentiment_state,
+        "fund_flow_proxy_state": fund_flow_proxy_state,
+        "liquidity_proxy_state": volume_state or "unknown",
+        "technical_state": technical_state or "unknown",
+        "relative_strength_state": relative_strength_state or "unknown",
+        "sector_trend_30d_pct": hsbio_trend,
+        "evidence": evidence,
+        "warnings": warnings,
+        "confidence": round(confidence, 2),
+        "needs_human_review": True,
+        "guidance_type": "research_only",
+        "notes": (
+            "Deterministic proxy assembled from existing macro and technical payloads.",
+            "Not a trading signal and not a substitute for real fund-flow data.",
+        ),
+    }
+
+
+def _market_signal_score(value: Any) -> int:
+    text = str(value or "").strip().lower()
+    if text in {"constructive", "uptrend", "outperforming", "positive"}:
+        return 1
+    if text in {"weak", "downtrend", "underperforming", "negative"}:
+        return -1
+    return 0
+
+
+def _is_positive_number(value: Any) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_negative_number(value: Any) -> bool:
+    try:
+        return float(value) < 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _build_target_price_snapshot(
@@ -2465,6 +2629,25 @@ def _valuation_pod_report_path(
     )
 
 
+def _decision_log_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_decision_log.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_decision_log.json"
+    )
+
+
 def write_stage_a_llm_reports(
     *,
     output_dir: str | Path,
@@ -2527,10 +2710,170 @@ def write_stage_a_llm_reports(
             payload_value=valuation_pod_payload["summary"],
         )
 
+    decision_payload = _decision_debate_payload_from_llm_facts(facts)
+    decision_log_path: Path | None = None
+    if decision_payload["available"]:
+        decision_log_path = _decision_log_report_path(
+            output_dir=output_dir,
+            result=result,
+        )
+        decision_artifact = {
+            **decision_payload,
+            "run_id": result.research_result.run_id,
+            "identity": _jsonable(asdict(result.identity)),
+        }
+        decision_log_path.parent.mkdir(parents=True, exist_ok=True)
+        decision_log_path.write_text(
+            json.dumps(_jsonable(decision_artifact), ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        _update_manifest_with_extra_artifact(
+            result=result,
+            artifact_key="decision_log",
+            artifact_path=decision_log_path,
+            payload_key="decision_log_summary",
+            payload_value=decision_payload["summary"],
+        )
+
     return replace(
         result,
         report_quality_path=report_quality_path,
         valuation_pod_path=valuation_pod_path,
+        decision_log_path=decision_log_path,
+    )
+
+
+def _decision_debate_payload_from_llm_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    payload = facts.get("decision_debate_payload")
+    if not isinstance(payload, dict):
+        return {"available": False, "summary": {}, "payload": None}
+
+    decision_log = payload.get("decision_log")
+    if not isinstance(decision_log, dict):
+        decision_log = {}
+    summary = {
+        "fundamental_view": payload.get("fundamental_view"),
+        "timing_view": payload.get("timing_view"),
+        "current_decision": decision_log.get("current_decision"),
+        "bull_case_count": len(payload.get("bull_case") or []),
+        "bear_case_count": len(payload.get("bear_case") or []),
+        "invalidation_trigger_count": len(
+            decision_log.get("invalidation_triggers") or []
+        ),
+        "evidence_gap_count": len(decision_log.get("evidence_gaps") or []),
+        "confidence": payload.get("confidence"),
+        "needs_human_review": payload.get("needs_human_review"),
+    }
+    return {
+        "available": True,
+        "summary": summary,
+        "payload": payload,
+    }
+
+
+def _load_prior_decision_logs(
+    *,
+    output_dir: str | Path,
+    identity: CompanyIdentity,
+    current_run_id: str,
+    limit: int = 3,
+) -> dict[str, Any] | None:
+    root = Path(output_dir)
+    if not root.exists():
+        return None
+
+    entries: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for path in root.glob("**/*_decision_log.json"):
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        run_id = str(payload.get("run_id") or _run_id_from_artifact_name(path))
+        if run_id == current_run_id:
+            continue
+        if not _decision_log_matches_identity(payload, identity):
+            continue
+        summary = (
+            payload.get("summary")
+            if isinstance(payload.get("summary"), dict)
+            else {}
+        )
+        raw_payload = (
+            payload.get("payload")
+            if isinstance(payload.get("payload"), dict)
+            else {}
+        )
+        decision_log = (
+            raw_payload.get("decision_log")
+            if isinstance(raw_payload.get("decision_log"), dict)
+            else {}
+        )
+        entries.append(
+            {
+                "run_id": run_id,
+                "path": str(path),
+                "summary": summary,
+                "decision_log": {
+                    "current_decision": decision_log.get("current_decision"),
+                    "key_assumptions": decision_log.get("key_assumptions") or [],
+                    "reasons_to_revisit": decision_log.get("reasons_to_revisit")
+                    or [],
+                    "invalidation_triggers": decision_log.get(
+                        "invalidation_triggers"
+                    )
+                    or [],
+                    "evidence_gaps": decision_log.get("evidence_gaps") or [],
+                    "next_review_triggers": decision_log.get(
+                        "next_review_triggers"
+                    )
+                    or [],
+                },
+            }
+        )
+
+    if not entries:
+        return None
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    entries = entries[:limit]
+    return {
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def _run_id_from_artifact_name(path: Path) -> str:
+    suffix = "_decision_log"
+    stem = path.stem
+    if stem.endswith(suffix):
+        return stem[: -len(suffix)]
+    return stem
+
+
+def _decision_log_matches_identity(
+    payload: dict[str, Any],
+    identity: CompanyIdentity,
+) -> bool:
+    artifact_identity = payload.get("identity")
+    if not isinstance(artifact_identity, dict):
+        return False
+    expected_ticker = str(identity.ticker or "").strip().casefold()
+    actual_ticker = str(artifact_identity.get("ticker") or "").strip().casefold()
+    if expected_ticker and actual_ticker and expected_ticker == actual_ticker:
+        return True
+    expected_company = str(identity.company or "").strip().casefold()
+    actual_company = str(artifact_identity.get("company") or "").strip().casefold()
+    return bool(
+        expected_company
+        and actual_company
+        and expected_company == actual_company
     )
 
 
@@ -2781,6 +3124,10 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.valuation_pod_path) if result.valuation_pod_path else None
         ),
         "valuation_pod_summary": _valuation_pod_summary(result),
+        "decision_log_path": (
+            str(result.decision_log_path) if result.decision_log_path else None
+        ),
+        "decision_log_summary": _decision_log_summary(result),
         "llm_trace_path": (
             str(result.llm_trace_path) if result.llm_trace_path else None
         ),
@@ -2813,6 +3160,119 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         ),
         "peer_valuation": _build_json_artifact_summary(result.peer_valuation_path),
     }
+
+
+def decision_log_history(
+    *,
+    output_dir: str | Path = "data",
+    company: str | None = None,
+    ticker: str | None = None,
+    market: str | None = None,
+    registry_path: str | Path | None = "data/input/company_registry.json",
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Return recent same-company decision-log artifacts for local review."""
+
+    identity = resolve_company_identity(
+        company=company,
+        ticker=ticker,
+        market=market,
+        registry_path=registry_path,
+    )
+    payload = _load_prior_decision_logs(
+        output_dir=output_dir,
+        identity=identity,
+        current_run_id="",
+        limit=limit,
+    )
+    return {
+        "identity": _jsonable(asdict(identity)),
+        "available": bool(payload and payload.get("entries")),
+        "count": int(payload.get("count", 0)) if isinstance(payload, dict) else 0,
+        "entries": payload.get("entries", []) if isinstance(payload, dict) else [],
+        "change_summary": _decision_log_history_change_summary(
+            payload.get("entries", []) if isinstance(payload, dict) else []
+        ),
+    }
+
+
+def _decision_log_history_change_summary(
+    entries: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if len(entries) < 2:
+        return None
+    latest = entries[0]
+    previous = entries[1]
+    latest_summary = (
+        latest.get("summary") if isinstance(latest.get("summary"), dict) else {}
+    )
+    previous_summary = (
+        previous.get("summary") if isinstance(previous.get("summary"), dict) else {}
+    )
+    latest_log = (
+        latest.get("decision_log")
+        if isinstance(latest.get("decision_log"), dict)
+        else {}
+    )
+    previous_log = (
+        previous.get("decision_log")
+        if isinstance(previous.get("decision_log"), dict)
+        else {}
+    )
+    return {
+        "latest_run_id": latest.get("run_id"),
+        "previous_run_id": previous.get("run_id"),
+        "current_decision_changed": latest_summary.get("current_decision")
+        != previous_summary.get("current_decision"),
+        "fundamental_view_changed": latest_summary.get("fundamental_view")
+        != previous_summary.get("fundamental_view"),
+        "timing_view_changed": latest_summary.get("timing_view")
+        != previous_summary.get("timing_view"),
+        "new_evidence_gaps": _list_delta(
+            latest_log.get("evidence_gaps"),
+            previous_log.get("evidence_gaps"),
+        ),
+        "repeated_evidence_gaps": _list_intersection(
+            latest_log.get("evidence_gaps"),
+            previous_log.get("evidence_gaps"),
+        ),
+        "new_invalidation_triggers": _list_delta(
+            latest_log.get("invalidation_triggers"),
+            previous_log.get("invalidation_triggers"),
+        ),
+        "repeated_invalidation_triggers": _list_intersection(
+            latest_log.get("invalidation_triggers"),
+            previous_log.get("invalidation_triggers"),
+        ),
+    }
+
+
+def _list_delta(current: Any, previous: Any) -> list[str]:
+    previous_set = {_norm_history_text(item) for item in _string_list(previous)}
+    return [
+        item
+        for item in _string_list(current)
+        if _norm_history_text(item) not in previous_set
+    ]
+
+
+def _list_intersection(current: Any, previous: Any) -> list[str]:
+    previous_set = {_norm_history_text(item) for item in _string_list(previous)}
+    return [
+        item
+        for item in _string_list(current)
+        if _norm_history_text(item) in previous_set
+    ]
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _norm_history_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().casefold()
 
 
 def _build_hkexnews_summary(result: CompanyReportResult) -> dict[str, Any] | None:
@@ -2859,6 +3319,25 @@ def _valuation_pod_summary(result: CompanyReportResult) -> dict[str, Any] | None
     if not isinstance(facts, dict):
         return None
     payload = _valuation_pod_payload_from_llm_facts(facts)
+    if not payload.get("available"):
+        return None
+    return payload.get("summary")
+
+
+def _decision_log_summary(result: CompanyReportResult) -> dict[str, Any] | None:
+    if result.decision_log_path is not None:
+        artifact = _build_json_artifact_summary(result.decision_log_path)
+        if isinstance(artifact, dict):
+            summary = artifact.get("summary")
+            if isinstance(summary, dict):
+                return summary
+    llm_result = result.llm_agent_result
+    if llm_result is None:
+        return None
+    facts = getattr(llm_result, "facts", {}) or {}
+    if not isinstance(facts, dict):
+        return None
+    payload = _decision_debate_payload_from_llm_facts(facts)
     if not payload.get("available"):
         return None
     return payload.get("summary")

@@ -25,7 +25,11 @@ from biotech_alpha.china_cde import (
     parse_cde_feed,
     track_cde_updates,
 )
-from biotech_alpha.company_report import company_report_summary, run_company_report
+from biotech_alpha.company_report import (
+    company_report_summary,
+    decision_log_history,
+    run_company_report,
+)
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
     validate_competitor_file,
@@ -496,6 +500,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="Print the compact machine-readable JSON summary.",
+    )
+    decision_log_parser = subparsers.add_parser(
+        "decision-log",
+        help="Show recent artifact-only decision logs for a company.",
+    )
+    decision_log_parser.add_argument(
+        "query",
+        nargs="?",
+        help="Company name or ticker (e.g. DualityBio or 09606.HK).",
+    )
+    decision_log_parser.add_argument("--company", help="Company name.")
+    decision_log_parser.add_argument("--ticker", help="Ticker symbol.")
+    decision_log_parser.add_argument(
+        "--market",
+        default=None,
+        help="Optional market code used for identity resolution.",
+    )
+    decision_log_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory containing report artifacts. Defaults to data.",
+    )
+    decision_log_parser.add_argument(
+        "--registry",
+        default="data/input/company_registry.json",
+        help="Optional company registry JSON for aliases and tickers.",
+    )
+    decision_log_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum number of prior decision logs to show. Defaults to 5.",
+    )
+    decision_log_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
     )
     quick_report_parser.add_argument(
         "--hkexnews-feed-url",
@@ -1156,6 +1197,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 quick_paths=quick_paths,
             )
+        return 0
+
+    if args.command == "decision-log":
+        company = getattr(args, "company", None)
+        ticker = getattr(args, "ticker", None)
+        query = getattr(args, "query", None)
+        if query and not company and not ticker:
+            company, ticker = _split_company_or_ticker(query)
+        if not query and not company and not ticker:
+            parser.error("decision-log requires query, --company, or --ticker")
+        payload = decision_log_history(
+            output_dir=args.output_dir,
+            company=company,
+            ticker=ticker,
+            market=getattr(args, "market", None),
+            registry_path=getattr(args, "registry", None),
+            limit=max(1, int(getattr(args, "limit", 5) or 5)),
+        )
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_decision_log_history(payload)
         return 0
 
     if args.command == "pipeline-template":
@@ -1852,6 +1915,15 @@ def _print_quick_report_llm_summary(summary: dict[str, object]) -> None:
     fallback_modules = llm_agents.get("fallback_modules")
     if isinstance(fallback_modules, list) and fallback_modules:
         print("LLM fallback modules: " + ", ".join(str(x) for x in fallback_modules))
+    decision = _dict_value(summary, "decision_log_summary")
+    if decision:
+        current = decision.get("current_decision") or "unknown"
+        fundamental = decision.get("fundamental_view") or "unknown"
+        timing = decision.get("timing_view") or "unknown"
+        print(
+            "Decision log: "
+            f"decision={current}, fundamental={fundamental}, timing={timing}"
+        )
 
 
 def _print_quick_report_artifacts(
@@ -1876,6 +1948,7 @@ def _print_quick_report_artifacts(
     _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
     _print_path_line("Missing-input report", summary.get("missing_inputs_report"))
     _print_path_line("LLM trace", summary.get("llm_trace_path"))
+    _print_path_line("Decision log", summary.get("decision_log_path"))
     _print_path_line("打开报告（中文）", quick_paths.get("latest_report"))
     _print_path_line("Open this folder", quick_paths.get("latest_dir"))
 
@@ -1884,6 +1957,76 @@ def _print_quick_report_artifacts(
     if llm_agents and run_id:
         findings_path = Path(output_dir) / "memos" / f"{run_id}_llm_findings.json"
         _print_path_line("LLM findings", findings_path)
+
+
+def _print_decision_log_history(payload: dict[str, object]) -> None:
+    identity = _dict_value(payload, "identity")
+    label = (
+        _string_value(identity, "ticker")
+        or _string_value(identity, "company")
+        or "unknown"
+    )
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+
+    print(f"Decision logs: {label}")
+    if not entries:
+        print("- No decision-log artifacts found.")
+        return
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        summary = entry.get("summary")
+        if not isinstance(summary, dict):
+            summary = {}
+        decision_log = entry.get("decision_log")
+        if not isinstance(decision_log, dict):
+            decision_log = {}
+        run_id = str(entry.get("run_id") or "unknown")
+        fundamental = summary.get("fundamental_view") or "unknown"
+        timing = summary.get("timing_view") or "unknown"
+        current = summary.get("current_decision") or "unknown"
+        confidence = summary.get("confidence")
+        confidence_text = (
+            f", confidence={confidence}" if confidence is not None else ""
+        )
+        print(
+            f"- {run_id}: decision={current}, fundamental={fundamental}, "
+            f"timing={timing}{confidence_text}"
+        )
+        for key, label_text in (
+            ("key_assumptions", "assumption"),
+            ("invalidation_triggers", "invalidation"),
+            ("evidence_gaps", "gap"),
+            ("next_review_triggers", "next"),
+        ):
+            values = decision_log.get(key)
+            if not isinstance(values, list) or not values:
+                continue
+            first = str(values[0]).strip()
+            if first:
+                print(f"  {label_text}: {first}")
+
+    change = payload.get("change_summary")
+    if isinstance(change, dict):
+        print("Change summary:")
+        for key, label_text in (
+            ("current_decision_changed", "decision changed"),
+            ("fundamental_view_changed", "fundamental changed"),
+            ("timing_view_changed", "timing changed"),
+        ):
+            print(f"- {label_text}: {bool(change.get(key))}")
+        for key, label_text in (
+            ("new_evidence_gaps", "new gaps"),
+            ("repeated_evidence_gaps", "repeated gaps"),
+            ("new_invalidation_triggers", "new invalidations"),
+            ("repeated_invalidation_triggers", "repeated invalidations"),
+        ):
+            values = change.get(key)
+            if isinstance(values, list) and values:
+                print(f"- {label_text}: {', '.join(str(v) for v in values[:3])}")
 
 
 def _publish_quick_report_shortcuts(

@@ -134,8 +134,9 @@ Architecture note:
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
 - Planned next upgrades are broader decision-support review, deciding whether
-  decision-log output remains artifact-only, and deeper market-context payloads
-  such as sentiment and fund-flow signals.
+  decision-log output remains artifact-only, and replacing deterministic
+  sentiment/fund-flow proxies with deeper market-context payloads when reliable
+  sources are available.
 
 Expected behavior:
 
@@ -328,6 +329,12 @@ Important files:
   auto-extraction, when `--auto-inputs` runs.
 - `<run_id>_llm_findings.json` under `data/memos/<slug>/`: structured LLM agent
   outputs (risks, evidence, step issues) when LLM agents run.
+- `<run_id>_decision_log.json`: artifact-only bull/bear debate and decision
+  log when `decision-debate` runs. It is linked from the manifest and summary
+  but does not change memo prose yet. Later `decision-debate` runs for the
+  same company load recent decision-log artifacts as lightweight memory. When
+  present, quick-report terminal summaries print the compact decision /
+  fundamental / timing labels.
 - `<run_id>_memo.json`: structured memo.
 - `<run_id>_memo.md`: human-readable memo (includes an LLM addendum when LLM
   agents ran).
@@ -504,6 +511,19 @@ PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --technical-features yfinance \
   --technical-benchmark-symbol ^HSI
 ```
+
+Inspect saved decision logs without running a new report:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK
+
+# Machine-readable form
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK --json
+```
+
+When at least two logs exist for the same company, the command also summarizes
+whether the latest decision, fundamental view, or timing view changed, plus new
+and repeated evidence gaps / invalidation triggers.
 
 The technical provider is only consulted when `market-regime-timing` or
 `market-expectations` is requested. Quick `report` still does not fetch

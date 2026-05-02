@@ -567,9 +567,9 @@ agent declares the stock cheap or expensive.
 Current implementation note: the first LLM scaffold is wired as optional
 `market-expectations`. It consumes valuation snapshot, valuation pod and
 committee payloads, macro context, optional `technical_feature_payload`, and
-optional `market_regime_timing_payload`. `company-report --technical-features
-yfinance` can thread the technical payload when `market-expectations` or
-`market-regime-timing` is requested.
+optional `market_sentiment_payload` / `market_regime_timing_payload`.
+`company-report --technical-features yfinance` can thread the technical payload
+when `market-expectations` or `market-regime-timing` is requested.
 
 Inputs:
 
@@ -604,7 +604,8 @@ the planned k-line specialist into one timing layer.
 
 Current implementation note: the first LLM scaffold is wired as optional
 `market-regime-timing`. It consumes existing `macro_context`, optional
-`macro_context_payload`, and optional `technical_feature_payload`.
+`macro_context_payload`, optional `technical_feature_payload`, and optional
+`market_sentiment_payload`.
 `company-report --technical-features yfinance` can thread the technical payload
 when `market-regime-timing` or `market-expectations` is requested. It is not
 yet in the quick-report default stack because technical payload collection is
@@ -615,8 +616,11 @@ Inputs:
 - Existing `macro-context` output
 - Deterministic technical feature payloads (returns, volume trend,
   moving-average state, volatility state, relative strength, drawdown)
-- Sector sentiment, liquidity, valuation-band, and fund-flow proxies when
-  available
+- `market_sentiment_payload`: deterministic proxy assembled from existing macro
+  and technical payloads, including sentiment state, liquidity proxy, relative
+  strength, and fund-flow proxy state.
+- External sector sentiment, liquidity, valuation-band, and real fund-flow
+  feeds when available later.
 
 Outputs:
 
@@ -647,7 +651,11 @@ Current implementation note: optional `decision-debate` is wired for
 `company-report --llm-agents ...`. It consumes data quality, strategic
 economics, catalyst, valuation pod, market expectations, market-regime/timing,
 scorecard, and deterministic memo scaffold payloads. It can feed
-`report-synthesizer` and `report-quality` when requested in the same run.
+`report-synthesizer` and `report-quality` when requested in the same run. When
+saved, it writes an artifact-only `<run_id>_decision_log.json`; memo prose is
+not changed yet. Future runs for the same company can feed recent decision-log
+artifacts back into this agent as lightweight memory so it can distinguish a
+real view change from repeated unresolved evidence gaps.
 
 Outputs:
 
@@ -658,6 +666,8 @@ Outputs:
   `de_risk_watch`, or `unknown`.
 - `decision_log`: assumptions, revisit reasons, invalidation triggers,
   evidence gaps, and next review triggers.
+- Prior decision-log memory, when available, is used only for changed
+  assumptions, repeated gaps, and invalidated triggers.
 
 Boundaries:
 
@@ -738,6 +748,8 @@ Inputs:
 - All `AgentFinding` entries from the run
 - Run-level `scorecard`, `extraction_audit`, `input_validation` payloads
 - Structured target-price and valuation pod outputs
+- `decision_debate_payload`, when present, so timing labels and decision-log
+  triggers can be checked for trading-language drift or missing observability
 
 Outputs:
 

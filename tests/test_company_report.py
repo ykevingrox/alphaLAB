@@ -16,6 +16,7 @@ from biotech_alpha.company_report import (
     _valuation_pod_payload_from_llm_facts,
     build_llm_agent_facts,
     company_report_summary,
+    decision_log_history,
     discover_company_inputs,
     resolve_company_identity,
     run_company_report,
@@ -338,6 +339,159 @@ class CompanyReportTest(unittest.TestCase):
                 Path(tmpdir) / "memos" / "20260421T000000Z_llm_findings.json"
             )
             self.assertTrue(findings_path.exists())
+
+    def test_saved_report_writes_decision_log_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = FakeClinicalTrialsClient()
+            llm = FakeLLMClient(model="fake-qwen")
+            llm.queue(
+                json.dumps(
+                    {
+                        "bull_case": [
+                            {
+                                "claim": "Market value may reflect BD validation.",
+                                "evidence_key": "strategic_economics_payload",
+                                "confidence": 0.5,
+                            }
+                        ],
+                        "bear_case": [
+                            {
+                                "claim": "Evidence gaps still limit conviction.",
+                                "evidence_key": "data_collector_payload",
+                                "confidence": 0.6,
+                            }
+                        ],
+                        "debate_resolution": "Keep deterministic view unchanged.",
+                        "fundamental_view": "watchlist",
+                        "timing_view": "unknown",
+                        "decision_log": {
+                            "current_decision": "watchlist",
+                            "key_assumptions": ["BD validation remains relevant"],
+                            "reasons_to_revisit": ["New clinical update"],
+                            "invalidation_triggers": ["Evidence weakens"],
+                            "evidence_gaps": ["Need more source detail"],
+                            "next_review_triggers": ["Next disclosure"],
+                        },
+                        "confidence": 0.52,
+                        "needs_human_review": True,
+                    }
+                )
+            )
+
+            result = run_company_report(
+                company="No Data Bio",
+                input_dir=Path(tmpdir) / "input",
+                output_dir=tmpdir,
+                limit=1,
+                client=client,
+                now=datetime(2026, 4, 21, tzinfo=UTC),
+                llm_agents=("decision-debate",),
+                llm_client=llm,
+            )
+
+            self.assertIsNotNone(result.decision_log_path)
+            assert result.decision_log_path is not None
+            payload = json.loads(Path(result.decision_log_path).read_text())
+            self.assertEqual(payload["identity"]["ticker"], None)
+            self.assertEqual(payload["run_id"], "20260421T000000Z")
+            self.assertEqual(payload["summary"]["fundamental_view"], "watchlist")
+            summary = company_report_summary(result)
+            self.assertEqual(
+                summary["decision_log_summary"]["current_decision"],
+                "watchlist",
+            )
+            manifest_path = result.research_result.artifacts.manifest_json
+            assert manifest_path is not None
+            manifest = json.loads(Path(manifest_path).read_text())
+            self.assertIn("decision_log", manifest["artifacts"])
+
+    def test_decision_log_history_loads_same_company_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = root / "processed" / "company_report" / "dualitybio_09606_hk"
+            path.mkdir(parents=True)
+            artifact = path / "20260421T000000Z_decision_log.json"
+            artifact.write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260421T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "neutral",
+                            "current_decision": "watchlist",
+                            "confidence": 0.5,
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "key_assumptions": ["BD remains credible"],
+                                "reasons_to_revisit": ["new data"],
+                                "invalidation_triggers": ["weak data"],
+                                "evidence_gaps": ["need partner economics"],
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            newer = path / "20260428T000000Z_decision_log.json"
+            newer.write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260428T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "fragile",
+                            "current_decision": "watchlist",
+                            "confidence": 0.55,
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "key_assumptions": ["BD remains credible"],
+                                "reasons_to_revisit": ["new data"],
+                                "invalidation_triggers": ["weak data"],
+                                "evidence_gaps": [
+                                    "need partner economics",
+                                    "need catalyst timing",
+                                ],
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            history = decision_log_history(
+                output_dir=root,
+                ticker="09606.HK",
+                registry_path=None,
+            )
+
+            self.assertTrue(history["available"])
+            self.assertEqual(history["count"], 2)
+            self.assertEqual(history["entries"][0]["run_id"], "20260428T000000Z")
+            self.assertEqual(
+                history["entries"][1]["decision_log"]["key_assumptions"],
+                ["BD remains credible"],
+            )
+            self.assertTrue(history["change_summary"]["timing_view_changed"])
+            self.assertEqual(
+                history["change_summary"]["new_evidence_gaps"],
+                ["need catalyst timing"],
+            )
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -896,6 +1050,12 @@ class SourceTextExcerptTest(unittest.TestCase):
             "symbol": "9606.HK",
             "technical_state": "constructive",
             "provider": "unit-test",
+            "returns": {"1m_pct": 8.0, "3m_pct": 12.0},
+            "relative_strength": {
+                "state": "outperforming",
+                "3m_spread_pct": 6.0,
+            },
+            "volume_trend": {"state": "rising"},
         }
 
         facts = build_llm_agent_facts(
@@ -904,6 +1064,21 @@ class SourceTextExcerptTest(unittest.TestCase):
         )
 
         self.assertEqual(facts["technical_feature_payload"], technical)
+        self.assertEqual(
+            facts["market_sentiment_payload"]["fund_flow_proxy_state"],
+            "accumulation_proxy",
+        )
+
+    def test_build_llm_agent_facts_threads_prior_decision_logs(self) -> None:
+        research = _minimal_research_stub()
+        prior = {"count": 1, "entries": [{"run_id": "20260420T000000Z"}]}
+
+        facts = build_llm_agent_facts(
+            research_result=research,
+            prior_decision_logs=prior,
+        )
+
+        self.assertEqual(facts["prior_decision_logs_payload"], prior)
 
     def test_build_llm_agent_facts_threads_input_validation_payload(self) -> None:
         research = _minimal_research_stub()

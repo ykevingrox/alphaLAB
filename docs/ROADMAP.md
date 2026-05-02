@@ -1192,6 +1192,9 @@ keeps provider volatility out of prompts and gives both
 - **Done** — `company-report --technical-features yfinance` threads real
   technical-feature payloads into LLM facts when `market-regime-timing` or
   `market-expectations` is requested. Quick `report` remains unchanged.
+- **Done** — First deterministic `market_sentiment_payload` proxy is assembled
+  from existing macro and technical payloads for `market-regime-timing`. It is
+  explicitly research-only and not a real fund-flow feed.
 - **Done** — First `market-expectations-agent` scaffold explains
   market-implied assumptions, valuation-band context, rNPV gaps,
   expectation-risk flags, and evidence gaps.
@@ -1265,5 +1268,11 @@ defaults remain unchanged until broader output review.
   fundamental view from timing view and feeds report synthesis/quality when
   requested.
 
-Next Sprint-8 task: decide whether any decision-log summary should appear in
-the memo body or stay as an LLM findings artifact only.
+Current Sprint-8 decision: keep decision-log output artifact-only for now.
+`decision-debate` writes `<run_id>_decision_log.json` and manifest/summary
+links when requested, but does not change memo prose yet. Recent decision-log
+artifacts for the same company are fed back as lightweight memory in later
+`decision-debate` runs.
+
+Next Sprint-8 task: broaden output review and decide later whether a compact
+decision-log subsection belongs in the memo body.

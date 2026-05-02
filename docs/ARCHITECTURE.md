@@ -211,14 +211,16 @@ Target agent topology (canonical):
 - Layer 2 — Market context and timing:
   - `market-expectations-agent` (Stage B)
   - `market-regime-timing-agent` (Stage B; absorbs macro context,
-    technical timing, sector sentiment, and fund-flow framing)
+    technical timing, sector sentiment, and fund-flow framing; current
+    sentiment/fund-flow input is a deterministic proxy)
 - Layer 3 — Valuation pod (Stage A, Stage B calibrated):
   - `valuation-commercial-agent`
   - `valuation-pipeline-rnpv-agent`
   - `valuation-balance-sheet-agent`
   - `valuation-committee-agent`
 - Layer 4 — Decision and publishing:
-  - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
+  - `decision-debate-agent` (Stage C; artifact-only bull/bear debate and
+    decision log with lightweight prior-log memory)
   - `investment-thesis-agent` (retain)
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)

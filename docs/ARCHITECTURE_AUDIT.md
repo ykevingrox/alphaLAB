@@ -64,7 +64,8 @@ multi-LLM investment committee.
 ### Layer 2: Market Context And Timing
 
 - `market-regime-timing-agent` (LLM, research-only macro, technical, sector
-  sentiment, liquidity, and fund-flow framing).
+  sentiment, liquidity, and fund-flow framing; current sentiment/fund-flow
+  input is a deterministic proxy from existing macro and technical payloads).
 
 ### Layer 3: Valuation Pod (Multi-Agent)
 
@@ -82,7 +83,8 @@ multi-LLM investment committee.
 - `decision-debate-agent` (Stage C) — records source-keyed bull/bear claims,
   separates fundamental view from timing view, and emits decision-log
   assumptions, revisit reasons, invalidation triggers, evidence gaps, and next
-  review triggers.
+  review triggers. Recent same-company decision-log artifacts are loaded as
+  lightweight memory for changed assumptions and repeated gaps.
 - `investment-thesis-agent` (retain existing) — bull/bear drivers, assumptions,
   falsification watch. Feeds Executive Verdict.
 - `scientific-skeptic-agent` (retain existing) — bear case + counter-thesis
@@ -138,7 +140,8 @@ multi-LLM investment committee.
 
 1. Stage B/C specialist scaffolds are opt-in and not quick-report defaults;
    calibration is still needed before promoting them.
-2. Market regime/timing still lacks sentiment and fund-flow payloads.
+2. Market regime/timing has only deterministic sentiment/fund-flow proxies;
+   real external sentiment and fund-flow feeds are still pending.
 3. `report-synthesizer-agent` exists only as an opt-in scaffold; memo prose is
    still deterministic by default.
 4. Broader document ingestion beyond HKEX annual results is still pending.
@@ -404,6 +407,10 @@ Boundaries:
   sole fair-value anchor for pre-revenue biotech)
 - `recommended_fixes` (list of concrete edits with target section path)
 
+When `decision-debate` runs, report quality also reviews the
+`decision_debate_payload` for trading-language drift and missing observable
+review triggers.
+
 Quality-agent scope MUST NOT include:
 
 - Inventing new market facts or new valuation numbers.
@@ -429,8 +436,9 @@ Quality-agent scope MUST NOT include:
 
 Execute Sprint 8 in `docs/ROADMAP.md`:
 
-1. Decide whether `decision-debate` should stay artifact-only or feed a small
-   memo subsection.
+1. Review the artifact-only `decision-debate` output path
+   (`<run_id>_decision_log.json`) before deciding whether to feed a small memo
+   subsection.
 2. Tighten prompts/contracts if any agent invents facts, rewrites
    deterministic numbers, or turns timing context into trading advice.
 3. Keep quick `report` defaults unchanged until the new decision-support
