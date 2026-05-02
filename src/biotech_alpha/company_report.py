@@ -2784,6 +2784,33 @@ def _load_prior_decision_logs(
         return None
 
     entries: list[dict[str, Any]] = []
+    for entry in _iter_decision_log_entries(output_dir=root):
+        run_id = str(entry.get("run_id") or "")
+        if run_id == current_run_id:
+            continue
+        if not _decision_log_entry_matches_identity(entry, identity):
+            continue
+        entries.append(entry)
+
+    if not entries:
+        return None
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    entries = entries[:limit]
+    return {
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def _iter_decision_log_entries(
+    *,
+    output_dir: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(output_dir)
+    if not root.exists():
+        return []
+
+    entries: list[dict[str, Any]] = []
     seen: set[Path] = set()
     for path in root.glob("**/*_decision_log.json"):
         resolved = path.resolve()
@@ -2796,56 +2823,44 @@ def _load_prior_decision_logs(
             continue
         if not isinstance(payload, dict):
             continue
-        run_id = str(payload.get("run_id") or _run_id_from_artifact_name(path))
-        if run_id == current_run_id:
-            continue
-        if not _decision_log_matches_identity(payload, identity):
-            continue
-        summary = (
-            payload.get("summary")
-            if isinstance(payload.get("summary"), dict)
-            else {}
-        )
-        raw_payload = (
-            payload.get("payload")
-            if isinstance(payload.get("payload"), dict)
-            else {}
-        )
-        decision_log = (
-            raw_payload.get("decision_log")
-            if isinstance(raw_payload.get("decision_log"), dict)
-            else {}
-        )
-        entries.append(
-            {
-                "run_id": run_id,
-                "path": str(path),
-                "summary": summary,
-                "decision_log": {
-                    "current_decision": decision_log.get("current_decision"),
-                    "key_assumptions": decision_log.get("key_assumptions") or [],
-                    "reasons_to_revisit": decision_log.get("reasons_to_revisit")
-                    or [],
-                    "invalidation_triggers": decision_log.get(
-                        "invalidation_triggers"
-                    )
-                    or [],
-                    "evidence_gaps": decision_log.get("evidence_gaps") or [],
-                    "next_review_triggers": decision_log.get(
-                        "next_review_triggers"
-                    )
-                    or [],
-                },
-            }
-        )
-
-    if not entries:
-        return None
+        entry = _decision_log_entry_from_artifact(path=path, payload=payload)
+        if entry is not None:
+            entries.append(entry)
     entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
-    entries = entries[:limit]
+    return entries
+
+
+def _decision_log_entry_from_artifact(
+    *,
+    path: Path,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    raw_payload = payload.get("payload")
+    if not isinstance(raw_payload, dict):
+        raw_payload = {}
+    decision_log = raw_payload.get("decision_log")
+    if not isinstance(decision_log, dict):
+        decision_log = {}
+    identity = payload.get("identity")
+    if not isinstance(identity, dict):
+        identity = {}
     return {
-        "count": len(entries),
-        "entries": entries,
+        "run_id": str(payload.get("run_id") or _run_id_from_artifact_name(path)),
+        "path": str(path),
+        "identity": identity,
+        "summary": summary,
+        "decision_log": {
+            "current_decision": decision_log.get("current_decision"),
+            "key_assumptions": decision_log.get("key_assumptions") or [],
+            "reasons_to_revisit": decision_log.get("reasons_to_revisit") or [],
+            "invalidation_triggers": decision_log.get("invalidation_triggers")
+            or [],
+            "evidence_gaps": decision_log.get("evidence_gaps") or [],
+            "next_review_triggers": decision_log.get("next_review_triggers") or [],
+        },
     }
 
 
@@ -2874,6 +2889,19 @@ def _decision_log_matches_identity(
         expected_company
         and actual_company
         and expected_company == actual_company
+    )
+
+
+def _decision_log_entry_matches_identity(
+    entry: dict[str, Any],
+    identity: CompanyIdentity,
+) -> bool:
+    artifact_identity = entry.get("identity")
+    if not isinstance(artifact_identity, dict):
+        return False
+    return _decision_log_matches_identity(
+        {"identity": artifact_identity},
+        identity,
     )
 
 
@@ -3193,6 +3221,22 @@ def decision_log_history(
         "change_summary": _decision_log_history_change_summary(
             payload.get("entries", []) if isinstance(payload, dict) else []
         ),
+    }
+
+
+def decision_log_index(
+    *,
+    output_dir: str | Path = "data",
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return recent decision-log artifacts across all local companies."""
+
+    entries = _iter_decision_log_entries(output_dir=output_dir)
+    entries = entries[: max(1, limit)]
+    return {
+        "available": bool(entries),
+        "count": len(entries),
+        "entries": entries,
     }
 
 

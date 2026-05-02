@@ -139,7 +139,7 @@ multi-LLM investment committee.
 ## Key Gaps (Must Fix First)
 
 1. Stage B/C specialist scaffolds are opt-in and not quick-report defaults;
-   calibration is still needed before promoting them.
+   broader output review is still needed before promoting them.
 2. Market regime/timing has only deterministic sentiment/fund-flow proxies;
    real external sentiment and fund-flow feeds are still pending.
 3. `report-synthesizer-agent` exists only as an opt-in scaffold; memo prose is
@@ -437,8 +437,8 @@ Quality-agent scope MUST NOT include:
 Execute Sprint 8 in `docs/ROADMAP.md`:
 
 1. Review the artifact-only `decision-debate` output path
-   (`<run_id>_decision_log.json`) before deciding whether to feed a small memo
-   subsection.
+   (`<run_id>_decision_log.json`) and the `decision-log --all` local index
+   before deciding whether to feed a small memo subsection.
 2. Tighten prompts/contracts if any agent invents facts, rewrites
    deterministic numbers, or turns timing context into trading advice.
 3. Keep quick `report` defaults unchanged until the new decision-support

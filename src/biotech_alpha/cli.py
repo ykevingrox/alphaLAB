@@ -28,6 +28,7 @@ from biotech_alpha.china_cde import (
 from biotech_alpha.company_report import (
     company_report_summary,
     decision_log_history,
+    decision_log_index,
     run_company_report,
 )
 from biotech_alpha.competition import (
@@ -509,6 +510,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "query",
         nargs="?",
         help="Company name or ticker (e.g. DualityBio or 09606.HK).",
+    )
+    decision_log_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Show recent decision logs across all local companies.",
     )
     decision_log_parser.add_argument("--company", help="Company name.")
     decision_log_parser.add_argument("--ticker", help="Ticker symbol.")
@@ -1203,18 +1209,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         company = getattr(args, "company", None)
         ticker = getattr(args, "ticker", None)
         query = getattr(args, "query", None)
-        if query and not company and not ticker:
-            company, ticker = _split_company_or_ticker(query)
-        if not query and not company and not ticker:
-            parser.error("decision-log requires query, --company, or --ticker")
-        payload = decision_log_history(
-            output_dir=args.output_dir,
-            company=company,
-            ticker=ticker,
-            market=getattr(args, "market", None),
-            registry_path=getattr(args, "registry", None),
-            limit=max(1, int(getattr(args, "limit", 5) or 5)),
-        )
+        if getattr(args, "all", False):
+            payload = decision_log_index(
+                output_dir=args.output_dir,
+                limit=max(1, int(getattr(args, "limit", 5) or 5)),
+            )
+        else:
+            if query and not company and not ticker:
+                company, ticker = _split_company_or_ticker(query)
+            if not query and not company and not ticker:
+                parser.error("decision-log requires query, --company, --ticker, or --all")
+            payload = decision_log_history(
+                output_dir=args.output_dir,
+                company=company,
+                ticker=ticker,
+                market=getattr(args, "market", None),
+                registry_path=getattr(args, "registry", None),
+                limit=max(1, int(getattr(args, "limit", 5) or 5)),
+            )
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
@@ -1964,7 +1976,7 @@ def _print_decision_log_history(payload: dict[str, object]) -> None:
     label = (
         _string_value(identity, "ticker")
         or _string_value(identity, "company")
-        or "unknown"
+        or "all companies"
     )
     entries = payload.get("entries")
     if not isinstance(entries, list):
@@ -1985,6 +1997,11 @@ def _print_decision_log_history(payload: dict[str, object]) -> None:
         if not isinstance(decision_log, dict):
             decision_log = {}
         run_id = str(entry.get("run_id") or "unknown")
+        entry_identity = _dict_value(entry, "identity")
+        entry_label = (
+            _string_value(entry_identity, "ticker")
+            or _string_value(entry_identity, "company")
+        )
         fundamental = summary.get("fundamental_view") or "unknown"
         timing = summary.get("timing_view") or "unknown"
         current = summary.get("current_decision") or "unknown"
@@ -1992,8 +2009,11 @@ def _print_decision_log_history(payload: dict[str, object]) -> None:
         confidence_text = (
             f", confidence={confidence}" if confidence is not None else ""
         )
+        prefix = f"{run_id}"
+        if entry_label and entry_label != label:
+            prefix = f"{prefix} {entry_label}"
         print(
-            f"- {run_id}: decision={current}, fundamental={fundamental}, "
+            f"- {prefix}: decision={current}, fundamental={fundamental}, "
             f"timing={timing}{confidence_text}"
         )
         for key, label_text in (

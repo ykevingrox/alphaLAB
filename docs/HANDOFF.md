@@ -148,7 +148,7 @@ Optional LLM smoke when `.env` has credentials:
    `decision-debate` runs as lightweight memory. Use
    `PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK` to
    inspect local history and latest-vs-previous changes without running a new
-   report.
+   report. Use `decision-log --all` for a portfolio-wide local index.
 2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
    report defaults.
 

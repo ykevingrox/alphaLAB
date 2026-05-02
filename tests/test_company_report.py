@@ -17,6 +17,7 @@ from biotech_alpha.company_report import (
     build_llm_agent_facts,
     company_report_summary,
     decision_log_history,
+    decision_log_index,
     discover_company_inputs,
     resolve_company_identity,
     run_company_report,
@@ -492,6 +493,45 @@ class CompanyReportTest(unittest.TestCase):
                 history["change_summary"]["new_evidence_gaps"],
                 ["need catalyst timing"],
             )
+
+    def test_decision_log_index_loads_all_company_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first_dir = root / "processed" / "company_report" / "dualitybio"
+            second_dir = root / "processed" / "company_report" / "leads"
+            first_dir.mkdir(parents=True)
+            second_dir.mkdir(parents=True)
+            for target, run_id, ticker in (
+                (first_dir, "20260421T000000Z", "09606.HK"),
+                (second_dir, "20260428T000000Z", "09887.HK"),
+            ):
+                (target / f"{run_id}_decision_log.json").write_text(
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "identity": {
+                                "company": ticker,
+                                "ticker": ticker,
+                                "market": "HK",
+                            },
+                            "summary": {
+                                "fundamental_view": "watchlist",
+                                "timing_view": "neutral",
+                                "current_decision": "watchlist",
+                                "confidence": 0.5,
+                            },
+                            "payload": {"decision_log": {}},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            index = decision_log_index(output_dir=root, limit=10)
+
+            self.assertTrue(index["available"])
+            self.assertEqual(index["count"], 2)
+            self.assertEqual(index["entries"][0]["run_id"], "20260428T000000Z")
+            self.assertEqual(index["entries"][0]["identity"]["ticker"], "09887.HK")
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

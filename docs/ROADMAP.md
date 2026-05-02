@@ -938,9 +938,9 @@ All steps above are completed at baseline level. Ongoing iteration prioritizes:
 four-agent valuation pod and add a standalone `report-quality-agent` that
 owns the publish gate. Keep HK innovative-drug biotech as the only vertical.
 
-**Sprint status:** in verification (core implementation landed; calibration
-pending for biotech-specific valuation framing and cross-ticker quality-gate
-consistency).
+**Sprint status:** in verification (core implementation landed; initial
+biotech-specific valuation framing calibration complete; broader cross-ticker
+quality-gate consistency review remains open).
 
 **Acceptance baseline.** A one-command run on `09606.HK`, `02142.HK`, and
 `09887.HK` produces:
@@ -1213,9 +1213,10 @@ keeps provider volatility out of prompts and gives both
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** scaffold-complete. Market-regime/timing,
-market-expectations, strategic-economics, and catalyst scaffolds exist; default
-quick-report inclusion still requires calibration.
+**Sprint status:** scaffold-complete with first two-ticker opt-in calibration.
+Market-regime/timing, market-expectations, strategic-economics, and catalyst
+scaffolds exist; quick-report default inclusion still requires broader output
+review.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner

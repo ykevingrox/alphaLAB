@@ -517,6 +517,9 @@ Inspect saved decision logs without running a new report:
 ```bash
 PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK
 
+# Portfolio-wide local view
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log --all
+
 # Machine-readable form
 PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK --json
 ```

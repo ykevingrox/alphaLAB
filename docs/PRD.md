@@ -89,12 +89,12 @@ Current implementation status:
   auto-degrades to deterministic mode with an explicit terminal note;
   `company-report --llm-agents` still supports `--allow-no-llm` for the
   same fallback.
-- Implemented (Stage A, Sprint 6; calibration pending): valuation pod
+- Implemented (Stage A, Sprint 6; initial calibration complete): valuation pod
   decomposition into four specialist agents (commercial / pipeline-rNPV /
   balance-sheet / committee) and a standalone `report-quality-agent` that
-  owns the publish gate. Latest artifacts show the pod runs, but biotech
-  valuation framing still needs calibration so conservative rNPV is not
-  treated as the sole fair-value anchor.
+  owns the publish gate. Biotech valuation framing now separates conservative
+  rNPV floor, market-implied value, and scenario repricing; broader
+  cross-ticker quality-gate review remains open.
 - Implemented as opt-in scaffolds (Stage B, Sprint 7):
   `strategic-economics-agent`, `catalyst-agent`,
   `market-expectations-agent`, and `market-regime-timing-agent`.
