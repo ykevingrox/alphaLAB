@@ -571,6 +571,9 @@ class CompanyReportTest(unittest.TestCase):
                                 "summary": (
                                     "当前股价远高于保守rNPV，存在高估和下行空间。"
                                 ),
+                                "role_boundary_flags": [
+                                    "commercial_rnpv_fallback_blocked"
+                                ],
                                 "valuation_range": {
                                     "bear": 1,
                                     "base": 2,
@@ -613,6 +616,13 @@ class CompanyReportTest(unittest.TestCase):
             )
             self.assertIn(
                 "valuation_overvaluation_language_without_market_bridge",
+                entry["review_flags"],
+            )
+            self.assertIn(
+                (
+                    "valuation_role_boundary_commercial_"
+                    "commercial_rnpv_fallback_blocked"
+                ),
                 entry["review_flags"],
             )
             self.assertIn("missing_decision_log_artifact", entry["review_flags"])

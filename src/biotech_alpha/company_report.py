@@ -3665,6 +3665,7 @@ def _stage_c_valuation_pod_entry(
         or committee.get("currency"),
         "committee_publishable": committee_publishable,
         "component_methods": component_methods,
+        "role_boundary_flags": _valuation_pod_role_boundary_flags(pod_payload),
         "duplicate_component_range_count": duplicate_count,
         "has_market_implied_value": bool(
             summary.get("market_implied_value") or committee.get("market_implied_value")
@@ -3703,6 +3704,19 @@ def _valuation_pod_component_ranges(
         for key, value in pod_payload.items()
         if isinstance(value, dict) and isinstance(value.get("valuation_range"), dict)
     }
+
+
+def _valuation_pod_role_boundary_flags(
+    pod_payload: dict[str, Any],
+) -> dict[str, list[str]]:
+    flags: dict[str, list[str]] = {}
+    for key, value in pod_payload.items():
+        if not isinstance(value, dict):
+            continue
+        raw_flags = _string_list(value.get("role_boundary_flags"))
+        if raw_flags:
+            flags[key] = raw_flags
+    return flags
 
 
 def _duplicate_component_range_count(component_ranges: dict[str, Any]) -> int:
@@ -3838,6 +3852,19 @@ def _stage_c_review_flags(
                 flags.append("valuation_commercial_method_drift")
             if str(methods.get("balance_sheet") or "").casefold() == "rnpv":
                 flags.append("valuation_balance_sheet_method_drift")
+        role_boundary_flags = valuation_pod.get("role_boundary_flags")
+        if isinstance(role_boundary_flags, dict):
+            for component, component_flags in role_boundary_flags.items():
+                if not isinstance(component_flags, list):
+                    continue
+                for component_flag in component_flags:
+                    normalized_flag = _stage_c_flag_token(str(component_flag))
+                    normalized_component = _stage_c_flag_token(str(component))
+                    if normalized_flag and normalized_component:
+                        flags.append(
+                            "valuation_role_boundary_"
+                            f"{normalized_component}_{normalized_flag}"
+                        )
         language_flags = valuation_pod.get("language_flags")
         if isinstance(language_flags, list):
             for language_flag in language_flags:
@@ -4002,6 +4029,10 @@ def _stage_c_review_entry_matches_query(
 
 def _norm_artifact_query(value: str) -> str:
     return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+
+def _stage_c_flag_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")
 
 
 def _has_nonempty_string(value: Any) -> bool:

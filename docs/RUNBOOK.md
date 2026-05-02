@@ -546,9 +546,10 @@ PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity
 The review index groups saved `report_quality`, `valuation_pod`, and
 `decision_log` artifacts by run. It flags missing artifacts, quality gates that
 still block or require review, unavailable quality-agent fallbacks, valuation
-pod method drift, duplicate component ranges, missing market-implied/scenario
-repricing context, rNPV/overvaluation language that lacks a market bridge, and
-decision logs without observable next-review triggers.
+pod method drift, valuation `role_boundary_flags`, duplicate component ranges,
+missing market-implied/scenario repricing context, rNPV/overvaluation language
+that lacks a market bridge, and decision logs without observable next-review
+triggers.
 
 The technical provider is only consulted when `market-regime-timing` or
 `market-expectations` is requested. Quick `report` still does not fetch
