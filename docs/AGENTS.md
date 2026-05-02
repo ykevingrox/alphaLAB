@@ -675,6 +675,15 @@ Boundaries:
 - Must NOT change deterministic memo decisions or numeric valuation outputs.
 - Must keep debate claims tied to supplied payload keys.
 
+## Valuation Pod Guardrails
+
+Stage A+ valuation sub-agents now record deterministic `role_boundary_flags`
+when postprocessing corrects a role violation. Examples include
+`commercial_rnpv_fallback_blocked` when the commercial agent tries to use rNPV
+without revenue evidence, and `balance_sheet_non_cash_method_blocked` when the
+balance-sheet agent prices pipeline or operating assets instead of net cash.
+These flags flow into agent findings and the offline Stage C review surface.
+
 ## Report Synthesizer Agent
 
 Purpose: produce the final committee-style report from all specialist

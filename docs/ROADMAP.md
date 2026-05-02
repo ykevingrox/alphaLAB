@@ -1287,6 +1287,9 @@ decision log lacks observable next-review triggers.
 `decision_log` artifacts without running LLMs, giving reviewers a compact local
 view of missing artifacts, quality gates, valuation method/language drift,
 market-bridge coverage, and decision-log trigger coverage.
+Valuation role postprocessing records `role_boundary_flags` when commercial or
+balance-sheet sub-agents are corrected away from rNPV leakage, so future
+artifacts show the guardrail that fired instead of silently normalizing.
 
 Next Sprint-8 task: review the full opt-in output across calibration tickers
 and decide later whether a compact decision-log subsection belongs in the memo

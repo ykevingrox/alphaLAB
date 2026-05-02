@@ -5168,6 +5168,10 @@ def _valuation_pod_finding_from_payload(
         text = str(line).strip()
         if text:
             risks.append(f"[conflict] {text}")
+    for line in payload.get("role_boundary_flags") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[role_boundary] {text}")
     for key in (
         "conservative_rnpv_floor",
         "market_implied_value",
@@ -5673,6 +5677,7 @@ def _coerce_valuation_role_payload(
     if role == "valuation-commercial-agent" and not _has_commercial_revenue(
         financials_snapshot
     ):
+        original_method = str(coerced.get("method") or "").strip()
         coerced["method"] = "multiple"
         coerced["scope"] = (
             "commercialized_products_and_recurring_revenue; no commercial "
@@ -5690,7 +5695,13 @@ def _coerce_valuation_role_payload(
             "fall back to pipeline rNPV."
         )
         coerced["assumptions"] = assumptions[:12]
+        flags = list(coerced.get("role_boundary_flags") or [])
+        flags.append("commercial_no_revenue_zeroed")
+        if original_method == "rNPV":
+            flags.append("commercial_rnpv_fallback_blocked")
+        coerced["role_boundary_flags"] = _unique_strings(flags)[:12]
     elif role == "valuation-balance-sheet-agent":
+        original_method = str(coerced.get("method") or "").strip()
         net_cash = _deterministic_balance_sheet_adjustment(valuation_snapshot)
         if net_cash == (0.0, 0.0, 0.0):
             net_cash = _deterministic_balance_sheet_adjustment(
@@ -5713,7 +5724,27 @@ def _coerce_valuation_role_payload(
             "and must not price pipeline or operating assets."
         )
         coerced["assumptions"] = assumptions[:12]
+        flags = list(coerced.get("role_boundary_flags") or [])
+        flags.append("balance_sheet_deterministic_adjustment_applied")
+        if original_method and original_method != "balance_sheet_adjustment":
+            flags.append("balance_sheet_non_cash_method_blocked")
+        coerced["role_boundary_flags"] = _unique_strings(flags)[:12]
     return coerced
+
+
+def _unique_strings(values: Any) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = str(value).strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(text)
+    return unique
 
 
 def _deterministic_balance_sheet_adjustment(

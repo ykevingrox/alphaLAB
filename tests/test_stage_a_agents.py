@@ -169,6 +169,13 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
         self.assertEqual(payload["method"], "multiple")
         self.assertEqual(payload["valuation_range"]["base"], 0.0)
         self.assertEqual(payload["value_type"], "equity_value")
+        self.assertIn(
+            "commercial_rnpv_fallback_blocked",
+            payload["role_boundary_flags"],
+        )
+        self.assertTrue(
+            any("[role_boundary]" in risk for risk in step.finding.risks)
+        )
 
     def test_balance_sheet_agent_forces_net_cash_adjustment(self) -> None:
         client = FakeLLMClient()
@@ -209,6 +216,10 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
         self.assertEqual(payload["method"], "balance_sheet_adjustment")
         self.assertEqual(payload["valuation_range"]["base"], 100.0)
         self.assertEqual(payload["value_type"], "equity_value")
+        self.assertIn(
+            "balance_sheet_non_cash_method_blocked",
+            payload["role_boundary_flags"],
+        )
 
 
 class ReportQualityLLMAgentTest(unittest.TestCase):
