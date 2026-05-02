@@ -682,7 +682,8 @@ when postprocessing corrects a role violation. Examples include
 `commercial_rnpv_fallback_blocked` when the commercial agent tries to use rNPV
 without revenue evidence, and `balance_sheet_non_cash_method_blocked` when the
 balance-sheet agent prices pipeline or operating assets instead of net cash.
-These flags flow into agent findings and the offline Stage C review surface.
+The valuation pod prompt/schema now includes this optional field; the flags
+flow into agent findings and the offline Stage C review surface.
 
 ## Report Synthesizer Agent
 

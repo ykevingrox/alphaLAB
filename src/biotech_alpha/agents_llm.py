@@ -4179,6 +4179,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "  \"unit_basis\": \"<reported|normalized>\",\n"
         "  \"fx_assumption\": \"<汇率说明>\",\n"
         "  \"shares_outstanding_used\": 0.0,\n"
+        "  \"role_boundary_flags\": [\"<仅当角色边界需要人工复核时填写>\"],\n"
         "  \"conservative_rnpv_floor\": \"<仅committee填写，可空>\",\n"
         "  \"market_implied_value\": \"<仅committee填写，可空>\",\n"
         "  \"scenario_repricing_range\": \"<仅committee填写，可空>\",\n"
@@ -4247,6 +4248,11 @@ VALUATION_POD_PROMPT = StructuredPrompt(
             "unit_basis": {"type": "string", "min_length": 2},
             "fx_assumption": {"type": "string", "min_length": 2},
             "shares_outstanding_used": {"type": ["number", "null"]},
+            "role_boundary_flags": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 12,
+            },
             "conservative_rnpv_floor": {
                 "type": ["string", "object", "null"],
             },
