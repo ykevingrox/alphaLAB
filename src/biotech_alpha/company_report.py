@@ -3425,6 +3425,19 @@ def stage_c_review_markdown(payload: dict[str, Any]) -> str:
                 f"committee_publishable={valuation_pod.get('committee_publishable')}"
                 f", duplicates={valuation_pod.get('duplicate_component_range_count')}"
             )
+        llm_findings = (
+            entry.get("llm_findings")
+            if isinstance(entry.get("llm_findings"), dict)
+            else {}
+        )
+        if llm_findings:
+            missing_agents = llm_findings.get("missing_expected_agents")
+            missing_count = len(missing_agents) if isinstance(missing_agents, list) else 0
+            lines.append(
+                "- LLM findings: "
+                f"agents={llm_findings.get('agent_count')}, "
+                f"missing_stage_b_c={missing_count}"
+            )
         flags = entry.get("review_flags")
         if isinstance(flags, list) and flags:
             lines.append("- Flags: " + ", ".join(f"`{flag}`" for flag in flags[:12]))
@@ -3487,6 +3500,9 @@ _STAGE_C_FLAG_SEVERITY = {
     "missing_decision_log_artifact": "coverage",
     "unreadable_decision_log_artifact": "coverage",
     "decision_log_missing_next_review_trigger": "review",
+    "missing_llm_findings_artifact": "coverage",
+    "unreadable_llm_findings_artifact": "coverage",
+    "llm_findings_has_failed_steps": "review",
 }
 
 
@@ -3498,6 +3514,7 @@ def _iter_stage_c_review_entries(
     if not root.exists():
         return []
 
+    llm_findings_paths = _llm_findings_paths_by_run_id(root)
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     for artifact_key, suffix in _STAGE_C_ARTIFACT_SUFFIXES.items():
         for path in root.glob(f"**/*{suffix}.json"):
@@ -3518,6 +3535,13 @@ def _iter_stage_c_review_entries(
             if isinstance(artifacts, dict):
                 artifacts[artifact_key] = str(path)
 
+    for group in grouped.values():
+        run_id = str(group.get("run_id") or "")
+        llm_findings_path = llm_findings_paths.get(run_id)
+        artifacts = group.setdefault("artifacts", {})
+        if llm_findings_path is not None and isinstance(artifacts, dict):
+            artifacts["llm_findings"] = str(llm_findings_path)
+
     entries: list[dict[str, Any]] = []
     for group in grouped.values():
         entry = _stage_c_review_entry_from_group(group)
@@ -3533,6 +3557,19 @@ def _run_id_from_stage_artifact_name(path: Path, *, suffix: str) -> str | None:
         return None
     run_id = stem[: -len(suffix)]
     return run_id or None
+
+
+def _llm_findings_paths_by_run_id(root: Path) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    suffix = "_llm_findings"
+    for path in root.glob("**/*_llm_findings.json"):
+        stem = path.stem
+        if not stem.endswith(suffix):
+            continue
+        run_id = stem[: -len(suffix)]
+        if run_id:
+            paths[run_id] = path
+    return paths
 
 
 def _identity_from_artifact_slug(slug: str) -> dict[str, Any]:
@@ -3563,6 +3600,9 @@ def _stage_c_review_entry_from_group(
     decision_log = _stage_c_decision_log_entry(
         _load_json_artifact(artifacts.get("decision_log"))
     )
+    llm_findings = _stage_c_llm_findings_entry(
+        _load_json_artifact(artifacts.get("llm_findings"))
+    )
     identity = group.get("identity") if isinstance(group.get("identity"), dict) else {}
     if decision_log and isinstance(decision_log.get("identity"), dict):
         identity = decision_log["identity"]
@@ -3571,6 +3611,7 @@ def _stage_c_review_entry_from_group(
         report_quality=report_quality,
         valuation_pod=valuation_pod,
         decision_log=decision_log,
+        llm_findings=llm_findings,
     )
     return {
         "run_id": group.get("run_id"),
@@ -3580,6 +3621,7 @@ def _stage_c_review_entry_from_group(
         "report_quality": report_quality,
         "valuation_pod": valuation_pod,
         "decision_log": decision_log,
+        "llm_findings": llm_findings,
         "review_flags": flags,
         "review_flag_count": len(flags),
         "review_severity": _stage_c_review_severity(flags),
@@ -3815,12 +3857,85 @@ def _stage_c_decision_log_entry(
     }
 
 
+_STAGE_C_EXPECTED_LLM_FINDINGS = {
+    "strategic_economics_llm_agent",
+    "catalyst_llm_agent",
+    "market_expectations_llm_agent",
+    "market_regime_timing_llm_agent",
+    "decision_debate_llm_agent",
+    "report_synthesizer_llm_agent",
+    "report_quality_llm_agent",
+}
+
+_STAGE_C_RELEVANT_LLM_FINDINGS = {
+    "strategic_economics_llm_agent",
+    "catalyst_llm_agent",
+    "market_expectations_llm_agent",
+    "market_regime_timing_llm_agent",
+    "decision_debate_llm_agent",
+    "report_synthesizer_llm_agent",
+    "report_quality_llm_agent",
+    "valuation_committee_llm_agent",
+}
+
+
+def _stage_c_llm_findings_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    findings = payload.get("findings")
+    if not isinstance(findings, list):
+        findings = []
+    steps = payload.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+    agent_names = []
+    relevant: dict[str, Any] = {}
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("agent_name") or "").strip()
+        if not name:
+            continue
+        agent_names.append(name)
+        if name in _STAGE_C_RELEVANT_LLM_FINDINGS:
+            relevant[name] = {
+                "summary": item.get("summary"),
+                "confidence": item.get("confidence"),
+                "needs_human_review": item.get("needs_human_review"),
+                "risk_count": len(item.get("risks") or []),
+                "first_risks": _string_list(item.get("risks"))[:3],
+            }
+    failed_steps = [
+        {
+            "agent_name": item.get("agent_name"),
+            "error": item.get("error"),
+        }
+        for item in steps
+        if isinstance(item, dict) and item.get("error")
+    ]
+    missing_expected = sorted(
+        _STAGE_C_EXPECTED_LLM_FINDINGS - set(agent_names)
+    )
+    return {
+        "agent_count": len(agent_names),
+        "agent_names": agent_names,
+        "missing_expected_agents": missing_expected,
+        "relevant_findings": relevant,
+        "failed_steps": failed_steps[:10],
+        "fallback_modules": _string_list(payload.get("fallback_modules"))[:20],
+        "warning_count": len(payload.get("warnings") or []),
+    }
+
+
 def _stage_c_review_flags(
     *,
     artifacts: dict[str, Any],
     report_quality: dict[str, Any] | None,
     valuation_pod: dict[str, Any] | None,
     decision_log: dict[str, Any] | None,
+    llm_findings: dict[str, Any] | None,
 ) -> list[str]:
     flags: list[str] = []
     if "report_quality" not in artifacts:
@@ -3885,6 +4000,18 @@ def _stage_c_review_flags(
         )
         if not _has_nonempty_string(next_triggers):
             flags.append("decision_log_missing_next_review_trigger")
+    if "llm_findings" not in artifacts:
+        flags.append("missing_llm_findings_artifact")
+    elif llm_findings is None:
+        flags.append("unreadable_llm_findings_artifact")
+    else:
+        missing_expected = llm_findings.get("missing_expected_agents")
+        if isinstance(missing_expected, list):
+            for agent_name in missing_expected:
+                flags.append(f"missing_llm_finding_{_stage_c_flag_token(str(agent_name))}")
+        failed_steps = llm_findings.get("failed_steps")
+        if isinstance(failed_steps, list) and failed_steps:
+            flags.append("llm_findings_has_failed_steps")
     return flags
 
 
@@ -3953,6 +4080,12 @@ def _stage_c_review_next_actions(flags: list[str]) -> list[str]:
         actions.append(
             "Run or inspect decision-debate so decision logs include observable review triggers."
         )
+    if any(flag.startswith("missing_llm_finding_") for flag in flag_set):
+        actions.append(
+            "Run the full opt-in Stage B/C agent stack before promoting quick-report defaults."
+        )
+    if "llm_findings_has_failed_steps" in flag_set:
+        actions.append("Inspect failed LLM agent steps in the saved findings artifact.")
     if not actions and flags:
         actions.append("Review flagged Stage B/C artifacts manually.")
     return actions[:5]

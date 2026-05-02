@@ -594,6 +594,34 @@ class CompanyReportTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            memos = root / "memos"
+            memos.mkdir()
+            (memos / "20260428T000000Z_llm_findings.json").write_text(
+                json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "agent_name": "valuation_committee_llm_agent",
+                                "summary": "committee summary",
+                                "risks": [],
+                                "confidence": 0.5,
+                                "needs_human_review": True,
+                            },
+                            {
+                                "agent_name": "report_quality_llm_agent",
+                                "summary": "quality summary",
+                                "risks": [],
+                                "confidence": 0.5,
+                                "needs_human_review": True,
+                            },
+                        ],
+                        "steps": [],
+                        "fallback_modules": [],
+                        "warnings": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
             review = stage_c_review_index(
                 output_dir=root,
@@ -623,6 +651,15 @@ class CompanyReportTest(unittest.TestCase):
                     "valuation_role_boundary_commercial_"
                     "commercial_rnpv_fallback_blocked"
                 ),
+                entry["review_flags"],
+            )
+            self.assertEqual(entry["llm_findings"]["agent_count"], 2)
+            self.assertIn(
+                "market_expectations_llm_agent",
+                entry["llm_findings"]["missing_expected_agents"],
+            )
+            self.assertIn(
+                "missing_llm_finding_market_expectations_llm_agent",
                 entry["review_flags"],
             )
             self.assertIn("missing_decision_log_artifact", entry["review_flags"])

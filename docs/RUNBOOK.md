@@ -543,12 +543,13 @@ PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK --json
 PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --markdown
 ```
 
-The review index groups saved `report_quality`, `valuation_pod`, and
-`decision_log` artifacts by run. It flags missing artifacts, quality gates that
-still block or require review, unavailable quality-agent fallbacks, valuation
-pod method drift, valuation `role_boundary_flags`, duplicate component ranges,
-missing market-implied/scenario repricing context, rNPV/overvaluation language
-that lacks a market bridge, and decision logs without observable next-review
+The review index groups saved `report_quality`, `valuation_pod`,
+`decision_log`, and `_llm_findings` artifacts by run. It flags missing
+artifacts, missing Stage B/C LLM findings, quality gates that still block or
+require review, unavailable quality-agent fallbacks, valuation pod method
+drift, valuation `role_boundary_flags`, duplicate component ranges, missing
+market-implied/scenario repricing context, rNPV/overvaluation language that
+lacks a market bridge, and decision logs without observable next-review
 triggers.
 
 The technical provider is only consulted when `market-regime-timing` or

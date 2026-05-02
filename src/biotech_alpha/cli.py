@@ -2180,6 +2180,17 @@ def _print_stage_c_review(payload: dict[str, object]) -> None:
                 "  valuation: "
                 f"committee_publishable={committee}, duplicates={duplicate_count}"
             )
+        llm_findings = _dict_value(entry, "llm_findings")
+        if llm_findings:
+            missing_agents = llm_findings.get("missing_expected_agents")
+            missing_count = (
+                len(missing_agents) if isinstance(missing_agents, list) else 0
+            )
+            print(
+                "  llm findings: "
+                f"agents={llm_findings.get('agent_count')}, "
+                f"missing_stage_b_c={missing_count}"
+            )
         if decision_log:
             decision_summary = _dict_value(decision_log, "summary")
             print(

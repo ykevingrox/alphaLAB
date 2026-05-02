@@ -1283,12 +1283,13 @@ BD/platform, catalyst, timing, or trading-advice drift without changing memo
 prose. Deterministic quality postprocessing now also forces review when
 decision/memo/synthesizer text contains trading-instruction wording or when a
 decision log lacks observable next-review triggers.
-`stage-c-review` now scans saved `report_quality`, `valuation_pod`, and
-`decision_log` artifacts without running LLMs, giving reviewers a compact local
-view of missing artifacts, quality gates, valuation method/language drift,
-valuation role-boundary guardrails, market-bridge coverage, and decision-log
-trigger coverage. It supports flag/severity filters, latest-per-identity mode,
-and Markdown checklist output for calibration review.
+`stage-c-review` now scans saved `report_quality`, `valuation_pod`,
+`decision_log`, and `_llm_findings` artifacts without running LLMs, giving
+reviewers a compact local view of missing artifacts, missing Stage B/C agent
+findings, quality gates, valuation method/language drift, valuation
+role-boundary guardrails, market-bridge coverage, and decision-log trigger
+coverage. It supports flag/severity filters, latest-per-identity mode, and
+Markdown checklist output for calibration review.
 Valuation role postprocessing records `role_boundary_flags` when commercial or
 balance-sheet sub-agents are corrected away from rNPV leakage, so future
 artifacts show the guardrail that fired instead of silently normalizing.
