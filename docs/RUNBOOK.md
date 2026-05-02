@@ -538,6 +538,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK
 
 # Machine-readable form
 PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK --json
+
+# Markdown checklist for review notes
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --markdown
 ```
 
 The review index groups saved `report_quality`, `valuation_pod`, and

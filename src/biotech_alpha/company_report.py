@@ -3353,6 +3353,108 @@ def stage_c_review_index(
     }
 
 
+def stage_c_review_markdown(payload: dict[str, Any]) -> str:
+    """Render a compact Markdown checklist for offline Stage C review."""
+
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    query = payload.get("query")
+    title = "Stage C Artifact Review"
+    if isinstance(query, str) and query.strip():
+        title = f"{title}: {query.strip()}"
+    lines = [
+        f"# {title}",
+        "",
+        f"- Runs: {summary.get('entry_count', payload.get('count', 0))}",
+    ]
+    gate_counts = summary.get("publish_gate_counts")
+    if isinstance(gate_counts, dict) and gate_counts:
+        lines.append("- Quality gates: " + _stage_c_counts_text(gate_counts))
+    severity_counts = summary.get("severity_counts")
+    if isinstance(severity_counts, dict) and severity_counts:
+        lines.append("- Severities: " + _stage_c_counts_text(severity_counts))
+    flag_counts = summary.get("flag_counts")
+    if isinstance(flag_counts, dict) and flag_counts:
+        top_flags = dict(
+            sorted(
+                flag_counts.items(),
+                key=lambda item: (-int(item[1]), str(item[0])),
+            )[:8]
+        )
+        lines.append("- Top flags: " + _stage_c_counts_text(top_flags))
+    lines.append("")
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or not entries:
+        lines.append("_No Stage C support artifacts found._")
+        return "\n".join(lines).rstrip() + "\n"
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get("identity")
+        label = _stage_c_entry_label(entry, identity)
+        severity = entry.get("review_severity") or "info"
+        lines.extend(
+            [
+                f"## {entry.get('run_id') or 'unknown'} {label}",
+                "",
+                f"- Severity: `{severity}`",
+            ]
+        )
+        report_quality = (
+            entry.get("report_quality")
+            if isinstance(entry.get("report_quality"), dict)
+            else {}
+        )
+        lines.append(
+            "- Quality: "
+            f"`{report_quality.get('publish_gate') or 'missing'}`"
+            f", critical={report_quality.get('critical_issue_count')}"
+            f", fixes={report_quality.get('recommended_fix_count')}"
+        )
+        valuation_pod = (
+            entry.get("valuation_pod")
+            if isinstance(entry.get("valuation_pod"), dict)
+            else {}
+        )
+        if valuation_pod:
+            lines.append(
+                "- Valuation: "
+                f"committee_publishable={valuation_pod.get('committee_publishable')}"
+                f", duplicates={valuation_pod.get('duplicate_component_range_count')}"
+            )
+        flags = entry.get("review_flags")
+        if isinstance(flags, list) and flags:
+            lines.append("- Flags: " + ", ".join(f"`{flag}`" for flag in flags[:12]))
+        actions = entry.get("next_actions")
+        if isinstance(actions, list) and actions:
+            lines.append("")
+            lines.append("Checklist:")
+            for action in actions[:5]:
+                text = str(action).strip()
+                if text:
+                    lines.append(f"- [ ] {text}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _stage_c_counts_text(counts: dict[str, Any]) -> str:
+    return ", ".join(f"`{key}`={value}" for key, value in sorted(counts.items()))
+
+
+def _stage_c_entry_label(entry: dict[str, Any], identity: Any) -> str:
+    if isinstance(identity, dict):
+        ticker = str(identity.get("ticker") or "").strip()
+        if ticker:
+            return ticker
+        company = str(identity.get("company") or "").strip()
+        if company:
+            return company
+    return str(entry.get("artifact_dir") or "unknown")
+
+
 _STAGE_C_ARTIFACT_SUFFIXES = {
     "report_quality": "_report_quality",
     "valuation_pod": "_valuation_pod",

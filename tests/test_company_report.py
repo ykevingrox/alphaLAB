@@ -22,6 +22,7 @@ from biotech_alpha.company_report import (
     resolve_company_identity,
     run_company_report,
     stage_c_review_index,
+    stage_c_review_markdown,
 )
 from biotech_alpha.llm import FakeLLMClient
 
@@ -632,6 +633,10 @@ class CompanyReportTest(unittest.TestCase):
                 min_severity="critical",
             )
             self.assertEqual(filtered["count"], 1)
+            markdown = stage_c_review_markdown(filtered)
+            self.assertIn("# Stage C Artifact Review", markdown)
+            self.assertIn("Checklist:", markdown)
+            self.assertIn("valuation pod roles", markdown)
 
     def test_stage_c_review_index_reads_decision_log_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

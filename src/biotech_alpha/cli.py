@@ -31,6 +31,7 @@ from biotech_alpha.company_report import (
     decision_log_index,
     run_company_report,
     stage_c_review_index,
+    stage_c_review_markdown,
 )
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
@@ -585,6 +586,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="Print machine-readable JSON.",
+    )
+    stage_c_review_parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Print a Markdown review checklist.",
     )
     quick_report_parser.add_argument(
         "--hkexnews-feed-url",
@@ -1286,6 +1292,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
+        elif args.markdown:
+            print(stage_c_review_markdown(payload), end="")
         else:
             _print_stage_c_review(payload)
         return 0
