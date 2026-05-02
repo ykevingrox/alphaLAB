@@ -325,15 +325,18 @@ with token counts, latency, and a run-level cost summary.
 
 **Active sprint:** Stage C decision support — Stage B/C opt-in stack
 calibration on `09606.HK` and `09887.HK` passed with `.env`-loaded LLM
-configuration, including the first `decision-debate-agent` scaffold.
+configuration. Decision-debate, report-quality memo review, valuation
+role-boundary guardrails, and offline Stage C artifact review are now
+implemented as opt-in support layers.
 
 **Doc discipline:** Each sprint below lists **implementation status** so
 this section stays aligned with the repo. Update statuses when scope
 changes.
 
 **Last status pass:** 2026-05-02 (Stage B/C opt-in calibration completed;
-TradingAgents-inspired decision-debate scaffold added and calibrated without
-new orchestration dependencies).
+decision-log memory, report-quality memo review, valuation guardrail
+surfacing, and `stage-c-review` offline checklist added without new
+orchestration dependencies).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -1098,7 +1101,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.6 — Biotech valuation framing calibration
 
-- **Status:** next.
+- **Status:** implemented baseline; calibration review still open.
 - **What:** Recalibrate valuation-pod prompts/contracts so they reflect
   biotech market structure rather than mature-company valuation defaults.
 - **Why:** The latest acceptance sweep shows `commercial`, `rnpv`, and
@@ -1125,6 +1128,16 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
      solely because market price exceeds rNPV.
   4. `09606.HK` report-quality JSON parses cleanly or falls back to
      `review_required` without hiding the raw critical issues.
+
+Implemented baseline:
+
+- Valuation pod now separates conservative rNPV floor, market-implied value,
+  and scenario repricing range in committee outputs.
+- Commercial and balance-sheet role postprocessing prevents rNPV leakage and
+  records `role_boundary_flags` when deterministic correction fires.
+- `stage-c-review` flags valuation method/language drift, duplicate component
+  ranges, missing market bridge context, and surfaced role-boundary guardrails
+  in saved artifacts.
 - **Depends on:** S6.1-S6.5.
 - **Estimated size:** 1-2 days.
 
@@ -1250,11 +1263,12 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 
-**Sprint status:** scaffold-complete and calibration-started. First
-data-collector, report-synthesizer, and decision-debate scaffolds exist;
-decision-debate has passed two opt-in live calibration runs, and report-quality
-now receives memo language context. Quick-report defaults remain unchanged until
-full output review.
+**Sprint status:** scaffold-complete and calibration-review tooling started.
+First data-collector, report-synthesizer, and decision-debate scaffolds exist;
+decision-debate has passed two opt-in live calibration runs, report-quality now
+receives memo language context, valuation role guardrails are surfaced, and
+`stage-c-review` provides an offline checklist over saved support artifacts.
+Quick-report defaults remain unchanged until full output review.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and

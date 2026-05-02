@@ -133,10 +133,11 @@ Architecture note:
 - The target runtime is a multi-LLM-agent collaborative topology (see
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
-- Planned next upgrades are broader decision-support review, deciding whether
-  decision-log output remains artifact-only, and replacing deterministic
-  sentiment/fund-flow proxies with deeper market-context payloads when reliable
-  sources are available.
+- Stage C decision-support review now has an offline helper:
+  `stage-c-review` can inspect saved support artifacts without another LLM
+  call. Remaining product decisions are whether decision-log output stays
+  artifact-only and when deterministic sentiment/fund-flow proxies should be
+  replaced with deeper market-context payloads from reliable sources.
 
 Expected behavior:
 
@@ -606,9 +607,10 @@ If validation warns about placeholders:
   review-gated ClinicalTrials.gov discovery runner.
 - Cash runway is a first-pass estimate, not scenario modeling.
 - Valuation narrative currently comes from the Sprint 6 valuation pod
-  (commercial / pipeline-rNPV / balance-sheet / committee). The next
-  calibration task is to prevent conservative rNPV from being treated as the
-  only fair-value anchor for pre-revenue biotech.
+  (commercial / pipeline-rNPV / balance-sheet / committee). Guardrails now
+  separate conservative rNPV floor, market-implied assumptions, scenario
+  repricing, and valuation role-boundary corrections; the remaining task is to
+  review saved outputs across tickers before promoting defaults.
 - `report-quality-agent` is wired in the LLM path, while the deterministic
   `--no-llm` path still uses the rule-based `quality_gate`.
 - `scientific-skeptic` and `investment-thesis` agents produce LLM-backed

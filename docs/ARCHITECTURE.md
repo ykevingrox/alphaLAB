@@ -232,8 +232,10 @@ Target agent topology (canonical):
 Offline support:
 
 - `stage-c-review` groups saved `report_quality`, `valuation_pod`, and
-  `decision_log` artifacts by run for calibration review without another LLM
-  call.
+  `decision_log`, plus root-level `_llm_findings`, by run for calibration
+  review without another LLM call. It supports severity/flag filters,
+  latest-per-identity mode, sorting, Markdown checklist output, and explicit
+  file output when requested.
 
 Deterministic backbone agents that feed the LLM layers:
 
@@ -260,10 +262,9 @@ Current architecture consistency note:
 External projects can inform adapters and patterns, but they should not replace
 the current lightweight runtime without a clear acceptance reason.
 
-- `yfinance` is a candidate optional data adapter for historical price, volume,
-  analyst, holder, and sector data. It belongs behind provider-neutral
-  interfaces and graceful degradation because it is an unofficial Yahoo Finance
-  wrapper.
+- `biotech_alpha.yfinance_provider` is the optional historical-data adapter for
+  price/volume inputs. It stays behind provider-neutral interfaces and graceful
+  degradation because `yfinance` is an unofficial Yahoo Finance wrapper.
 - `TradingAgents` is architecture inspiration rather than a dependency for the
   next sprint. Useful ideas include specialist analyst teams, bull/bear debate,
   model-tier separation, decision logs, and checkpointing. The current

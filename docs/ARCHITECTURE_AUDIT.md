@@ -31,6 +31,8 @@ Current system is **partially aligned**:
   yfinance history adapter, and opt-in market-regime/timing,
   market-expectations, strategic-economics, catalyst, and data-collector
   scaffolds, plus opt-in report-synthesizer and decision-debate scaffolds.
+  Offline `stage-c-review` now groups saved support artifacts and LLM findings
+  for calibration review.
 - **Not aligned yet:** Stage B/C decision-support scaffolds have passed the
   first two opt-in calibration runs, but are not quick report defaults.
 
@@ -139,8 +141,8 @@ multi-LLM investment committee.
 ## Key Gaps (Must Fix First)
 
 1. Stage B/C specialist scaffolds are opt-in and not quick-report defaults;
-   full output review across calibration tickers is still needed before
-   promoting them.
+   `stage-c-review` exists for offline review, but full output review across
+   calibration tickers is still needed before promoting them.
 2. Market regime/timing has only deterministic sentiment/fund-flow proxies;
    real external sentiment and fund-flow feeds are still pending.
 3. `report-synthesizer-agent` exists only as an opt-in scaffold; memo prose is
@@ -440,8 +442,9 @@ Execute Sprint 8 in `docs/ROADMAP.md`:
 1. Review the artifact-only `decision-debate` output path
    (`<run_id>_decision_log.json`) and the `decision-log --all` local index
    before deciding whether to feed a small memo subsection. Use
-   `stage-c-review` to group saved report-quality, valuation-pod, and
-   decision-log artifacts for offline calibration review; add
+   `stage-c-review` to group saved report-quality, valuation-pod,
+   decision-log, and `_llm_findings` artifacts for offline calibration review;
+   add
    `--latest-per-identity --min-severity critical --sort severity --markdown`
    for a compact checklist of the current worst runs.
 2. Use the broadened report-quality context (`memo_review_payload`,

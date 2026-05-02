@@ -767,8 +767,10 @@ Inputs:
   decision/memo/synthesizer text contains trading-instruction language, or if
   decision logs lack observable `next_review_triggers`
 - Offline review support: `stage-c-review` groups saved `report_quality`,
-  `valuation_pod`, and `decision_log` artifacts by run so calibration review
-  can happen without another LLM call
+  `valuation_pod`, `decision_log`, and `_llm_findings` artifacts by run so
+  calibration review can happen without another LLM call. It flags missing
+  Stage B/C findings, valuation role-boundary guardrails, quality gates, and
+  decision-log trigger coverage.
 
 Outputs:
 
@@ -816,7 +818,8 @@ topology is tracked in `docs/ROADMAP.md`.
 - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
 - `report-synthesizer-agent` (Stage C)
 - `report-quality-agent` (Stage A; reviews memo language context plus
-  decision/synthesizer payloads when available)
+  decision/synthesizer payloads when available, with deterministic guardrails
+  for trading-language drift and missing review triggers)
 
 Detailed gap analysis, contracts, and migration staging live in
 `docs/ARCHITECTURE_AUDIT.md`.

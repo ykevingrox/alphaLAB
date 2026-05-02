@@ -28,10 +28,12 @@ investment committee.
 
 ## Current Repository State
 
-- Branch: `main`, ahead of `origin/main` by local commits unless pushed.
-- Latest completed commits:
-  - `6207c61 Calibrate biotech valuation quality checks`
-  - `5057d0f Reframe biotech valuation agent architecture`
+- Branch: `codex/decision-log-memory-dev` (not pushed in this thread).
+- Latest completed commits on this branch:
+  - `9914aa6 Document valuation role boundary field in prompt`
+  - `bf3afd6 Allow saving stage C review output`
+  - `fd99202 Add sorting for stage C review`
+  - `dac5906 Include LLM findings in stage C review`
 - Stage A is functionally closed for the next checkpoint:
   - Valuation pod is decomposed into commercial, rNPV, balance-sheet, and
     committee agents.
@@ -58,6 +60,12 @@ investment committee.
     for valuation, BD/platform, catalyst, timing, or trading-advice drift.
     Deterministic postprocessing forces review if trading-instruction wording
     appears or a decision log lacks observable next-review triggers.
+  - Valuation sub-agent postprocessing records `role_boundary_flags` when
+    commercial or balance-sheet agents are corrected away from rNPV leakage.
+  - `stage-c-review` reviews saved `report_quality`, `valuation_pod`,
+    `decision_log`, and `_llm_findings` artifacts offline, with
+    flag/severity filters, latest-per-identity mode, sorting, Markdown
+    checklist output, and optional file output.
   - Optional `data-collector` LLM scaffold is wired for company-report and
     feeds per-domain evidence verdicts into report quality when requested.
   - `company-report --technical-features yfinance` now threads source-backed
@@ -85,8 +93,9 @@ Two GitHub projects were reviewed as possible inspiration:
 
 Decision for now:
 
-- Consider a **small optional yfinance provider** only after the next plan is
-  explicit.
+- Keep `biotech_alpha.yfinance_provider` as an optional adapter behind the
+  `market` extra and provider-neutral technical features. It must remain
+  graceful on missing dependency, provider failure, or Yahoo format drift.
 - Borrow **TradingAgents-style patterns** selectively: structured analyst
   roles, bull/bear debate, model-tier separation, and decision logs.
 - Do not add LangGraph, TradingAgents, or new orchestration dependencies yet.
@@ -98,8 +107,11 @@ dependencies.
 
 Recent checkpoint: opt-in Stage B/C stack calibration on `09606.HK` and
 `09887.HK` passed when run with LLM configuration loaded explicitly from
-`.env`, including the TradingAgents-inspired `decision-debate` scaffold. The
-custom `AgentGraph` remains the orchestration layer.
+`.env`, including the TradingAgents-inspired `decision-debate` scaffold.
+Subsequent development added artifact-only decision-log memory, broadened
+report-quality memo review, valuation role-boundary guardrails, and the
+offline `stage-c-review` checklist. The custom `AgentGraph` remains the
+orchestration layer.
 
 Recommended scope:
 
@@ -107,9 +119,10 @@ Recommended scope:
    `strategic-economics`, `catalyst`, `market-expectations`,
    `market-regime-timing`, `decision-debate`, `report-synthesizer`, and
    `report-quality` when LLM credentials are available.
-2. Inspect whether the latest opt-in outputs still overstate current price, BD
-   economics, platform claims, catalyst certainty, timing signals,
-   decision-log confidence, or section prose.
+2. Use `stage-c-review --latest-per-identity --min-severity critical --sort
+   severity --markdown` to inspect whether saved opt-in outputs still overstate
+   current price, BD economics, platform claims, catalyst certainty, timing
+   signals, decision-log confidence, or section prose.
 3. Keep quick `report` defaults unchanged until Stage B/C decision-support
    outputs are reviewed across both tickers.
 4. Tighten prompts/contracts if any agent invents facts or rewrites
