@@ -726,6 +726,67 @@ class CompanyReportTest(unittest.TestCase):
                 review["entries"][0]["review_flags"],
             )
 
+    def test_stage_c_review_ignores_negated_rnpv_sole_value_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "single_company" / "09606-hk"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_valuation_pod.json").write_text(
+                json.dumps(
+                    {
+                        "available": True,
+                        "summary": {
+                            "component_count": 3,
+                            "has_committee": True,
+                            "committee_publishable": True,
+                            "has_market_implied_value": True,
+                            "has_scenario_repricing_range": True,
+                        },
+                        "payload": {
+                            "balance_sheet": {
+                                "method": "balance_sheet_adjustment",
+                                "summary": (
+                                    "不能把保守rNPV或净现金当作唯一公允价值，"
+                                    "需要结合BD经济学和平台可选性。"
+                                ),
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "rnpv": {
+                                "method": "rNPV",
+                                "summary": "rNPV is a conservative floor.",
+                                "valuation_range": {
+                                    "bear": 4,
+                                    "base": 5,
+                                    "bull": 6,
+                                },
+                            },
+                            "committee": {
+                                "method": "sotp_committee",
+                                "market_implied_value": {"market_cap": 9},
+                                "scenario_repricing_range": {
+                                    "bear": 7,
+                                    "base": 8,
+                                    "bull": 9,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(output_dir=root, query="09606.HK")
+
+            self.assertEqual(review["count"], 1)
+            self.assertNotIn(
+                "valuation_rnpv_as_sole_fair_value_language",
+                review["entries"][0]["review_flags"],
+            )
+
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

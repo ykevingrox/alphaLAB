@@ -9,7 +9,7 @@ import csv
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from biotech_alpha.hkexnews import (
     fetch_hkex_rss,
@@ -3784,18 +3784,10 @@ def _valuation_pod_language_flags(
     has_market_implied_value: bool,
     has_scenario_repricing_range: bool,
 ) -> list[str]:
-    text = " ".join(_nested_stage_c_strings(pod_payload, limit=160)).casefold()
+    strings = _nested_stage_c_strings(pod_payload, limit=160)
+    text = " ".join(strings).casefold()
     flags: list[str] = []
-    if "rnpv" in text and any(
-        token in text
-        for token in (
-            "唯一公允",
-            "唯一合理",
-            "only fair value",
-            "sole fair value",
-            "sole reasonable value",
-        )
-    ):
+    if _has_rnpv_sole_value_language(strings):
         flags.append("rnpv_as_sole_fair_value_language")
     has_overvaluation_language = any(
         token in text
@@ -3813,6 +3805,44 @@ def _valuation_pod_language_flags(
     if has_overvaluation_language and not has_gap_context:
         flags.append("overvaluation_language_without_market_bridge")
     return flags
+
+
+def _has_rnpv_sole_value_language(strings: Iterable[str]) -> bool:
+    sole_value_tokens = (
+        "唯一公允",
+        "唯一合理",
+        "only fair value",
+        "sole fair value",
+        "sole reasonable value",
+    )
+    negation_tokens = (
+        "不能",
+        "不得",
+        "不可",
+        "不应",
+        "不宜",
+        "不是",
+        "并非",
+        "避免",
+        "must not",
+        "should not",
+        "do not",
+        "cannot",
+        "can't",
+        "not ",
+    )
+    for raw_text in strings:
+        text = raw_text.casefold()
+        if "rnpv" not in text:
+            continue
+        for sole_token in sole_value_tokens:
+            index = text.find(sole_token)
+            while index >= 0:
+                window = text[max(0, index - 48) : index + len(sole_token) + 24]
+                if not any(token in window for token in negation_tokens):
+                    return True
+                index = text.find(sole_token, index + len(sole_token))
+    return False
 
 
 def _nested_stage_c_strings(value: Any, *, limit: int = 80) -> list[str]:
