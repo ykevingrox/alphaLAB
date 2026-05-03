@@ -757,7 +757,10 @@ class CompanyReportTest(unittest.TestCase):
                             },
                             "rnpv": {
                                 "method": "rNPV",
-                                "summary": "rNPV is a conservative floor.",
+                                "summary": (
+                                    "rNPV is a conservative floor. "
+                                    "保守rNPV仅作为底线参考，而非唯一公允价值。"
+                                ),
                                 "valuation_range": {
                                     "bear": 4,
                                     "base": 5,

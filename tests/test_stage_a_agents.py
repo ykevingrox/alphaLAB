@@ -177,6 +177,53 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
             any("[role_boundary]" in risk for risk in step.finding.risks)
         )
 
+    def test_optional_valuation_arrays_accept_null_and_normalize_empty(
+        self,
+    ) -> None:
+        client = FakeLLMClient()
+        client.queue(
+            """{
+              "summary": "commercial revenue unavailable",
+              "method": "multiple",
+              "scope": "commercialized products only",
+              "assumptions": ["no product revenue"],
+              "valuation_range": {"bear": 0, "base": 0, "bull": 0},
+              "sensitivity": [],
+              "risks": [],
+              "confidence": 0.3,
+              "needs_human_review": true,
+              "currency": "HKD",
+              "value_type": "equity_value",
+              "unit_basis": "reported",
+              "fx_assumption": "HKD",
+              "shares_outstanding_used": null,
+              "role_boundary_flags": null,
+              "sotp_bridge": null,
+              "method_weights": null,
+              "conflict_resolution": null
+            }"""
+        )
+        agent = ValuationCommercialLLMAgent(llm_client=client)
+        context = AgentContext(company="DualityBio", ticker="09606.HK")
+        store = FactStore(
+            {
+                "financials_snapshot": {"revenue_ttm": None},
+                "valuation_snapshot": {"shares_outstanding": 100.0},
+            }
+        )
+
+        step = agent.run(context, store)
+
+        self.assertTrue(step.ok)
+        payload = step.outputs["valuation_commercial_payload"]
+        self.assertEqual(payload["sotp_bridge"], [])
+        self.assertEqual(payload["method_weights"], [])
+        self.assertEqual(payload["conflict_resolution"], [])
+        self.assertIn(
+            "commercial_no_revenue_zeroed",
+            payload["role_boundary_flags"],
+        )
+
     def test_balance_sheet_agent_forces_net_cash_adjustment(self) -> None:
         client = FakeLLMClient()
         client.queue(

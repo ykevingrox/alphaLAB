@@ -4249,7 +4249,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
             "fx_assumption": {"type": "string", "min_length": 2},
             "shares_outstanding_used": {"type": ["number", "null"]},
             "role_boundary_flags": {
-                "type": "array",
+                "type": ["array", "null"],
                 "items": {"type": "string", "min_length": 1},
                 "max_items": 12,
             },
@@ -4263,21 +4263,21 @@ VALUATION_POD_PROMPT = StructuredPrompt(
                 "type": ["string", "object", "null"],
             },
             "sotp_bridge": {
-                "type": "array",
+                "type": ["array", "null"],
                 "items": {
                     "type": ["string", "object"],
                 },
                 "max_items": 20,
             },
             "method_weights": {
-                "type": "array",
+                "type": ["array", "null"],
                 "items": {
                     "type": ["string", "object"],
                 },
                 "max_items": 10,
             },
             "conflict_resolution": {
-                "type": "array",
+                "type": ["array", "null"],
                 "items": {
                     "type": ["string", "object"],
                 },
@@ -5830,6 +5830,14 @@ def _normalize_valuation_payload(
         normalized.get("fx_assumption")
         or f"1 {currency} = {fx} HKD (deterministic default)"
     ).strip()
+    for key in (
+        "role_boundary_flags",
+        "sotp_bridge",
+        "method_weights",
+        "conflict_resolution",
+    ):
+        if normalized.get(key) is None:
+            normalized[key] = []
     shares = None
     if isinstance(valuation_snapshot, dict):
         shares = _safe_float(valuation_snapshot.get("shares_outstanding"))

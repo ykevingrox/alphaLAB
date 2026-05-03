@@ -3823,6 +3823,8 @@ def _has_rnpv_sole_value_language(strings: Iterable[str]) -> bool:
         "不宜",
         "不是",
         "并非",
+        "而非",
+        "非",
         "避免",
         "must not",
         "should not",
