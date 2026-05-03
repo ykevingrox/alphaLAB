@@ -154,6 +154,12 @@ For target-price modeling, investor materials can provide management guidance
 for addressable markets, launch timing, and pipeline milestones, but those
 assumptions should be tagged as company-sourced and reviewed skeptically.
 
+For strategic economics, curate BD and retained-rights facts into
+`data/input/<slug>_strategic_economics.json` instead of leaving the LLM to infer
+economics from partner names. Capture asset, region, partner, rights status,
+economics-share disclosure, milestone/royalty terms when disclosed, BD event
+summary, and platform evidence with source/date/confidence tags.
+
 ### Regulatory Agencies
 
 Useful sources:

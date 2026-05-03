@@ -119,6 +119,34 @@ class StrategicEconomicsAgentTest(unittest.TestCase):
             any(r.startswith("[evidence_gap]") for r in step.finding.risks)
         )
 
+    def test_prompt_receives_curated_strategic_economics_payload(self) -> None:
+        client = FakeLLMClient(model="fake-qwen")
+        client.queue(json.dumps(_happy_payload()))
+        facts = {
+            **_facts(),
+            "curated_strategic_economics_payload": {
+                "available": True,
+                "payload": {
+                    "retained_economics": [
+                        {
+                            "asset": "DB-1303",
+                            "region": "China",
+                            "partner": "BioNTech",
+                            "economics_share": "China rights retained",
+                        }
+                    ]
+                },
+                "validation": {"status": "ok"},
+            },
+        }
+        agent = StrategicEconomicsLLMAgent(llm_client=client)
+
+        step = agent.run(_ctx(), FactStore(facts))
+
+        self.assertTrue(step.ok)
+        self.assertIn("Curated strategic economics input", client.calls[0].prompt)
+        self.assertIn("China rights retained", client.calls[0].prompt)
+
     def test_missing_inputs_warns_but_runs(self) -> None:
         client = FakeLLMClient()
         client.queue(

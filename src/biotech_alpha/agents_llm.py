@@ -1090,6 +1090,10 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
         "- Work only from provided payloads and source excerpts. Do NOT invent "
         "deal terms, milestone probabilities, royalty rates, rights splits, "
         "partner names, or platform claims.\n"
+        "- If `curated_strategic_economics` is available, treat it as the "
+        "highest-priority source for rights, retained economics, BD terms, "
+        "and platform evidence. Do not override it with inference from "
+        "pipeline partner names.\n"
         "- Headline milestone totals are not guaranteed value. Treat them as "
         "conditional economics unless provided evidence proves otherwise.\n"
         "- Distinguish science validated by a partner from economics retained "
@@ -1121,6 +1125,7 @@ STRATEGIC_ECONOMICS_PROMPT = StructuredPrompt(
         "Financials snapshot:\n${financials_snapshot}\n\n"
         "Valuation snapshot:\n${valuation_snapshot}\n\n"
         "Macro context payload:\n${macro_context}\n\n"
+        "Curated strategic economics input:\n${curated_strategic_economics}\n\n"
         "Source text excerpt:\n${source_text_excerpt}\n\n"
         "Fallback context:\n${fallback_context}\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
@@ -1373,6 +1378,9 @@ class StrategicEconomicsLLMAgent(Agent):
             "macro_context": _json_block(
                 store.get("macro_context_payload")
                 or store.get("macro_context")
+            ),
+            "curated_strategic_economics": _json_block(
+                store.get("curated_strategic_economics_payload")
             ),
             "source_text_excerpt": _source_text_block(
                 store.get("source_text_excerpt")

@@ -53,6 +53,10 @@ investment committee.
   - Optional `market-expectations` LLM scaffold is wired for company-report.
   - Optional `strategic-economics` LLM scaffold is wired for company-report
     and feeds market expectations / valuation committee when requested.
+    `company-report` can now discover optional
+    `*_strategic_economics.json` inputs with source-backed BD, retained-rights,
+    partner, milestone/royalty, and platform-evidence rows; these are threaded
+    to the strategic-economics prompt ahead of inference from partner names.
   - Optional `catalyst` LLM scaffold is wired for company-report and consumes
     catalyst calendar plus target-price event-impact payloads.
   - Report-quality now receives `memo_review_payload` plus any
@@ -126,9 +130,9 @@ logs; do not treat those old artifacts as the current code baseline.
 
 Recommended scope:
 
-1. Prioritize high-leverage development: better BD / retained-economics input
-   capture, catalyst evidence quality, market-expectations framing, and
-   decision-log memory.
+1. Continue high-leverage development after the curated strategic-economics
+   input layer: improve catalyst evidence quality, source-backed
+   market-expectations inputs, and decision-log memory.
 2. Keep hardening model-invariant contracts when calibration exposes them:
    schema compatibility, numeric口径, artifact completeness, fact invention,
    duplicate valuation ranges, or rNPV leakage.
@@ -172,14 +176,17 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Improve data quality and evidence capture for BD economics / retained
-   rights, catalyst timelines, and source-backed market-expectations inputs.
-2. Review whether the artifact-only decision log should gain a compact memo
+1. Use `strategic-economics-template` / `strategic-economics-validate` to
+   curate BD economics and retained-rights inputs for the three calibration
+   tickers, then inspect how `strategic-economics`, `market-expectations`, and
+   `valuation-committee` use them.
+2. Improve catalyst timelines and source-backed market-expectations inputs.
+3. Review whether the artifact-only decision log should gain a compact memo
    subsection once the decision memory shape stabilizes. Recent same-company
    logs already feed later `decision-debate` runs as lightweight memory.
-3. Broaden calibration beyond `09606.HK`, `09887.HK`, and `02142.HK` before
+4. Broaden calibration beyond `09606.HK`, `09887.HK`, and `02142.HK` before
    changing quick `report` defaults.
-4. Use `decision-log --all` and `stage-c-review --latest-per-identity --sort
+5. Use `decision-log --all` and `stage-c-review --latest-per-identity --sort
    severity --markdown` for local inspection, but remember that committed
    source should stay free of generated runtime artifacts.
 

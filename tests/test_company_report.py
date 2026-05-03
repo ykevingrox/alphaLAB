@@ -126,9 +126,11 @@ class CompanyReportTest(unittest.TestCase):
             financials = root / "dualitybio_09606_financials.json"
             pipeline = root / "dualitybio_09606_pipeline_assets.json"
             conference = root / "dualitybio_09606_conference_catalysts.json"
+            strategic = root / "dualitybio_09606_strategic_economics.json"
             financials.write_text("{}", encoding="utf-8")
             pipeline.write_text("{}", encoding="utf-8")
             conference.write_text("{}", encoding="utf-8")
+            strategic.write_text("{}", encoding="utf-8")
             identity = resolve_company_identity(
                 company="DualityBio",
                 ticker="09606.HK",
@@ -140,6 +142,7 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(paths.financials, financials)
             self.assertEqual(paths.pipeline_assets, pipeline)
             self.assertEqual(paths.conference_catalysts, conference)
+            self.assertEqual(paths.strategic_economics, strategic)
             self.assertIsNone(paths.competitors)
 
     def test_discovers_inputs_without_cross_ticker_mismatch(self) -> None:
@@ -175,7 +178,11 @@ class CompanyReportTest(unittest.TestCase):
             self.assertEqual(result.identity.market, "HK")
             self.assertEqual(client.search_terms, ["No Data Bio"])
             self.assertEqual(result.research_result.memo.decision, "insufficient_data")
-            self.assertEqual(len(result.missing_inputs), 6)
+            self.assertEqual(len(result.missing_inputs), 7)
+            self.assertIn(
+                "strategic_economics",
+                {item.key for item in result.missing_inputs},
+            )
             self.assertIn(
                 "pipeline-template",
                 result.missing_inputs[0].template_command,
@@ -1103,7 +1110,7 @@ class CompanyReportTest(unittest.TestCase):
                 result.auto_input_artifacts.warnings[0],
             )
             self.assertEqual(result.research_result.memo.decision, "insufficient_data")
-            self.assertEqual(len(result.missing_inputs), 6)
+            self.assertEqual(len(result.missing_inputs), 7)
 
     def test_company_report_handles_auto_inputs_warning_only_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1124,7 +1131,7 @@ class CompanyReportTest(unittest.TestCase):
                     now=datetime(2026, 4, 21, tzinfo=UTC),
                 )
 
-            self.assertEqual(len(result.missing_inputs), 6)
+            self.assertEqual(len(result.missing_inputs), 7)
             self.assertEqual(
                 result.auto_input_artifacts.warnings,
                 ("unable to resolve HKEX stock id",),
@@ -1376,6 +1383,30 @@ class SourceTextExcerptTest(unittest.TestCase):
         )
 
         self.assertEqual(facts["prior_decision_logs_payload"], prior)
+
+    def test_build_llm_agent_facts_threads_strategic_economics_input(
+        self,
+    ) -> None:
+        research = _minimal_research_stub()
+        strategic = {
+            "available": True,
+            "payload": {
+                "retained_economics": [
+                    {
+                        "asset": "DB-1303",
+                        "region": "China",
+                        "economics_share": "rights retained",
+                    }
+                ]
+            },
+        }
+
+        facts = build_llm_agent_facts(
+            research_result=research,
+            strategic_economics_input=strategic,
+        )
+
+        self.assertEqual(facts["curated_strategic_economics_payload"], strategic)
 
     def test_build_llm_agent_facts_threads_input_validation_payload(self) -> None:
         research = _minimal_research_stub()

@@ -523,15 +523,18 @@ science. This role is broader than a BD extractor and only analyzes platform
 reuse when there is company-specific evidence.
 
 Current implementation note: the first LLM scaffold is wired as optional
-`strategic-economics`. It consumes pipeline facts, optional pipeline and
-competition triage payloads, financial/valuation snapshots, macro context,
-source-text excerpts, and fallback evidence. Its payload is available to
-`market-expectations` and `valuation-committee` when requested in the same
-company-report run.
+`strategic-economics`. It consumes pipeline facts, optional curated
+`*_strategic_economics.json` inputs, optional pipeline and competition triage
+payloads, financial/valuation snapshots, macro context, source-text excerpts,
+and fallback evidence. Its payload is available to `market-expectations` and
+`valuation-committee` when requested in the same company-report run.
 
 Inputs:
 
 - `pipeline_assets` and `pipeline_triage_payload`
+- Optional curated `strategic_economics` input discovered by `company-report`.
+  This is the highest-priority source for retained rights, partner economics,
+  BD event terms, and platform evidence.
 - Evidence excerpts with BD, licensing, regional-rights, NewCo, royalty,
   milestone, cost-sharing, or commercialization language
 - `financials_snapshot`
@@ -558,6 +561,8 @@ Boundaries:
 - Must distinguish "science validated by partner" from "economics retained by
   the listed company".
 - Must NOT force a platform thesis when the company has no platform evidence.
+- Must not override curated strategic-economics rows with inference from a
+  pipeline partner name.
 
 ## Market Expectations Agent
 

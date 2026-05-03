@@ -1184,6 +1184,10 @@ Implemented baseline:
     (`review_required`, `valuation_committee_not_publishable`, role-boundary
     flags), not architecture failures. Continue development rather than
     overfitting prompts to a weak interim model.
+  - Curated `*_strategic_economics.json` inputs are now discoverable by
+    `company-report`, with template / validation CLI support. They provide
+    source-backed BD economics, retained-rights, partner, milestone/royalty,
+    and platform-evidence rows to the `strategic-economics` agent.
 
 ### Stage B Prework: Market Technical Feature Layer
 
@@ -1245,6 +1249,8 @@ review across a broader ticker set and preferably a stronger target model.
   quality, cost sharing, commercialization path, and platform reuse only when
   the company has platform evidence. First opt-in scaffold is implemented and
   feeds `market-expectations` and `valuation-committee` when requested.
+  Optional curated `*_strategic_economics.json` inputs now anchor rights and
+  BD terms so the agent does not infer economics from partner names alone.
 - `catalyst-agent`: independent LLM narrative over deterministic catalyst
   calendar. It ranks clinical, regulatory, BD, and conference/data-readout
   events by evidence quality, binary risk, expectation risk, and repricing

@@ -52,6 +52,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli strategic-economics-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_strategic_economics.json
 ```
 
 Validate before running research:
@@ -74,6 +79,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli strategic-economics-validate \
+  data/input/akeso_strategic_economics.json
 ```
 
 Then run:
@@ -89,6 +97,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli research \
   --conference-catalysts data/input/akeso_conference_catalysts.json \
   --target-price-assumptions data/input/akeso_target_price_assumptions.json
 ```
+
+`company-report` auto-discovers `*_strategic_economics.json` inputs. Use this
+file for source-backed BD, retained-rights, partner, milestone/royalty
+disclosure, and platform-evidence facts so Stage B/C LLM agents do not infer
+these terms from partner names alone.
 
 After several companies have saved runs, rank the local watchlist with:
 

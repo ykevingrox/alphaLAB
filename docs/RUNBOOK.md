@@ -232,6 +232,11 @@ PYTHONPATH=src python3 -m biotech_alpha.cli target-price-template \
   --company "Akeso" \
   --ticker "9926.HK" \
   --output data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli strategic-economics-template \
+  --company "Akeso" \
+  --ticker "9926.HK" \
+  --output data/input/akeso_strategic_economics.json
 ```
 
 Edit the generated files before using them for research:
@@ -261,6 +266,9 @@ PYTHONPATH=src python3 -m biotech_alpha.cli conference-validate \
 
 PYTHONPATH=src python3 -m biotech_alpha.cli target-price-validate \
   data/input/akeso_target_price_assumptions.json
+
+PYTHONPATH=src python3 -m biotech_alpha.cli strategic-economics-validate \
+  data/input/akeso_strategic_economics.json
 ```
 
 Validation returns exit code `1` for structural errors and exit code `0` when

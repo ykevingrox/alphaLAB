@@ -67,6 +67,11 @@ from biotech_alpha.p3 import (
     technical_timing_from_ohlcv,
 )
 from biotech_alpha.research import result_summary, run_single_company_research
+from biotech_alpha.strategic_economics import (
+    strategic_economics_validation_report_as_dict,
+    validate_strategic_economics_file,
+    write_strategic_economics_template,
+)
 from biotech_alpha.target_price import (
     build_target_price_analysis,
     load_target_price_assumptions,
@@ -768,6 +773,39 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Conference catalyst JSON file to validate.",
     )
 
+    strategic_economics_template_parser = subparsers.add_parser(
+        "strategic-economics-template",
+        help="Write a starter JSON file for BD and retained-economics inputs.",
+    )
+    strategic_economics_template_parser.add_argument(
+        "--company",
+        required=True,
+        help="Company name for the template metadata.",
+    )
+    strategic_economics_template_parser.add_argument(
+        "--ticker",
+        help="Optional listed ticker for the template metadata.",
+    )
+    strategic_economics_template_parser.add_argument(
+        "--output",
+        required=True,
+        help="Output JSON path, such as data/input/akeso_strategic_economics.json.",
+    )
+    strategic_economics_template_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it already exists.",
+    )
+
+    strategic_economics_validate_parser = subparsers.add_parser(
+        "strategic-economics-validate",
+        help="Validate a curated strategic-economics JSON file.",
+    )
+    strategic_economics_validate_parser.add_argument(
+        "path",
+        help="Strategic economics JSON file to validate.",
+    )
+
     valuation_template_parser = subparsers.add_parser(
         "valuation-template",
         help="Write a starter JSON file for valuation snapshot inputs.",
@@ -1400,6 +1438,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             json.dumps(
                 conference_validation_report_as_dict(report),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1 if report.errors else 0
+
+    if args.command == "strategic-economics-template":
+        path = write_strategic_economics_template(
+            path=args.output,
+            company=args.company,
+            ticker=args.ticker,
+            overwrite=args.force,
+        )
+        print(json.dumps({"path": str(path)}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "strategic-economics-validate":
+        report = validate_strategic_economics_file(args.path)
+        print(
+            json.dumps(
+                strategic_economics_validation_report_as_dict(report),
                 ensure_ascii=False,
                 indent=2,
             )

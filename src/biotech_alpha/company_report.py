@@ -33,6 +33,11 @@ from biotech_alpha.research import (
     result_summary,
     run_single_company_research,
 )
+from biotech_alpha.strategic_economics import (
+    load_strategic_economics,
+    strategic_economics_validation_report_as_dict,
+    validate_strategic_economics_file,
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,7 @@ class CompanyReportInputPaths:
     valuation: Path | None = None
     conference_catalysts: Path | None = None
     target_price_assumptions: Path | None = None
+    strategic_economics: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,11 @@ INPUT_SUFFIXES = {
     "valuation": ("valuation",),
     "conference_catalysts": ("conference_catalysts", "conference"),
     "target_price_assumptions": ("target_price_assumptions", "target_price"),
+    "strategic_economics": (
+        "strategic_economics",
+        "bd_economics",
+        "retained_economics",
+    ),
 }
 
 _BUILTIN_IDENTITY_OVERRIDES: tuple[dict[str, Any], ...] = (
@@ -172,6 +183,19 @@ MISSING_INPUT_SPECS = {
             "with source links, dates, confidence, and related assets."
         ),
         "template_command": "conference-template",
+    },
+    "strategic_economics": {
+        "severity": "optional",
+        "reason": (
+            "Strategic-economics inputs anchor BD, regional-rights, retained "
+            "economics, and platform claims so LLM agents do not infer them."
+        ),
+        "next_action": (
+            "Create the strategic-economics template, then fill source-backed "
+            "rights, partner, royalty/milestone disclosure, BD event, and "
+            "platform-evidence rows."
+        ),
+        "template_command": "strategic-economics-template",
     },
 }
 
@@ -267,6 +291,9 @@ def run_company_report(
             input_dir=generated_input_dir,
         )
         input_paths = _merge_input_paths(primary=input_paths, fallback=generated_paths)
+    strategic_economics_input = _load_strategic_economics_input(
+        input_paths.strategic_economics
+    )
     research_result = run_single_company_research(
         company=identity.company,
         ticker=identity.ticker,
@@ -322,6 +349,7 @@ def run_company_report(
             auto_input_artifacts=auto_input_artifacts,
             macro_signals_provider=macro_signals_provider,
             technical_features_provider=technical_features_provider,
+            strategic_economics_input=strategic_economics_input,
         )
         if save:
             write_llm_memo_addendum(
@@ -554,6 +582,7 @@ def _run_llm_agent_pipeline(
         [CompanyIdentity], dict[str, Any] | None
     ]
     | None = None,
+    strategic_economics_input: dict[str, Any] | None = None,
 ) -> tuple[Any, Path | None]:
     """Run the opt-in LLM agent graph over a finished research result."""
 
@@ -628,6 +657,7 @@ def _run_llm_agent_pipeline(
         macro_signals=macro_signals,
         technical_features=technical_features,
         prior_decision_logs=prior_decision_logs,
+        strategic_economics_input=strategic_economics_input,
     )
     context = AgentContext(
         company=identity.company,
@@ -939,6 +969,7 @@ def build_llm_agent_facts(
     macro_signals: dict[str, Any] | None = None,
     technical_features: dict[str, Any] | None = None,
     prior_decision_logs: dict[str, Any] | None = None,
+    strategic_economics_input: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
@@ -1069,6 +1100,7 @@ def build_llm_agent_facts(
         "macro_context": macro_context,
         "technical_feature_payload": technical_features,
         "market_sentiment_payload": market_sentiment,
+        "curated_strategic_economics_payload": strategic_economics_input,
         "prior_decision_logs_payload": prior_decision_logs,
         "catalyst_calendar_payload": _build_catalyst_calendar_payload(
             research_result
@@ -4617,7 +4649,37 @@ def _merge_input_paths(
             primary.target_price_assumptions
             or fallback.target_price_assumptions
         ),
+        strategic_economics=(
+            primary.strategic_economics or fallback.strategic_economics
+        ),
     )
+
+
+def _load_strategic_economics_input(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    try:
+        payload = load_strategic_economics(path)
+        validation = strategic_economics_validation_report_as_dict(
+            validate_strategic_economics_file(path)
+        )
+        return {
+            "available": True,
+            "path": str(path),
+            "payload": payload,
+            "validation": validation,
+        }
+    except Exception as exc:  # noqa: BLE001 - optional input should not crash.
+        return {
+            "available": False,
+            "path": str(path),
+            "payload": None,
+            "validation": {
+                "status": "error",
+                "errors": [str(exc)],
+                "warnings": [],
+            },
+        }
 
 
 def next_actions(
