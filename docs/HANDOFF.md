@@ -28,12 +28,12 @@ investment committee.
 
 ## Current Repository State
 
-- Branch: `codex/decision-log-memory-dev` (not pushed in this thread).
-- Latest completed commits on this branch:
-  - `9914aa6 Document valuation role boundary field in prompt`
-  - `bf3afd6 Allow saving stage C review output`
-  - `fd99202 Add sorting for stage C review`
-  - `dac5906 Include LLM findings in stage C review`
+- Branch: `main`, tracking `origin/main`.
+- Latest completed commits on `main`:
+  - `5d197e4 Harden valuation LLM output compatibility`
+  - `50d18f4 Merge decision log memory development`
+  - `e1d477b Avoid negated rNPV sole-value review false positives`
+  - `32ab47d Clean up Stage C review docs drift`
 - Stage A is functionally closed for the next checkpoint:
   - Valuation pod is decomposed into commercial, rNPV, balance-sheet, and
     committee agents.
@@ -62,6 +62,10 @@ investment committee.
     appears or a decision log lacks observable next-review triggers.
   - Valuation sub-agent postprocessing records `role_boundary_flags` when
     commercial or balance-sheet agents are corrected away from rNPV leakage.
+  - Valuation LLM output parsing uses a width-at-the-boundary posture for
+    optional arrays: model `null` values for role-boundary / SOTP bridge
+    fields are accepted and normalized to empty arrays before entering the
+    FactStore.
   - `stage-c-review` reviews saved `report_quality`, `valuation_pod`,
     `decision_log`, and `_llm_findings` artifacts offline, with
     flag/severity filters, latest-per-identity mode, sorting, Markdown
@@ -102,32 +106,40 @@ Decision for now:
 
 ## Next Best Action
 
-Current task: continue Stage C without introducing unnecessary external
-dependencies.
+Current task: continue Stage C development while keeping `stage-c-review` as a
+calibration instrument, not a blocker for weak-model prose quality.
 
-Recent checkpoint: opt-in Stage B/C stack calibration on `09606.HK` and
-`09887.HK` passed when run with LLM configuration loaded explicitly from
-`.env`, including the TradingAgents-inspired `decision-debate` scaffold.
-Subsequent development added artifact-only decision-log memory, broadened
-report-quality memo review, valuation role-boundary guardrails, and the
-offline `stage-c-review` checklist. The custom `AgentGraph` remains the
-orchestration layer.
+Recent checkpoint: a 2026-05-03 isolated opt-in sweep loaded LLM configuration
+explicitly from `.env` and wrote artifacts under `/tmp` only. `09606.HK`,
+`09887.HK`, and `02142.HK` each completed the full Stage B/C stack with 17/17
+LLM calls successful, including `data-collector`, `strategic-economics`,
+`catalyst`, `market-regime-timing`, `market-expectations`, `decision-debate`,
+`report-synthesizer`, and `report-quality`. Each ticker reviewed as
+`review_required` / Stage C severity `review`, with no missing Stage B/C
+agents, schema failures, duplicate valuation ranges, or committed runtime
+artifacts.
+
+Interpretation: current review flags are mostly data-quality and manual-review
+gates, not architecture failures. Older saved local artifacts from 2026-04-24
+still show `critical` because they predate the Stage B/C agents and decision
+logs; do not treat those old artifacts as the current code baseline.
 
 Recommended scope:
 
-1. Keep calibrating an opt-in company-report path that includes `data-collector`,
-   `strategic-economics`, `catalyst`, `market-expectations`,
-   `market-regime-timing`, `decision-debate`, `report-synthesizer`, and
-   `report-quality` when LLM credentials are available.
-2. Use `stage-c-review --latest-per-identity --min-severity critical --sort
-   severity --markdown` to inspect whether saved opt-in outputs still overstate
-   current price, BD economics, platform claims, catalyst certainty, timing
-   signals, decision-log confidence, or section prose.
-3. Keep quick `report` defaults unchanged until Stage B/C decision-support
-   outputs are reviewed across both tickers.
-4. Tighten prompts/contracts if any agent invents facts or rewrites
+1. Prioritize high-leverage development: better BD / retained-economics input
+   capture, catalyst evidence quality, market-expectations framing, and
+   decision-log memory.
+2. Keep hardening model-invariant contracts when calibration exposes them:
+   schema compatibility, numeric口径, artifact completeness, fact invention,
+   duplicate valuation ranges, or rNPV leakage.
+3. Do not overfit prompts to weak-model prose. Treat style / confidence /
+   generic wording review flags as useful signals, but not primary blockers
+   while the current LLM is intentionally weaker than the target model.
+4. Keep quick `report` defaults unchanged until Stage B/C decision-support
+   outputs are reviewed across more tickers and with a stronger model.
+5. Tighten prompts/contracts if any agent invents facts or rewrites
    deterministic numbers.
-5. No generated runtime files, caches, memos, traces, or raw downloads should
+6. No generated runtime files, caches, memos, traces, or raw downloads should
    be committed.
 
 Acceptance criteria:
@@ -160,19 +172,16 @@ Optional LLM smoke when `.env` has credentials:
 
 ## Ordered Queue
 
-1. Review the new artifact-only decision log path
-   (`<run_id>_decision_log.json`) and decide later whether a compact memo
-   subsection is warranted. Recent same-company logs now feed later
-   `decision-debate` runs as lightweight memory. Use
-   `PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK` to
-   inspect local history and latest-vs-previous changes without running a new
-   report. Use `decision-log --all` for a portfolio-wide local index.
-   Use `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK`
-   to review saved Stage B/C support artifacts without running LLMs. For the
-   shortest calibration checklist, use
-   `PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --sort severity --markdown`.
-2. Broaden calibration beyond 09606.HK / 09887.HK before changing quick
-   report defaults.
+1. Improve data quality and evidence capture for BD economics / retained
+   rights, catalyst timelines, and source-backed market-expectations inputs.
+2. Review whether the artifact-only decision log should gain a compact memo
+   subsection once the decision memory shape stabilizes. Recent same-company
+   logs already feed later `decision-debate` runs as lightweight memory.
+3. Broaden calibration beyond `09606.HK`, `09887.HK`, and `02142.HK` before
+   changing quick `report` defaults.
+4. Use `decision-log --all` and `stage-c-review --latest-per-identity --sort
+   severity --markdown` for local inspection, but remember that committed
+   source should stay free of generated runtime artifacts.
 
 ## Do Not Break
 

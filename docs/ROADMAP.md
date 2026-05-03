@@ -1164,17 +1164,26 @@ Implemented baseline:
   `artifacts.valuation_pod`, `artifacts.report_quality`, and a compact
   `valuation_pod_summary` plus `report_quality_gate` in the summary
   payload.
-- Latest saved acceptance sweep (2026-04-24):
+- Latest saved acceptance sweep in repo-local `data/` (2026-04-24; now stale
+  for Stage C review because it predates decision logs and the full Stage B/C
+  stack):
   - `09606.HK` run `20260424T094304Z`: `publish_gate=review_required`
   - `02142.HK` run `20260424T094508Z`: `publish_gate=block`
   - `09887.HK` run `20260424T094708Z`: `publish_gate=block`
 - Follow-up calibration committed after that sweep:
-  - `6207c61` exposes component methods/ranges and separates conservative
-    rNPV floor, market-implied value, and scenario repricing range.
-  - Live `09887.HK --json --no-save` smoke after calibration produced
-    `publish_gate=review_required`, with no duplicate component ranges.
-  - A fresh three-ticker saved acceptance sweep is optional before declaring a
-    release tag, but it is no longer the next development blocker.
+  - `5d197e4` hardens valuation LLM output compatibility by accepting `null`
+    for optional valuation arrays and normalizing them to empty arrays.
+  - Stage C review language checks no longer flag explicit negations such as
+    "而非唯一公允价值" as rNPV-only valuation drift.
+  - 2026-05-03 isolated opt-in acceptance sweep under `/tmp` completed
+    `09606.HK`, `09887.HK`, and `02142.HK` with 17/17 LLM calls successful for
+    each ticker. All three produced `report_quality`, `valuation_pod`, and
+    `decision_log` artifacts, with Stage C severity `review`, no missing
+    Stage B/C agents, no schema failures, and no duplicate valuation ranges.
+  - Remaining flags are primarily data-quality / manual-review gates
+    (`review_required`, `valuation_committee_not_publishable`, role-boundary
+    flags), not architecture failures. Continue development rather than
+    overfitting prompts to a weak interim model.
 
 ### Stage B Prework: Market Technical Feature Layer
 
@@ -1226,10 +1235,10 @@ keeps provider volatility out of prompts and gives both
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** scaffold-complete with first two-ticker opt-in calibration.
+**Sprint status:** scaffold-complete with first three-ticker opt-in calibration.
 Market-regime/timing, market-expectations, strategic-economics, and catalyst
 scaffolds exist; quick-report default inclusion still requires full output
-review across calibration tickers.
+review across a broader ticker set and preferably a stronger target model.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1265,10 +1274,11 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 **Sprint status:** scaffold-complete and calibration-review tooling started.
 First data-collector, report-synthesizer, and decision-debate scaffolds exist;
-decision-debate has passed two opt-in live calibration runs, report-quality now
-receives memo language context, valuation role guardrails are surfaced, and
+decision-debate has passed three opt-in live calibration runs, report-quality
+now receives memo language context, valuation role guardrails are surfaced, and
 `stage-c-review` provides an offline checklist over saved support artifacts.
-Quick-report defaults remain unchanged until full output review.
+Quick-report defaults remain unchanged until broader output review and stronger
+model calibration.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
