@@ -89,18 +89,27 @@ Current implementation status:
   auto-degrades to deterministic mode with an explicit terminal note;
   `company-report --llm-agents` still supports `--allow-no-llm` for the
   same fallback.
-- Implemented (Stage A, Sprint 6; calibration pending): valuation pod
+- Implemented (Stage A, Sprint 6; initial calibration complete): valuation pod
   decomposition into four specialist agents (commercial / pipeline-rNPV /
   balance-sheet / committee) and a standalone `report-quality-agent` that
-  owns the publish gate. Latest artifacts show the pod runs, but biotech
-  valuation framing still needs calibration so conservative rNPV is not
-  treated as the sole fair-value anchor.
+  owns the publish gate. Biotech valuation framing now separates conservative
+  rNPV floor, market-implied value, and scenario repricing; broader
+  cross-ticker quality-gate review remains open.
 - Implemented as opt-in scaffolds (Stage B, Sprint 7):
   `strategic-economics-agent`, `catalyst-agent`,
   `market-expectations-agent`, and `market-regime-timing-agent`.
 - Implemented as opt-in scaffold (Stage C, Sprint 8):
   `data-collector-agent`, `report-synthesizer-agent`, and
-  `decision-debate-agent`.
+  `decision-debate-agent`. Decision-debate output is artifact-only for now and
+  can feed later same-company runs as lightweight decision-log memory.
+  `report-quality-agent` now also receives a capped memo review excerpt plus
+  synthesizer payload so it can review final report language for valuation,
+  BD/platform, catalyst, timing, or trading-advice drift; deterministic
+  postprocessing forces review if trading-instruction wording slips through or
+  decision logs lack observable review triggers. Saved Stage B/C support
+  artifacts and `_llm_findings` can be inspected offline with
+  `stage-c-review`, including valuation role-boundary guardrails and missing
+  Stage B/C findings.
 - Pending: broader company document ingestion beyond HKEX annual results,
   more robust financial statement parsing across interim/prospectus
   styles, US-market sibling market-data provider so auto-draft is not

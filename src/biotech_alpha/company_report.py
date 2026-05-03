@@ -9,7 +9,7 @@ import csv
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from biotech_alpha.hkexnews import (
     fetch_hkex_rss,
@@ -86,6 +86,7 @@ class CompanyReportResult:
     llm_trace_path: Path | None = None
     report_quality_path: Path | None = None
     valuation_pod_path: Path | None = None
+    decision_log_path: Path | None = None
     hkexnews_updates_path: Path | None = None
     cde_updates_path: Path | None = None
     hkexnews_event_impacts_path: Path | None = None
@@ -613,11 +614,20 @@ def _run_llm_agent_pipeline(
         except Exception:  # noqa: BLE001 - live/history feeds are optional
             technical_features = None
 
+    prior_decision_logs = None
+    if "decision-debate" in llm_agents:
+        prior_decision_logs = _load_prior_decision_logs(
+            output_dir=output_dir,
+            identity=identity,
+            current_run_id=research_result.run_id,
+        )
+
     facts = build_llm_agent_facts(
         research_result=research_result,
         auto_input_artifacts=auto_input_artifacts,
         macro_signals=macro_signals,
         technical_features=technical_features,
+        prior_decision_logs=prior_decision_logs,
     )
     context = AgentContext(
         company=identity.company,
@@ -928,6 +938,7 @@ def build_llm_agent_facts(
     auto_input_artifacts: Any | None = None,
     macro_signals: dict[str, Any] | None = None,
     technical_features: dict[str, Any] | None = None,
+    prior_decision_logs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a research result into the fact-store shape LLM agents expect.
 
@@ -1033,6 +1044,10 @@ def build_llm_agent_facts(
         auto_input_artifacts=auto_input_artifacts,
         live_signals=macro_signals,
     )
+    market_sentiment = _build_market_sentiment_payload(
+        macro_context=macro_context,
+        technical_features=technical_features,
+    )
     competition_snapshot = _build_competition_snapshot(
         research_result=research_result
     )
@@ -1053,6 +1068,8 @@ def build_llm_agent_facts(
         "competition_snapshot": competition_snapshot,
         "macro_context": macro_context,
         "technical_feature_payload": technical_features,
+        "market_sentiment_payload": market_sentiment,
+        "prior_decision_logs_payload": prior_decision_logs,
         "catalyst_calendar_payload": _build_catalyst_calendar_payload(
             research_result
         ),
@@ -1061,6 +1078,7 @@ def build_llm_agent_facts(
         "target_price_snapshot": _build_target_price_snapshot(research_result),
         "scorecard_summary": _build_scorecard_summary(research_result),
         "memo_scaffold_payload": _build_memo_scaffold_payload(research_result),
+        "memo_review_payload": _build_memo_review_payload(research_result),
     }
 
 
@@ -1105,6 +1123,71 @@ def _build_memo_scaffold_payload(
             getattr(memo, "follow_up_questions", ()) or ()
         ),
     }
+
+
+def _build_memo_review_payload(
+    research_result: SingleCompanyResearchResult,
+    *,
+    max_chars: int = 7000,
+) -> dict[str, Any] | None:
+    memo = getattr(research_result, "memo", None)
+    if memo is None:
+        return None
+
+    try:
+        markdown = memo_to_markdown(memo)
+        render_mode = "deterministic_markdown"
+    except (AttributeError, TypeError, ValueError):
+        markdown = _fallback_memo_review_markdown(memo)
+        render_mode = "fallback_fields"
+
+    excerpt = markdown[:max_chars]
+    headings = [
+        line.strip()
+        for line in markdown.splitlines()
+        if line.startswith("#")
+    ][:20]
+    return {
+        "available": bool(excerpt.strip()),
+        "render_mode": render_mode,
+        "markdown_chars": len(markdown),
+        "excerpt_chars": len(excerpt),
+        "truncated": len(markdown) > max_chars,
+        "section_headings": headings,
+        "decision": str(getattr(memo, "decision", "") or ""),
+        "summary": str(getattr(memo, "summary", "") or ""),
+        "markdown_excerpt": excerpt,
+    }
+
+
+def _fallback_memo_review_markdown(memo: Any) -> str:
+    lines = [
+        f"# {getattr(memo, 'company', None) or 'Unknown'} 研究报告",
+        "",
+        f"- 代码: {getattr(memo, 'ticker', None) or '未识别'}",
+        f"- 市场: {getattr(memo, 'market', None) or 'unknown'}",
+        f"- 结论: `{getattr(memo, 'decision', None) or 'unknown'}`",
+        "",
+        "## 执行结论",
+        "",
+        str(getattr(memo, "summary", "") or ""),
+    ]
+    for section, attr in (
+        ("看多驱动", "bull_case"),
+        ("看空驱动", "bear_case"),
+        ("后续问题", "follow_up_questions"),
+    ):
+        values = [
+            str(item).strip()
+            for item in (getattr(memo, attr, ()) or ())
+            if str(item).strip()
+        ]
+        if not values:
+            continue
+        lines.extend(["", f"## {section}", ""])
+        lines.extend(f"- {item}" for item in values[:8])
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _build_catalyst_calendar_payload(
@@ -1450,6 +1533,153 @@ def _build_macro_context(
         "live_signals": live_block,
         "known_unknowns": known_unknowns,
     }
+
+
+def _build_market_sentiment_payload(
+    *,
+    macro_context: dict[str, Any] | None,
+    technical_features: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Build a provider-neutral sentiment/fund-flow proxy from existing facts."""
+
+    evidence: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    score = 0
+
+    technical_state = None
+    relative_strength_state = None
+    volume_state = None
+    one_month_return = None
+    three_month_return = None
+    if isinstance(technical_features, dict):
+        technical_state = technical_features.get("technical_state")
+        relative_strength = technical_features.get("relative_strength")
+        if isinstance(relative_strength, dict):
+            relative_strength_state = relative_strength.get("state")
+            spread = relative_strength.get("3m_spread_pct")
+            if spread is not None:
+                evidence.append(
+                    {
+                        "signal": "relative_strength_3m_spread_pct",
+                        "value": spread,
+                        "source": "technical_feature_payload",
+                    }
+                )
+        volume_trend = technical_features.get("volume_trend")
+        if isinstance(volume_trend, dict):
+            volume_state = volume_trend.get("state")
+            evidence.append(
+                {
+                    "signal": "volume_trend",
+                    "value": volume_state,
+                    "source": "technical_feature_payload",
+                }
+            )
+        returns = technical_features.get("returns")
+        if isinstance(returns, dict):
+            one_month_return = returns.get("1m_pct")
+            three_month_return = returns.get("3m_pct")
+            evidence.append(
+                {
+                    "signal": "returns",
+                    "value": {
+                        "1m_pct": one_month_return,
+                        "3m_pct": three_month_return,
+                    },
+                    "source": "technical_feature_payload",
+                }
+            )
+        score += _market_signal_score(technical_state)
+        score += _market_signal_score(relative_strength_state)
+        if volume_state == "rising" and _is_positive_number(three_month_return):
+            score += 1
+        elif volume_state == "rising" and _is_negative_number(three_month_return):
+            score -= 1
+    else:
+        warnings.append("missing technical_feature_payload")
+
+    hsbio_trend = None
+    if isinstance(macro_context, dict):
+        live_signals = macro_context.get("live_signals")
+        if isinstance(live_signals, dict):
+            hsbio = live_signals.get("hsbio")
+            if isinstance(hsbio, dict):
+                hsbio_trend = hsbio.get("trend_30d_pct")
+                evidence.append(
+                    {
+                        "signal": "hsbio_30d_trend",
+                        "value": hsbio_trend,
+                        "source": "macro_context.live_signals",
+                    }
+                )
+                if _is_positive_number(hsbio_trend):
+                    score += 1
+                elif _is_negative_number(hsbio_trend):
+                    score -= 1
+    else:
+        warnings.append("missing macro_context")
+
+    if not evidence:
+        return None
+
+    sentiment_state = "mixed"
+    if score >= 2:
+        sentiment_state = "constructive"
+    elif score <= -2:
+        sentiment_state = "cautious"
+
+    fund_flow_proxy_state = "unknown"
+    if volume_state == "rising" and relative_strength_state == "outperforming":
+        fund_flow_proxy_state = "accumulation_proxy"
+    elif volume_state == "rising" and relative_strength_state == "underperforming":
+        fund_flow_proxy_state = "distribution_proxy"
+    elif volume_state in {"flat", "falling"}:
+        fund_flow_proxy_state = "no_clear_flow_proxy"
+
+    confidence = min(0.75, 0.2 + 0.12 * len(evidence))
+    if warnings:
+        confidence = min(confidence, 0.45)
+
+    return {
+        "sentiment_state": sentiment_state,
+        "fund_flow_proxy_state": fund_flow_proxy_state,
+        "liquidity_proxy_state": volume_state or "unknown",
+        "technical_state": technical_state or "unknown",
+        "relative_strength_state": relative_strength_state or "unknown",
+        "sector_trend_30d_pct": hsbio_trend,
+        "evidence": evidence,
+        "warnings": warnings,
+        "confidence": round(confidence, 2),
+        "needs_human_review": True,
+        "guidance_type": "research_only",
+        "notes": (
+            "Deterministic proxy assembled from existing macro and technical payloads.",
+            "Not a trading signal and not a substitute for real fund-flow data.",
+        ),
+    }
+
+
+def _market_signal_score(value: Any) -> int:
+    text = str(value or "").strip().lower()
+    if text in {"constructive", "uptrend", "outperforming", "positive"}:
+        return 1
+    if text in {"weak", "downtrend", "underperforming", "negative"}:
+        return -1
+    return 0
+
+
+def _is_positive_number(value: Any) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_negative_number(value: Any) -> bool:
+    try:
+        return float(value) < 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _build_target_price_snapshot(
@@ -2465,6 +2695,25 @@ def _valuation_pod_report_path(
     )
 
 
+def _decision_log_report_path(
+    *,
+    output_dir: str | Path,
+    result: CompanyReportResult,
+) -> Path:
+    manifest = result.research_result.artifacts.manifest_json
+    if manifest:
+        return Path(manifest).parent / (
+            f"{result.research_result.run_id}_decision_log.json"
+        )
+    return (
+        Path(output_dir)
+        / "processed"
+        / "company_report"
+        / _identity_slug(result.identity)
+        / f"{result.research_result.run_id}_decision_log.json"
+    )
+
+
 def write_stage_a_llm_reports(
     *,
     output_dir: str | Path,
@@ -2527,10 +2776,198 @@ def write_stage_a_llm_reports(
             payload_value=valuation_pod_payload["summary"],
         )
 
+    decision_payload = _decision_debate_payload_from_llm_facts(facts)
+    decision_log_path: Path | None = None
+    if decision_payload["available"]:
+        decision_log_path = _decision_log_report_path(
+            output_dir=output_dir,
+            result=result,
+        )
+        decision_artifact = {
+            **decision_payload,
+            "run_id": result.research_result.run_id,
+            "identity": _jsonable(asdict(result.identity)),
+        }
+        decision_log_path.parent.mkdir(parents=True, exist_ok=True)
+        decision_log_path.write_text(
+            json.dumps(_jsonable(decision_artifact), ensure_ascii=False, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
+        _update_manifest_with_extra_artifact(
+            result=result,
+            artifact_key="decision_log",
+            artifact_path=decision_log_path,
+            payload_key="decision_log_summary",
+            payload_value=decision_payload["summary"],
+        )
+
     return replace(
         result,
         report_quality_path=report_quality_path,
         valuation_pod_path=valuation_pod_path,
+        decision_log_path=decision_log_path,
+    )
+
+
+def _decision_debate_payload_from_llm_facts(facts: dict[str, Any]) -> dict[str, Any]:
+    payload = facts.get("decision_debate_payload")
+    if not isinstance(payload, dict):
+        return {"available": False, "summary": {}, "payload": None}
+
+    decision_log = payload.get("decision_log")
+    if not isinstance(decision_log, dict):
+        decision_log = {}
+    summary = {
+        "fundamental_view": payload.get("fundamental_view"),
+        "timing_view": payload.get("timing_view"),
+        "current_decision": decision_log.get("current_decision"),
+        "bull_case_count": len(payload.get("bull_case") or []),
+        "bear_case_count": len(payload.get("bear_case") or []),
+        "invalidation_trigger_count": len(
+            decision_log.get("invalidation_triggers") or []
+        ),
+        "evidence_gap_count": len(decision_log.get("evidence_gaps") or []),
+        "confidence": payload.get("confidence"),
+        "needs_human_review": payload.get("needs_human_review"),
+    }
+    return {
+        "available": True,
+        "summary": summary,
+        "payload": payload,
+    }
+
+
+def _load_prior_decision_logs(
+    *,
+    output_dir: str | Path,
+    identity: CompanyIdentity,
+    current_run_id: str,
+    limit: int = 3,
+) -> dict[str, Any] | None:
+    root = Path(output_dir)
+    if not root.exists():
+        return None
+
+    entries: list[dict[str, Any]] = []
+    for entry in _iter_decision_log_entries(output_dir=root):
+        run_id = str(entry.get("run_id") or "")
+        if run_id == current_run_id:
+            continue
+        if not _decision_log_entry_matches_identity(entry, identity):
+            continue
+        entries.append(entry)
+
+    if not entries:
+        return None
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    entries = entries[:limit]
+    return {
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def _iter_decision_log_entries(
+    *,
+    output_dir: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(output_dir)
+    if not root.exists():
+        return []
+
+    entries: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for path in root.glob("**/*_decision_log.json"):
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        entry = _decision_log_entry_from_artifact(path=path, payload=payload)
+        if entry is not None:
+            entries.append(entry)
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    return entries
+
+
+def _decision_log_entry_from_artifact(
+    *,
+    path: Path,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    raw_payload = payload.get("payload")
+    if not isinstance(raw_payload, dict):
+        raw_payload = {}
+    decision_log = raw_payload.get("decision_log")
+    if not isinstance(decision_log, dict):
+        decision_log = {}
+    identity = payload.get("identity")
+    if not isinstance(identity, dict):
+        identity = {}
+    return {
+        "run_id": str(payload.get("run_id") or _run_id_from_artifact_name(path)),
+        "path": str(path),
+        "identity": identity,
+        "summary": summary,
+        "decision_log": {
+            "current_decision": decision_log.get("current_decision"),
+            "key_assumptions": decision_log.get("key_assumptions") or [],
+            "reasons_to_revisit": decision_log.get("reasons_to_revisit") or [],
+            "invalidation_triggers": decision_log.get("invalidation_triggers")
+            or [],
+            "evidence_gaps": decision_log.get("evidence_gaps") or [],
+            "next_review_triggers": decision_log.get("next_review_triggers") or [],
+        },
+    }
+
+
+def _run_id_from_artifact_name(path: Path) -> str:
+    suffix = "_decision_log"
+    stem = path.stem
+    if stem.endswith(suffix):
+        return stem[: -len(suffix)]
+    return stem
+
+
+def _decision_log_matches_identity(
+    payload: dict[str, Any],
+    identity: CompanyIdentity,
+) -> bool:
+    artifact_identity = payload.get("identity")
+    if not isinstance(artifact_identity, dict):
+        return False
+    expected_ticker = str(identity.ticker or "").strip().casefold()
+    actual_ticker = str(artifact_identity.get("ticker") or "").strip().casefold()
+    if expected_ticker and actual_ticker and expected_ticker == actual_ticker:
+        return True
+    expected_company = str(identity.company or "").strip().casefold()
+    actual_company = str(artifact_identity.get("company") or "").strip().casefold()
+    return bool(
+        expected_company
+        and actual_company
+        and expected_company == actual_company
+    )
+
+
+def _decision_log_entry_matches_identity(
+    entry: dict[str, Any],
+    identity: CompanyIdentity,
+) -> bool:
+    artifact_identity = entry.get("identity")
+    if not isinstance(artifact_identity, dict):
+        return False
+    return _decision_log_matches_identity(
+        {"identity": artifact_identity},
+        identity,
     )
 
 
@@ -2781,6 +3218,10 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
             str(result.valuation_pod_path) if result.valuation_pod_path else None
         ),
         "valuation_pod_summary": _valuation_pod_summary(result),
+        "decision_log_path": (
+            str(result.decision_log_path) if result.decision_log_path else None
+        ),
+        "decision_log_summary": _decision_log_summary(result),
         "llm_trace_path": (
             str(result.llm_trace_path) if result.llm_trace_path else None
         ),
@@ -2813,6 +3254,1077 @@ def company_report_summary(result: CompanyReportResult) -> dict[str, Any]:
         ),
         "peer_valuation": _build_json_artifact_summary(result.peer_valuation_path),
     }
+
+
+def decision_log_history(
+    *,
+    output_dir: str | Path = "data",
+    company: str | None = None,
+    ticker: str | None = None,
+    market: str | None = None,
+    registry_path: str | Path | None = "data/input/company_registry.json",
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Return recent same-company decision-log artifacts for local review."""
+
+    identity = resolve_company_identity(
+        company=company,
+        ticker=ticker,
+        market=market,
+        registry_path=registry_path,
+    )
+    payload = _load_prior_decision_logs(
+        output_dir=output_dir,
+        identity=identity,
+        current_run_id="",
+        limit=limit,
+    )
+    return {
+        "identity": _jsonable(asdict(identity)),
+        "available": bool(payload and payload.get("entries")),
+        "count": int(payload.get("count", 0)) if isinstance(payload, dict) else 0,
+        "entries": payload.get("entries", []) if isinstance(payload, dict) else [],
+        "change_summary": _decision_log_history_change_summary(
+            payload.get("entries", []) if isinstance(payload, dict) else []
+        ),
+    }
+
+
+def decision_log_index(
+    *,
+    output_dir: str | Path = "data",
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return recent decision-log artifacts across all local companies."""
+
+    entries = _iter_decision_log_entries(output_dir=output_dir)
+    entries = entries[: max(1, limit)]
+    return {
+        "available": bool(entries),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def stage_c_review_index(
+    *,
+    output_dir: str | Path = "data",
+    query: str | None = None,
+    flags: tuple[str, ...] = (),
+    latest_per_identity: bool = False,
+    min_severity: str | None = None,
+    sort_by: str = "run_id",
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return an offline review index for saved Stage B/C support artifacts."""
+
+    entries = _iter_stage_c_review_entries(output_dir=output_dir)
+    if query:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_entry_matches_query(entry, query)
+        ]
+    if flags:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_entry_has_flags(entry, flags)
+        ]
+    if min_severity:
+        entries = [
+            entry
+            for entry in entries
+            if _stage_c_review_meets_min_severity(entry, min_severity)
+        ]
+    if latest_per_identity:
+        entries = _stage_c_latest_per_identity(entries)
+    entries = _sort_stage_c_review_entries(entries, sort_by=sort_by)
+    entries = entries[: max(1, limit)]
+    return {
+        "available": bool(entries),
+        "count": len(entries),
+        "query": query,
+        "filters": {
+            "flags": list(flags),
+            "latest_per_identity": latest_per_identity,
+            "min_severity": min_severity,
+            "sort_by": sort_by,
+        },
+        "entries": entries,
+        "summary": _stage_c_review_summary(entries),
+    }
+
+
+def stage_c_review_markdown(payload: dict[str, Any]) -> str:
+    """Render a compact Markdown checklist for offline Stage C review."""
+
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    query = payload.get("query")
+    title = "Stage C Artifact Review"
+    if isinstance(query, str) and query.strip():
+        title = f"{title}: {query.strip()}"
+    lines = [
+        f"# {title}",
+        "",
+        f"- Runs: {summary.get('entry_count', payload.get('count', 0))}",
+    ]
+    gate_counts = summary.get("publish_gate_counts")
+    if isinstance(gate_counts, dict) and gate_counts:
+        lines.append("- Quality gates: " + _stage_c_counts_text(gate_counts))
+    severity_counts = summary.get("severity_counts")
+    if isinstance(severity_counts, dict) and severity_counts:
+        lines.append("- Severities: " + _stage_c_counts_text(severity_counts))
+    flag_counts = summary.get("flag_counts")
+    if isinstance(flag_counts, dict) and flag_counts:
+        top_flags = dict(
+            sorted(
+                flag_counts.items(),
+                key=lambda item: (-int(item[1]), str(item[0])),
+            )[:8]
+        )
+        lines.append("- Top flags: " + _stage_c_counts_text(top_flags))
+    lines.append("")
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or not entries:
+        lines.append("_No Stage C support artifacts found._")
+        return "\n".join(lines).rstrip() + "\n"
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get("identity")
+        label = _stage_c_entry_label(entry, identity)
+        severity = entry.get("review_severity") or "info"
+        lines.extend(
+            [
+                f"## {entry.get('run_id') or 'unknown'} {label}",
+                "",
+                f"- Severity: `{severity}`",
+            ]
+        )
+        report_quality = (
+            entry.get("report_quality")
+            if isinstance(entry.get("report_quality"), dict)
+            else {}
+        )
+        lines.append(
+            "- Quality: "
+            f"`{report_quality.get('publish_gate') or 'missing'}`"
+            f", critical={report_quality.get('critical_issue_count')}"
+            f", fixes={report_quality.get('recommended_fix_count')}"
+        )
+        valuation_pod = (
+            entry.get("valuation_pod")
+            if isinstance(entry.get("valuation_pod"), dict)
+            else {}
+        )
+        if valuation_pod:
+            lines.append(
+                "- Valuation: "
+                f"committee_publishable={valuation_pod.get('committee_publishable')}"
+                f", duplicates={valuation_pod.get('duplicate_component_range_count')}"
+            )
+        llm_findings = (
+            entry.get("llm_findings")
+            if isinstance(entry.get("llm_findings"), dict)
+            else {}
+        )
+        if llm_findings:
+            missing_agents = llm_findings.get("missing_expected_agents")
+            missing_count = len(missing_agents) if isinstance(missing_agents, list) else 0
+            lines.append(
+                "- LLM findings: "
+                f"agents={llm_findings.get('agent_count')}, "
+                f"missing_stage_b_c={missing_count}"
+            )
+        flags = entry.get("review_flags")
+        if isinstance(flags, list) and flags:
+            lines.append("- Flags: " + ", ".join(f"`{flag}`" for flag in flags[:12]))
+        actions = entry.get("next_actions")
+        if isinstance(actions, list) and actions:
+            lines.append("")
+            lines.append("Checklist:")
+            for action in actions[:5]:
+                text = str(action).strip()
+                if text:
+                    lines.append(f"- [ ] {text}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _stage_c_counts_text(counts: dict[str, Any]) -> str:
+    return ", ".join(f"`{key}`={value}" for key, value in sorted(counts.items()))
+
+
+def _stage_c_entry_label(entry: dict[str, Any], identity: Any) -> str:
+    if isinstance(identity, dict):
+        ticker = str(identity.get("ticker") or "").strip()
+        if ticker:
+            return ticker
+        company = str(identity.get("company") or "").strip()
+        if company:
+            return company
+    return str(entry.get("artifact_dir") or "unknown")
+
+
+_STAGE_C_ARTIFACT_SUFFIXES = {
+    "report_quality": "_report_quality",
+    "valuation_pod": "_valuation_pod",
+    "decision_log": "_decision_log",
+}
+
+_STAGE_C_SEVERITY_RANK = {
+    "info": 0,
+    "coverage": 1,
+    "review": 2,
+    "critical": 3,
+}
+
+_STAGE_C_FLAG_SEVERITY = {
+    "report_quality_block": "critical",
+    "report_quality_review_required": "review",
+    "report_quality_unavailable": "review",
+    "missing_report_quality_artifact": "coverage",
+    "unreadable_report_quality_artifact": "coverage",
+    "missing_valuation_pod_artifact": "coverage",
+    "unreadable_valuation_pod_artifact": "coverage",
+    "valuation_committee_not_publishable": "review",
+    "valuation_duplicate_component_ranges": "critical",
+    "valuation_commercial_method_drift": "critical",
+    "valuation_balance_sheet_method_drift": "critical",
+    "valuation_rnpv_as_sole_fair_value_language": "critical",
+    "valuation_overvaluation_language_without_market_bridge": "review",
+    "valuation_missing_market_implied_value": "review",
+    "valuation_missing_scenario_repricing_range": "review",
+    "missing_decision_log_artifact": "coverage",
+    "unreadable_decision_log_artifact": "coverage",
+    "decision_log_missing_next_review_trigger": "review",
+    "missing_llm_findings_artifact": "coverage",
+    "unreadable_llm_findings_artifact": "coverage",
+    "llm_findings_has_failed_steps": "review",
+}
+
+
+def _iter_stage_c_review_entries(
+    *,
+    output_dir: str | Path,
+) -> list[dict[str, Any]]:
+    root = Path(output_dir)
+    if not root.exists():
+        return []
+
+    llm_findings_paths = _llm_findings_paths_by_run_id(root)
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for artifact_key, suffix in _STAGE_C_ARTIFACT_SUFFIXES.items():
+        for path in root.glob(f"**/*{suffix}.json"):
+            run_id = _run_id_from_stage_artifact_name(path, suffix=suffix)
+            if not run_id:
+                continue
+            group_key = (str(path.parent), run_id)
+            group = grouped.setdefault(
+                group_key,
+                {
+                    "run_id": run_id,
+                    "artifact_dir": str(path.parent),
+                    "identity": _identity_from_artifact_slug(path.parent.name),
+                    "artifacts": {},
+                },
+            )
+            artifacts = group.setdefault("artifacts", {})
+            if isinstance(artifacts, dict):
+                artifacts[artifact_key] = str(path)
+
+    for group in grouped.values():
+        run_id = str(group.get("run_id") or "")
+        llm_findings_path = llm_findings_paths.get(run_id)
+        artifacts = group.setdefault("artifacts", {})
+        if llm_findings_path is not None and isinstance(artifacts, dict):
+            artifacts["llm_findings"] = str(llm_findings_path)
+
+    entries: list[dict[str, Any]] = []
+    for group in grouped.values():
+        entry = _stage_c_review_entry_from_group(group)
+        if entry is not None:
+            entries.append(entry)
+    entries.sort(key=lambda item: str(item.get("run_id") or ""), reverse=True)
+    return entries
+
+
+def _run_id_from_stage_artifact_name(path: Path, *, suffix: str) -> str | None:
+    stem = path.stem
+    if not stem.endswith(suffix):
+        return None
+    run_id = stem[: -len(suffix)]
+    return run_id or None
+
+
+def _llm_findings_paths_by_run_id(root: Path) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    suffix = "_llm_findings"
+    for path in root.glob("**/*_llm_findings.json"):
+        stem = path.stem
+        if not stem.endswith(suffix):
+            continue
+        run_id = stem[: -len(suffix)]
+        if run_id:
+            paths[run_id] = path
+    return paths
+
+
+def _identity_from_artifact_slug(slug: str) -> dict[str, Any]:
+    parts = [part for part in re.split(r"[-_]+", slug.strip()) if part]
+    ticker = None
+    if len(parts) >= 2 and parts[-1].isalpha() and parts[-2].isdigit():
+        ticker = f"{parts[-2]}.{parts[-1].upper()}"
+    return {
+        "company": slug,
+        "ticker": ticker,
+        "market": ticker.split(".")[-1] if ticker else None,
+    }
+
+
+def _stage_c_review_entry_from_group(
+    group: dict[str, Any],
+) -> dict[str, Any] | None:
+    artifacts = group.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return None
+
+    report_quality = _stage_c_report_quality_entry(
+        _load_json_artifact(artifacts.get("report_quality"))
+    )
+    valuation_pod = _stage_c_valuation_pod_entry(
+        _load_json_artifact(artifacts.get("valuation_pod"))
+    )
+    decision_log = _stage_c_decision_log_entry(
+        _load_json_artifact(artifacts.get("decision_log"))
+    )
+    llm_findings = _stage_c_llm_findings_entry(
+        _load_json_artifact(artifacts.get("llm_findings"))
+    )
+    identity = group.get("identity") if isinstance(group.get("identity"), dict) else {}
+    if decision_log and isinstance(decision_log.get("identity"), dict):
+        identity = decision_log["identity"]
+    flags = _stage_c_review_flags(
+        artifacts=artifacts,
+        report_quality=report_quality,
+        valuation_pod=valuation_pod,
+        decision_log=decision_log,
+        llm_findings=llm_findings,
+    )
+    return {
+        "run_id": group.get("run_id"),
+        "artifact_dir": group.get("artifact_dir"),
+        "identity": identity,
+        "artifacts": dict(artifacts),
+        "report_quality": report_quality,
+        "valuation_pod": valuation_pod,
+        "decision_log": decision_log,
+        "llm_findings": llm_findings,
+        "review_flags": flags,
+        "review_flag_count": len(flags),
+        "review_severity": _stage_c_review_severity(flags),
+        "next_actions": _stage_c_review_next_actions(flags),
+    }
+
+
+def _load_json_artifact(path_value: Any) -> dict[str, Any] | None:
+    if not isinstance(path_value, str) or not path_value.strip():
+        return None
+    path = Path(path_value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _stage_c_report_quality_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    return {
+        "publish_gate": payload.get("publish_gate"),
+        "summary": payload.get("summary"),
+        "confidence": payload.get("confidence"),
+        "critical_issue_count": len(payload.get("critical_issues") or []),
+        "recommended_fix_count": len(payload.get("recommended_fixes") or []),
+        "critical_issues": _string_list(payload.get("critical_issues"))[:5],
+        "recommended_fixes": _string_list(payload.get("recommended_fixes"))[:5],
+        "language_quality_findings": _string_list(
+            payload.get("language_quality_findings")
+        )[:5],
+        "valuation_coherence_findings": _string_list(
+            payload.get("valuation_coherence_findings")
+        )[:5],
+    }
+
+
+def _stage_c_valuation_pod_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    pod_payload = payload.get("payload")
+    if not isinstance(pod_payload, dict):
+        pod_payload = {}
+    component_methods = _valuation_pod_component_methods(summary, pod_payload)
+    component_ranges = _valuation_pod_component_ranges(summary, pod_payload)
+    duplicate_count = summary.get("duplicate_component_range_count")
+    if duplicate_count is None:
+        duplicate_count = _duplicate_component_range_count(component_ranges)
+    committee = pod_payload.get("committee")
+    if not isinstance(committee, dict):
+        committee = {}
+    committee_publishable = summary.get("committee_publishable")
+    if committee_publishable is None and committee:
+        committee_publishable = not bool(committee.get("needs_human_review", True))
+    language_flags = _valuation_pod_language_flags(
+        pod_payload=pod_payload,
+        has_market_implied_value=bool(
+            summary.get("market_implied_value") or committee.get("market_implied_value")
+        ),
+        has_scenario_repricing_range=bool(
+            summary.get("scenario_repricing_range")
+            or committee.get("scenario_repricing_range")
+        ),
+    )
+    return {
+        "available": bool(payload.get("available")),
+        "component_count": summary.get("component_count")
+        or sum(1 for value in pod_payload.values() if isinstance(value, dict)),
+        "has_committee": summary.get("has_committee")
+        if "has_committee" in summary
+        else bool(committee),
+        "committee_method": summary.get("committee_method")
+        or committee.get("method"),
+        "committee_currency": summary.get("committee_currency")
+        or committee.get("currency"),
+        "committee_publishable": committee_publishable,
+        "component_methods": component_methods,
+        "role_boundary_flags": _valuation_pod_role_boundary_flags(pod_payload),
+        "duplicate_component_range_count": duplicate_count,
+        "has_market_implied_value": bool(
+            summary.get("market_implied_value") or committee.get("market_implied_value")
+        ),
+        "has_scenario_repricing_range": bool(
+            summary.get("scenario_repricing_range")
+            or committee.get("scenario_repricing_range")
+        ),
+        "language_flags": language_flags,
+    }
+
+
+def _valuation_pod_component_methods(
+    summary: dict[str, Any],
+    pod_payload: dict[str, Any],
+) -> dict[str, Any]:
+    methods = summary.get("component_methods")
+    if isinstance(methods, dict):
+        return dict(methods)
+    return {
+        key: value.get("method")
+        for key, value in pod_payload.items()
+        if isinstance(value, dict)
+    }
+
+
+def _valuation_pod_component_ranges(
+    summary: dict[str, Any],
+    pod_payload: dict[str, Any],
+) -> dict[str, Any]:
+    ranges = summary.get("component_ranges")
+    if isinstance(ranges, dict):
+        return dict(ranges)
+    return {
+        key: value.get("valuation_range")
+        for key, value in pod_payload.items()
+        if isinstance(value, dict) and isinstance(value.get("valuation_range"), dict)
+    }
+
+
+def _valuation_pod_role_boundary_flags(
+    pod_payload: dict[str, Any],
+) -> dict[str, list[str]]:
+    flags: dict[str, list[str]] = {}
+    for key, value in pod_payload.items():
+        if not isinstance(value, dict):
+            continue
+        raw_flags = _string_list(value.get("role_boundary_flags"))
+        if raw_flags:
+            flags[key] = raw_flags
+    return flags
+
+
+def _duplicate_component_range_count(component_ranges: dict[str, Any]) -> int:
+    signatures: dict[tuple[float | None, float | None, float | None], int] = {}
+    for value in component_ranges.values():
+        if not isinstance(value, dict):
+            continue
+        signature = (
+            _optional_float(value.get("bear")),
+            _optional_float(value.get("base")),
+            _optional_float(value.get("bull")),
+        )
+        signatures[signature] = signatures.get(signature, 0) + 1
+    return sum(count - 1 for count in signatures.values() if count > 1)
+
+
+def _valuation_pod_language_flags(
+    *,
+    pod_payload: dict[str, Any],
+    has_market_implied_value: bool,
+    has_scenario_repricing_range: bool,
+) -> list[str]:
+    strings = _nested_stage_c_strings(pod_payload, limit=160)
+    text = " ".join(strings).casefold()
+    flags: list[str] = []
+    if _has_rnpv_sole_value_language(strings):
+        flags.append("rnpv_as_sole_fair_value_language")
+    has_overvaluation_language = any(
+        token in text
+        for token in (
+            "高估",
+            "下行空间",
+            "估值透支",
+            "远高于",
+            "显著高于",
+            "overvalued",
+            "downside",
+        )
+    )
+    has_gap_context = has_market_implied_value and has_scenario_repricing_range
+    if has_overvaluation_language and not has_gap_context:
+        flags.append("overvaluation_language_without_market_bridge")
+    return flags
+
+
+def _has_rnpv_sole_value_language(strings: Iterable[str]) -> bool:
+    sole_value_tokens = (
+        "唯一公允",
+        "唯一合理",
+        "only fair value",
+        "sole fair value",
+        "sole reasonable value",
+    )
+    negation_tokens = (
+        "不能",
+        "不得",
+        "不可",
+        "不应",
+        "不宜",
+        "不是",
+        "并非",
+        "避免",
+        "must not",
+        "should not",
+        "do not",
+        "cannot",
+        "can't",
+        "not ",
+    )
+    for raw_text in strings:
+        text = raw_text.casefold()
+        if "rnpv" not in text:
+            continue
+        for sole_token in sole_value_tokens:
+            index = text.find(sole_token)
+            while index >= 0:
+                window = text[max(0, index - 48) : index + len(sole_token) + 24]
+                if not any(token in window for token in negation_tokens):
+                    return True
+                index = text.find(sole_token, index + len(sole_token))
+    return False
+
+
+def _nested_stage_c_strings(value: Any, *, limit: int = 80) -> list[str]:
+    strings: list[str] = []
+
+    def visit(item: Any) -> None:
+        if len(strings) >= limit:
+            return
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                strings.append(text)
+            return
+        if isinstance(item, dict):
+            for sub_item in item.values():
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+            return
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+
+    visit(value)
+    return strings
+
+
+def _stage_c_decision_log_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    entry = _decision_log_entry_from_artifact(
+        path=Path(str(payload.get("run_id") or "decision_log")),
+        payload=payload,
+    )
+    if entry is None:
+        return None
+    return {
+        "identity": entry.get("identity"),
+        "summary": entry.get("summary"),
+        "decision_log": entry.get("decision_log"),
+    }
+
+
+_STAGE_C_EXPECTED_LLM_FINDINGS = {
+    "strategic_economics_llm_agent",
+    "catalyst_llm_agent",
+    "market_expectations_llm_agent",
+    "market_regime_timing_llm_agent",
+    "decision_debate_llm_agent",
+    "report_synthesizer_llm_agent",
+    "report_quality_llm_agent",
+}
+
+_STAGE_C_RELEVANT_LLM_FINDINGS = {
+    "strategic_economics_llm_agent",
+    "catalyst_llm_agent",
+    "market_expectations_llm_agent",
+    "market_regime_timing_llm_agent",
+    "decision_debate_llm_agent",
+    "report_synthesizer_llm_agent",
+    "report_quality_llm_agent",
+    "valuation_committee_llm_agent",
+}
+
+
+def _stage_c_llm_findings_entry(
+    payload: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    findings = payload.get("findings")
+    if not isinstance(findings, list):
+        findings = []
+    steps = payload.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+    agent_names = []
+    relevant: dict[str, Any] = {}
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("agent_name") or "").strip()
+        if not name:
+            continue
+        agent_names.append(name)
+        if name in _STAGE_C_RELEVANT_LLM_FINDINGS:
+            relevant[name] = {
+                "summary": item.get("summary"),
+                "confidence": item.get("confidence"),
+                "needs_human_review": item.get("needs_human_review"),
+                "risk_count": len(item.get("risks") or []),
+                "first_risks": _string_list(item.get("risks"))[:3],
+            }
+    failed_steps = [
+        {
+            "agent_name": item.get("agent_name"),
+            "error": item.get("error"),
+        }
+        for item in steps
+        if isinstance(item, dict) and item.get("error")
+    ]
+    missing_expected = sorted(
+        _STAGE_C_EXPECTED_LLM_FINDINGS - set(agent_names)
+    )
+    return {
+        "agent_count": len(agent_names),
+        "agent_names": agent_names,
+        "missing_expected_agents": missing_expected,
+        "relevant_findings": relevant,
+        "failed_steps": failed_steps[:10],
+        "fallback_modules": _string_list(payload.get("fallback_modules"))[:20],
+        "warning_count": len(payload.get("warnings") or []),
+    }
+
+
+def _stage_c_review_flags(
+    *,
+    artifacts: dict[str, Any],
+    report_quality: dict[str, Any] | None,
+    valuation_pod: dict[str, Any] | None,
+    decision_log: dict[str, Any] | None,
+    llm_findings: dict[str, Any] | None,
+) -> list[str]:
+    flags: list[str] = []
+    if "report_quality" not in artifacts:
+        flags.append("missing_report_quality_artifact")
+    elif report_quality is None:
+        flags.append("unreadable_report_quality_artifact")
+    else:
+        gate = str(report_quality.get("publish_gate") or "").strip()
+        if gate == "block":
+            flags.append("report_quality_block")
+        elif gate == "review_required":
+            flags.append("report_quality_review_required")
+        critical = " ".join(report_quality.get("critical_issues") or [])
+        if "report_quality_unavailable" in critical:
+            flags.append("report_quality_unavailable")
+
+    if "valuation_pod" not in artifacts:
+        flags.append("missing_valuation_pod_artifact")
+    elif valuation_pod is None:
+        flags.append("unreadable_valuation_pod_artifact")
+    else:
+        if valuation_pod.get("committee_publishable") is False:
+            flags.append("valuation_committee_not_publishable")
+        if int(valuation_pod.get("duplicate_component_range_count") or 0) > 0:
+            flags.append("valuation_duplicate_component_ranges")
+        methods = valuation_pod.get("component_methods")
+        if isinstance(methods, dict):
+            if str(methods.get("commercial") or "").casefold() == "rnpv":
+                flags.append("valuation_commercial_method_drift")
+            if str(methods.get("balance_sheet") or "").casefold() == "rnpv":
+                flags.append("valuation_balance_sheet_method_drift")
+        role_boundary_flags = valuation_pod.get("role_boundary_flags")
+        if isinstance(role_boundary_flags, dict):
+            for component, component_flags in role_boundary_flags.items():
+                if not isinstance(component_flags, list):
+                    continue
+                for component_flag in component_flags:
+                    normalized_flag = _stage_c_flag_token(str(component_flag))
+                    normalized_component = _stage_c_flag_token(str(component))
+                    if normalized_flag and normalized_component:
+                        flags.append(
+                            "valuation_role_boundary_"
+                            f"{normalized_component}_{normalized_flag}"
+                        )
+        language_flags = valuation_pod.get("language_flags")
+        if isinstance(language_flags, list):
+            for language_flag in language_flags:
+                flags.append(f"valuation_{language_flag}")
+        if not valuation_pod.get("has_market_implied_value"):
+            flags.append("valuation_missing_market_implied_value")
+        if not valuation_pod.get("has_scenario_repricing_range"):
+            flags.append("valuation_missing_scenario_repricing_range")
+
+    if "decision_log" not in artifacts:
+        flags.append("missing_decision_log_artifact")
+    elif decision_log is None:
+        flags.append("unreadable_decision_log_artifact")
+    else:
+        log = decision_log.get("decision_log")
+        next_triggers = (
+            log.get("next_review_triggers") if isinstance(log, dict) else None
+        )
+        if not _has_nonempty_string(next_triggers):
+            flags.append("decision_log_missing_next_review_trigger")
+    if "llm_findings" not in artifacts:
+        flags.append("missing_llm_findings_artifact")
+    elif llm_findings is None:
+        flags.append("unreadable_llm_findings_artifact")
+    else:
+        missing_expected = llm_findings.get("missing_expected_agents")
+        if isinstance(missing_expected, list):
+            for agent_name in missing_expected:
+                flags.append(f"missing_llm_finding_{_stage_c_flag_token(str(agent_name))}")
+        failed_steps = llm_findings.get("failed_steps")
+        if isinstance(failed_steps, list) and failed_steps:
+            flags.append("llm_findings_has_failed_steps")
+    return flags
+
+
+def _stage_c_review_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    flag_counts: dict[str, int] = {}
+    gate_counts: dict[str, int] = {}
+    severity_counts: dict[str, int] = {}
+    for entry in entries:
+        for flag in entry.get("review_flags") or []:
+            text = str(flag)
+            flag_counts[text] = flag_counts.get(text, 0) + 1
+        severity = str(entry.get("review_severity") or "info")
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        report_quality = entry.get("report_quality")
+        if isinstance(report_quality, dict):
+            gate = str(report_quality.get("publish_gate") or "unknown")
+        else:
+            gate = "missing"
+        gate_counts[gate] = gate_counts.get(gate, 0) + 1
+    return {
+        "entry_count": len(entries),
+        "flag_counts": flag_counts,
+        "publish_gate_counts": gate_counts,
+        "severity_counts": severity_counts,
+    }
+
+
+def _stage_c_review_severity(flags: list[str]) -> str:
+    severity = "info"
+    for flag in flags:
+        flag_severity = _STAGE_C_FLAG_SEVERITY.get(str(flag), "review")
+        if _STAGE_C_SEVERITY_RANK[flag_severity] > _STAGE_C_SEVERITY_RANK[severity]:
+            severity = flag_severity
+    return severity
+
+
+def _stage_c_review_next_actions(flags: list[str]) -> list[str]:
+    actions: list[str] = []
+    flag_set = set(flags)
+    if "report_quality_block" in flag_set:
+        actions.append("Review report-quality critical issues before publishing.")
+    if "report_quality_unavailable" in flag_set:
+        actions.append("Rerun report-quality after fixing LLM/schema response.")
+    if {
+        "valuation_commercial_method_drift",
+        "valuation_balance_sheet_method_drift",
+        "valuation_duplicate_component_ranges",
+    } & flag_set:
+        actions.append(
+            "Inspect valuation pod roles for rNPV leakage, duplicated ranges, or double counting."
+        )
+    if {
+        "valuation_missing_market_implied_value",
+        "valuation_missing_scenario_repricing_range",
+        "valuation_overvaluation_language_without_market_bridge",
+    } & flag_set:
+        actions.append(
+            "Add or verify market-implied assumptions and scenario repricing bridge."
+        )
+    if "valuation_rnpv_as_sole_fair_value_language" in flag_set:
+        actions.append("Rewrite rNPV framing as a conservative floor or cross-check.")
+    if {
+        "missing_decision_log_artifact",
+        "decision_log_missing_next_review_trigger",
+    } & flag_set:
+        actions.append(
+            "Run or inspect decision-debate so decision logs include observable review triggers."
+        )
+    if any(flag.startswith("missing_llm_finding_") for flag in flag_set):
+        actions.append(
+            "Run the full opt-in Stage B/C agent stack before promoting quick-report defaults."
+        )
+    if "llm_findings_has_failed_steps" in flag_set:
+        actions.append("Inspect failed LLM agent steps in the saved findings artifact.")
+    if not actions and flags:
+        actions.append("Review flagged Stage B/C artifacts manually.")
+    return actions[:5]
+
+
+def _stage_c_review_entry_has_flags(
+    entry: dict[str, Any],
+    flags: tuple[str, ...],
+) -> bool:
+    entry_flags = {
+        _norm_artifact_query(str(flag))
+        for flag in (entry.get("review_flags") or [])
+    }
+    return all(_norm_artifact_query(flag) in entry_flags for flag in flags)
+
+
+def _stage_c_review_meets_min_severity(
+    entry: dict[str, Any],
+    min_severity: str,
+) -> bool:
+    requested = str(min_severity or "").strip().casefold()
+    if requested not in _STAGE_C_SEVERITY_RANK:
+        return True
+    actual = str(entry.get("review_severity") or "info")
+    return _STAGE_C_SEVERITY_RANK.get(actual, 0) >= _STAGE_C_SEVERITY_RANK[requested]
+
+
+def _stage_c_latest_per_identity(
+    entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        key = _stage_c_identity_key(entry)
+        if key in latest:
+            continue
+        latest[key] = entry
+    return list(latest.values())
+
+
+def _sort_stage_c_review_entries(
+    entries: list[dict[str, Any]],
+    *,
+    sort_by: str,
+) -> list[dict[str, Any]]:
+    mode = str(sort_by or "run_id").strip().casefold().replace("_", "-")
+    if mode == "severity":
+        return sorted(
+            entries,
+            key=lambda item: (
+                _STAGE_C_SEVERITY_RANK.get(
+                    str(item.get("review_severity") or "info"),
+                    0,
+                ),
+                int(item.get("review_flag_count") or 0),
+                str(item.get("run_id") or ""),
+            ),
+            reverse=True,
+        )
+    if mode == "flag-count":
+        return sorted(
+            entries,
+            key=lambda item: (
+                int(item.get("review_flag_count") or 0),
+                _STAGE_C_SEVERITY_RANK.get(
+                    str(item.get("review_severity") or "info"),
+                    0,
+                ),
+                str(item.get("run_id") or ""),
+            ),
+            reverse=True,
+        )
+    return sorted(
+        entries,
+        key=lambda item: str(item.get("run_id") or ""),
+        reverse=True,
+    )
+
+
+def _stage_c_identity_key(entry: dict[str, Any]) -> str:
+    identity = entry.get("identity")
+    if isinstance(identity, dict):
+        ticker = str(identity.get("ticker") or "").strip().casefold()
+        if ticker:
+            return f"ticker:{ticker}"
+        company = str(identity.get("company") or "").strip().casefold()
+        if company:
+            return f"company:{company}"
+    artifact_dir = str(entry.get("artifact_dir") or "").strip().casefold()
+    return f"dir:{artifact_dir}"
+
+
+def _stage_c_review_entry_matches_query(
+    entry: dict[str, Any],
+    query: str,
+) -> bool:
+    needle = _norm_artifact_query(query)
+    if not needle:
+        return True
+    identity = entry.get("identity")
+    identity_values = []
+    if isinstance(identity, dict):
+        identity_values.extend(
+            str(identity.get(key) or "")
+            for key in ("company", "ticker", "market")
+        )
+    values = [
+        str(entry.get("artifact_dir") or ""),
+        str(entry.get("run_id") or ""),
+        *identity_values,
+    ]
+    return any(needle in _norm_artifact_query(value) for value in values)
+
+
+def _norm_artifact_query(value: str) -> str:
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+
+def _stage_c_flag_token(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")
+
+
+def _has_nonempty_string(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
+
+
+def _decision_log_history_change_summary(
+    entries: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    if len(entries) < 2:
+        return None
+    latest = entries[0]
+    previous = entries[1]
+    latest_summary = (
+        latest.get("summary") if isinstance(latest.get("summary"), dict) else {}
+    )
+    previous_summary = (
+        previous.get("summary") if isinstance(previous.get("summary"), dict) else {}
+    )
+    latest_log = (
+        latest.get("decision_log")
+        if isinstance(latest.get("decision_log"), dict)
+        else {}
+    )
+    previous_log = (
+        previous.get("decision_log")
+        if isinstance(previous.get("decision_log"), dict)
+        else {}
+    )
+    return {
+        "latest_run_id": latest.get("run_id"),
+        "previous_run_id": previous.get("run_id"),
+        "current_decision_changed": latest_summary.get("current_decision")
+        != previous_summary.get("current_decision"),
+        "fundamental_view_changed": latest_summary.get("fundamental_view")
+        != previous_summary.get("fundamental_view"),
+        "timing_view_changed": latest_summary.get("timing_view")
+        != previous_summary.get("timing_view"),
+        "new_evidence_gaps": _list_delta(
+            latest_log.get("evidence_gaps"),
+            previous_log.get("evidence_gaps"),
+        ),
+        "repeated_evidence_gaps": _list_intersection(
+            latest_log.get("evidence_gaps"),
+            previous_log.get("evidence_gaps"),
+        ),
+        "new_invalidation_triggers": _list_delta(
+            latest_log.get("invalidation_triggers"),
+            previous_log.get("invalidation_triggers"),
+        ),
+        "repeated_invalidation_triggers": _list_intersection(
+            latest_log.get("invalidation_triggers"),
+            previous_log.get("invalidation_triggers"),
+        ),
+    }
+
+
+def _list_delta(current: Any, previous: Any) -> list[str]:
+    previous_set = {_norm_history_text(item) for item in _string_list(previous)}
+    return [
+        item
+        for item in _string_list(current)
+        if _norm_history_text(item) not in previous_set
+    ]
+
+
+def _list_intersection(current: Any, previous: Any) -> list[str]:
+    previous_set = {_norm_history_text(item) for item in _string_list(previous)}
+    return [
+        item
+        for item in _string_list(current)
+        if _norm_history_text(item) in previous_set
+    ]
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _norm_history_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().casefold()
 
 
 def _build_hkexnews_summary(result: CompanyReportResult) -> dict[str, Any] | None:
@@ -2859,6 +4371,25 @@ def _valuation_pod_summary(result: CompanyReportResult) -> dict[str, Any] | None
     if not isinstance(facts, dict):
         return None
     payload = _valuation_pod_payload_from_llm_facts(facts)
+    if not payload.get("available"):
+        return None
+    return payload.get("summary")
+
+
+def _decision_log_summary(result: CompanyReportResult) -> dict[str, Any] | None:
+    if result.decision_log_path is not None:
+        artifact = _build_json_artifact_summary(result.decision_log_path)
+        if isinstance(artifact, dict):
+            summary = artifact.get("summary")
+            if isinstance(summary, dict):
+                return summary
+    llm_result = result.llm_agent_result
+    if llm_result is None:
+        return None
+    facts = getattr(llm_result, "facts", {}) or {}
+    if not isinstance(facts, dict):
+        return None
+    payload = _decision_debate_payload_from_llm_facts(facts)
     if not payload.get("available"):
         return None
     return payload.get("summary")

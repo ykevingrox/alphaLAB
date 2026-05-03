@@ -325,15 +325,18 @@ with token counts, latency, and a run-level cost summary.
 
 **Active sprint:** Stage C decision support — Stage B/C opt-in stack
 calibration on `09606.HK` and `09887.HK` passed with `.env`-loaded LLM
-configuration, including the first `decision-debate-agent` scaffold.
+configuration. Decision-debate, report-quality memo review, valuation
+role-boundary guardrails, and offline Stage C artifact review are now
+implemented as opt-in support layers.
 
 **Doc discipline:** Each sprint below lists **implementation status** so
 this section stays aligned with the repo. Update statuses when scope
 changes.
 
 **Last status pass:** 2026-05-02 (Stage B/C opt-in calibration completed;
-TradingAgents-inspired decision-debate scaffold added and calibrated without
-new orchestration dependencies).
+decision-log memory, report-quality memo review, valuation guardrail
+surfacing, and `stage-c-review` offline checklist added without new
+orchestration dependencies).
 
 ### Sprint 1: Reliability And Coverage Baseline
 
@@ -938,9 +941,9 @@ All steps above are completed at baseline level. Ongoing iteration prioritizes:
 four-agent valuation pod and add a standalone `report-quality-agent` that
 owns the publish gate. Keep HK innovative-drug biotech as the only vertical.
 
-**Sprint status:** in verification (core implementation landed; calibration
-pending for biotech-specific valuation framing and cross-ticker quality-gate
-consistency).
+**Sprint status:** in verification (core implementation landed; initial
+biotech-specific valuation framing calibration complete; broader cross-ticker
+quality-gate consistency review remains open).
 
 **Acceptance baseline.** A one-command run on `09606.HK`, `02142.HK`, and
 `09887.HK` produces:
@@ -1098,7 +1101,7 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
 
 #### S6.6 — Biotech valuation framing calibration
 
-- **Status:** next.
+- **Status:** implemented baseline; calibration review still open.
 - **What:** Recalibrate valuation-pod prompts/contracts so they reflect
   biotech market structure rather than mature-company valuation defaults.
 - **Why:** The latest acceptance sweep shows `commercial`, `rnpv`, and
@@ -1125,6 +1128,16 @@ model (e.g. `qwen3-max`, `claude-3.5-sonnet`) without a code change.
      solely because market price exceeds rNPV.
   4. `09606.HK` report-quality JSON parses cleanly or falls back to
      `review_required` without hiding the raw critical issues.
+
+Implemented baseline:
+
+- Valuation pod now separates conservative rNPV floor, market-implied value,
+  and scenario repricing range in committee outputs.
+- Commercial and balance-sheet role postprocessing prevents rNPV leakage and
+  records `role_boundary_flags` when deterministic correction fires.
+- `stage-c-review` flags valuation method/language drift, duplicate component
+  ranges, missing market bridge context, and surfaced role-boundary guardrails
+  in saved artifacts.
 - **Depends on:** S6.1-S6.5.
 - **Estimated size:** 1-2 days.
 
@@ -1192,6 +1205,9 @@ keeps provider volatility out of prompts and gives both
 - **Done** — `company-report --technical-features yfinance` threads real
   technical-feature payloads into LLM facts when `market-regime-timing` or
   `market-expectations` is requested. Quick `report` remains unchanged.
+- **Done** — First deterministic `market_sentiment_payload` proxy is assembled
+  from existing macro and technical payloads for `market-regime-timing`. It is
+  explicitly research-only and not a real fund-flow feed.
 - **Done** — First `market-expectations-agent` scaffold explains
   market-implied assumptions, valuation-band context, rNPV gaps,
   expectation-risk flags, and evidence gaps.
@@ -1210,9 +1226,10 @@ keeps provider volatility out of prompts and gives both
 
 ### Sprint 7: Strategic Economics + Market Context (Stage B)
 
-**Sprint status:** scaffold-complete. Market-regime/timing,
-market-expectations, strategic-economics, and catalyst scaffolds exist; default
-quick-report inclusion still requires calibration.
+**Sprint status:** scaffold-complete with first two-ticker opt-in calibration.
+Market-regime/timing, market-expectations, strategic-economics, and catalyst
+scaffolds exist; quick-report default inclusion still requires full output
+review across calibration tickers.
 
 - `strategic-economics-agent`: explains how a company captures value from its
   science through retained economics, BD/licensing, regional rights, partner
@@ -1246,10 +1263,12 @@ Sprint-7 agent execution should keep two conclusions separate:
 
 ### Sprint 8: Data Collector + Report Synthesizer (Stage C)
 
-**Sprint status:** scaffold-complete and calibration-started. First
-data-collector, report-synthesizer, and decision-debate scaffolds exist;
-decision-debate has passed two opt-in live calibration runs. Quick-report
-defaults remain unchanged until broader output review.
+**Sprint status:** scaffold-complete and calibration-review tooling started.
+First data-collector, report-synthesizer, and decision-debate scaffolds exist;
+decision-debate has passed two opt-in live calibration runs, report-quality now
+receives memo language context, valuation role guardrails are surfaced, and
+`stage-c-review` provides an offline checklist over saved support artifacts.
+Quick-report defaults remain unchanged until full output review.
 
 - `data-collector-agent`: LLM layer on top of existing deterministic
   ingestion that triages evidence quality, flags stale sources, and
@@ -1265,5 +1284,31 @@ defaults remain unchanged until broader output review.
   fundamental view from timing view and feeds report synthesis/quality when
   requested.
 
-Next Sprint-8 task: decide whether any decision-log summary should appear in
-the memo body or stay as an LLM findings artifact only.
+Current Sprint-8 decision: keep decision-log output artifact-only for now.
+`decision-debate` writes `<run_id>_decision_log.json` and manifest/summary
+links when requested, but does not change memo prose yet. Recent decision-log
+artifacts for the same company are fed back as lightweight memory in later
+`decision-debate` runs.
+
+Report-quality review has been broadened to receive a capped deterministic
+memo excerpt (`memo_review_payload`) plus any `report_synthesizer_payload`, so
+the quality gate can inspect final report language for overstated valuation,
+BD/platform, catalyst, timing, or trading-advice drift without changing memo
+prose. Deterministic quality postprocessing now also forces review when
+decision/memo/synthesizer text contains trading-instruction wording or when a
+decision log lacks observable next-review triggers.
+`stage-c-review` now scans saved `report_quality`, `valuation_pod`,
+`decision_log`, and `_llm_findings` artifacts without running LLMs, giving
+reviewers a compact local view of missing artifacts, missing Stage B/C agent
+findings, quality gates, valuation method/language drift, valuation
+role-boundary guardrails, market-bridge coverage, and decision-log trigger
+coverage. It supports flag/severity filters, latest-per-identity mode, and
+run-id/severity/flag-count sorting plus Markdown checklist output for
+calibration review.
+Valuation role postprocessing records `role_boundary_flags` when commercial or
+balance-sheet sub-agents are corrected away from rNPV leakage, so future
+artifacts show the guardrail that fired instead of silently normalizing.
+
+Next Sprint-8 task: review the full opt-in output across calibration tickers
+and decide later whether a compact decision-log subsection belongs in the memo
+body.

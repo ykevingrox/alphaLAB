@@ -16,9 +16,13 @@ from biotech_alpha.company_report import (
     _valuation_pod_payload_from_llm_facts,
     build_llm_agent_facts,
     company_report_summary,
+    decision_log_history,
+    decision_log_index,
     discover_company_inputs,
     resolve_company_identity,
     run_company_report,
+    stage_c_review_index,
+    stage_c_review_markdown,
 )
 from biotech_alpha.llm import FakeLLMClient
 
@@ -338,6 +342,450 @@ class CompanyReportTest(unittest.TestCase):
                 Path(tmpdir) / "memos" / "20260421T000000Z_llm_findings.json"
             )
             self.assertTrue(findings_path.exists())
+
+    def test_saved_report_writes_decision_log_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = FakeClinicalTrialsClient()
+            llm = FakeLLMClient(model="fake-qwen")
+            llm.queue(
+                json.dumps(
+                    {
+                        "bull_case": [
+                            {
+                                "claim": "Market value may reflect BD validation.",
+                                "evidence_key": "strategic_economics_payload",
+                                "confidence": 0.5,
+                            }
+                        ],
+                        "bear_case": [
+                            {
+                                "claim": "Evidence gaps still limit conviction.",
+                                "evidence_key": "data_collector_payload",
+                                "confidence": 0.6,
+                            }
+                        ],
+                        "debate_resolution": "Keep deterministic view unchanged.",
+                        "fundamental_view": "watchlist",
+                        "timing_view": "unknown",
+                        "decision_log": {
+                            "current_decision": "watchlist",
+                            "key_assumptions": ["BD validation remains relevant"],
+                            "reasons_to_revisit": ["New clinical update"],
+                            "invalidation_triggers": ["Evidence weakens"],
+                            "evidence_gaps": ["Need more source detail"],
+                            "next_review_triggers": ["Next disclosure"],
+                        },
+                        "confidence": 0.52,
+                        "needs_human_review": True,
+                    }
+                )
+            )
+
+            result = run_company_report(
+                company="No Data Bio",
+                input_dir=Path(tmpdir) / "input",
+                output_dir=tmpdir,
+                limit=1,
+                client=client,
+                now=datetime(2026, 4, 21, tzinfo=UTC),
+                llm_agents=("decision-debate",),
+                llm_client=llm,
+            )
+
+            self.assertIsNotNone(result.decision_log_path)
+            assert result.decision_log_path is not None
+            payload = json.loads(Path(result.decision_log_path).read_text())
+            self.assertEqual(payload["identity"]["ticker"], None)
+            self.assertEqual(payload["run_id"], "20260421T000000Z")
+            self.assertEqual(payload["summary"]["fundamental_view"], "watchlist")
+            summary = company_report_summary(result)
+            self.assertEqual(
+                summary["decision_log_summary"]["current_decision"],
+                "watchlist",
+            )
+            manifest_path = result.research_result.artifacts.manifest_json
+            assert manifest_path is not None
+            manifest = json.loads(Path(manifest_path).read_text())
+            self.assertIn("decision_log", manifest["artifacts"])
+
+    def test_decision_log_history_loads_same_company_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = root / "processed" / "company_report" / "dualitybio_09606_hk"
+            path.mkdir(parents=True)
+            artifact = path / "20260421T000000Z_decision_log.json"
+            artifact.write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260421T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "neutral",
+                            "current_decision": "watchlist",
+                            "confidence": 0.5,
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "key_assumptions": ["BD remains credible"],
+                                "reasons_to_revisit": ["new data"],
+                                "invalidation_triggers": ["weak data"],
+                                "evidence_gaps": ["need partner economics"],
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            newer = path / "20260428T000000Z_decision_log.json"
+            newer.write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260428T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "fragile",
+                            "current_decision": "watchlist",
+                            "confidence": 0.55,
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "key_assumptions": ["BD remains credible"],
+                                "reasons_to_revisit": ["new data"],
+                                "invalidation_triggers": ["weak data"],
+                                "evidence_gaps": [
+                                    "need partner economics",
+                                    "need catalyst timing",
+                                ],
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            history = decision_log_history(
+                output_dir=root,
+                ticker="09606.HK",
+                registry_path=None,
+            )
+
+            self.assertTrue(history["available"])
+            self.assertEqual(history["count"], 2)
+            self.assertEqual(history["entries"][0]["run_id"], "20260428T000000Z")
+            self.assertEqual(
+                history["entries"][1]["decision_log"]["key_assumptions"],
+                ["BD remains credible"],
+            )
+            self.assertTrue(history["change_summary"]["timing_view_changed"])
+            self.assertEqual(
+                history["change_summary"]["new_evidence_gaps"],
+                ["need catalyst timing"],
+            )
+
+    def test_decision_log_index_loads_all_company_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first_dir = root / "processed" / "company_report" / "dualitybio"
+            second_dir = root / "processed" / "company_report" / "leads"
+            first_dir.mkdir(parents=True)
+            second_dir.mkdir(parents=True)
+            for target, run_id, ticker in (
+                (first_dir, "20260421T000000Z", "09606.HK"),
+                (second_dir, "20260428T000000Z", "09887.HK"),
+            ):
+                (target / f"{run_id}_decision_log.json").write_text(
+                    json.dumps(
+                        {
+                            "run_id": run_id,
+                            "identity": {
+                                "company": ticker,
+                                "ticker": ticker,
+                                "market": "HK",
+                            },
+                            "summary": {
+                                "fundamental_view": "watchlist",
+                                "timing_view": "neutral",
+                                "current_decision": "watchlist",
+                                "confidence": 0.5,
+                            },
+                            "payload": {"decision_log": {}},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            index = decision_log_index(output_dir=root, limit=10)
+
+            self.assertTrue(index["available"])
+            self.assertEqual(index["count"], 2)
+            self.assertEqual(index["entries"][0]["run_id"], "20260428T000000Z")
+            self.assertEqual(index["entries"][0]["identity"]["ticker"], "09887.HK")
+
+    def test_stage_c_review_index_groups_support_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "single_company" / "09606-hk"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_report_quality.json").write_text(
+                json.dumps(
+                    {
+                        "summary": "Needs review.",
+                        "publish_gate": "review_required",
+                        "critical_issues": [
+                            "report_quality_unavailable: schema error"
+                        ],
+                        "recommended_fixes": ["rerun quality"],
+                        "language_quality_findings": [],
+                        "valuation_coherence_findings": [],
+                        "confidence": 0.2,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (run_dir / "20260428T000000Z_valuation_pod.json").write_text(
+                json.dumps(
+                    {
+                        "available": True,
+                        "summary": {
+                            "component_count": 4,
+                            "has_committee": True,
+                            "committee_publishable": False,
+                        },
+                        "payload": {
+                            "commercial": {
+                                "method": "rNPV",
+                                "summary": (
+                                    "当前股价远高于保守rNPV，存在高估和下行空间。"
+                                ),
+                                "role_boundary_flags": [
+                                    "commercial_rnpv_fallback_blocked"
+                                ],
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "rnpv": {
+                                "method": "rNPV",
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "committee": {"method": "sotp_committee"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            memos = root / "memos"
+            memos.mkdir()
+            (memos / "20260428T000000Z_llm_findings.json").write_text(
+                json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "agent_name": "valuation_committee_llm_agent",
+                                "summary": "committee summary",
+                                "risks": [],
+                                "confidence": 0.5,
+                                "needs_human_review": True,
+                            },
+                            {
+                                "agent_name": "report_quality_llm_agent",
+                                "summary": "quality summary",
+                                "risks": [],
+                                "confidence": 0.5,
+                                "needs_human_review": True,
+                            },
+                        ],
+                        "steps": [],
+                        "fallback_modules": [],
+                        "warnings": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(
+                output_dir=root,
+                query="09606.HK",
+                limit=5,
+            )
+
+            self.assertTrue(review["available"])
+            self.assertEqual(review["count"], 1)
+            entry = review["entries"][0]
+            self.assertEqual(entry["identity"]["ticker"], "09606.HK")
+            self.assertIn("report_quality_unavailable", entry["review_flags"])
+            self.assertIn(
+                "valuation_committee_not_publishable",
+                entry["review_flags"],
+            )
+            self.assertIn(
+                "valuation_commercial_method_drift",
+                entry["review_flags"],
+            )
+            self.assertIn(
+                "valuation_overvaluation_language_without_market_bridge",
+                entry["review_flags"],
+            )
+            self.assertIn(
+                (
+                    "valuation_role_boundary_commercial_"
+                    "commercial_rnpv_fallback_blocked"
+                ),
+                entry["review_flags"],
+            )
+            self.assertEqual(entry["llm_findings"]["agent_count"], 2)
+            self.assertIn(
+                "market_expectations_llm_agent",
+                entry["llm_findings"]["missing_expected_agents"],
+            )
+            self.assertIn(
+                "missing_llm_finding_market_expectations_llm_agent",
+                entry["review_flags"],
+            )
+            self.assertIn("missing_decision_log_artifact", entry["review_flags"])
+            self.assertEqual(entry["review_severity"], "critical")
+            self.assertTrue(
+                any("valuation pod roles" in action for action in entry["next_actions"])
+            )
+            self.assertEqual(
+                review["summary"]["publish_gate_counts"]["review_required"],
+                1,
+            )
+            self.assertEqual(review["summary"]["severity_counts"]["critical"], 1)
+
+            filtered = stage_c_review_index(
+                output_dir=root,
+                flags=("valuation_commercial_method_drift",),
+                latest_per_identity=True,
+                min_severity="critical",
+                sort_by="severity",
+            )
+            self.assertEqual(filtered["count"], 1)
+            self.assertEqual(filtered["filters"]["sort_by"], "severity")
+            markdown = stage_c_review_markdown(filtered)
+            self.assertIn("# Stage C Artifact Review", markdown)
+            self.assertIn("Checklist:", markdown)
+            self.assertIn("valuation pod roles", markdown)
+
+    def test_stage_c_review_index_reads_decision_log_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "company_report" / "duality"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_decision_log.json").write_text(
+                json.dumps(
+                    {
+                        "run_id": "20260428T000000Z",
+                        "identity": {
+                            "company": "映恩生物",
+                            "ticker": "09606.HK",
+                            "market": "HK",
+                        },
+                        "summary": {
+                            "fundamental_view": "watchlist",
+                            "timing_view": "neutral",
+                            "current_decision": "watchlist",
+                        },
+                        "payload": {
+                            "decision_log": {
+                                "current_decision": "watchlist",
+                                "next_review_triggers": ["next disclosure"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(output_dir=root, query="映恩")
+
+            self.assertTrue(review["available"])
+            self.assertEqual(review["entries"][0]["identity"]["ticker"], "09606.HK")
+            self.assertNotIn(
+                "decision_log_missing_next_review_trigger",
+                review["entries"][0]["review_flags"],
+            )
+
+    def test_stage_c_review_ignores_negated_rnpv_sole_value_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            run_dir = root / "processed" / "single_company" / "09606-hk"
+            run_dir.mkdir(parents=True)
+            (run_dir / "20260428T000000Z_valuation_pod.json").write_text(
+                json.dumps(
+                    {
+                        "available": True,
+                        "summary": {
+                            "component_count": 3,
+                            "has_committee": True,
+                            "committee_publishable": True,
+                            "has_market_implied_value": True,
+                            "has_scenario_repricing_range": True,
+                        },
+                        "payload": {
+                            "balance_sheet": {
+                                "method": "balance_sheet_adjustment",
+                                "summary": (
+                                    "不能把保守rNPV或净现金当作唯一公允价值，"
+                                    "需要结合BD经济学和平台可选性。"
+                                ),
+                                "valuation_range": {
+                                    "bear": 1,
+                                    "base": 2,
+                                    "bull": 3,
+                                },
+                            },
+                            "rnpv": {
+                                "method": "rNPV",
+                                "summary": "rNPV is a conservative floor.",
+                                "valuation_range": {
+                                    "bear": 4,
+                                    "base": 5,
+                                    "bull": 6,
+                                },
+                            },
+                            "committee": {
+                                "method": "sotp_committee",
+                                "market_implied_value": {"market_cap": 9},
+                                "scenario_repricing_range": {
+                                    "bear": 7,
+                                    "base": 8,
+                                    "bull": 9,
+                                },
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            review = stage_c_review_index(output_dir=root, query="09606.HK")
+
+            self.assertEqual(review["count"], 1)
+            self.assertNotIn(
+                "valuation_rnpv_as_sole_fair_value_language",
+                review["entries"][0]["review_flags"],
+            )
 
     def test_company_report_uses_generated_inputs_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -896,6 +1344,12 @@ class SourceTextExcerptTest(unittest.TestCase):
             "symbol": "9606.HK",
             "technical_state": "constructive",
             "provider": "unit-test",
+            "returns": {"1m_pct": 8.0, "3m_pct": 12.0},
+            "relative_strength": {
+                "state": "outperforming",
+                "3m_spread_pct": 6.0,
+            },
+            "volume_trend": {"state": "rising"},
         }
 
         facts = build_llm_agent_facts(
@@ -904,6 +1358,21 @@ class SourceTextExcerptTest(unittest.TestCase):
         )
 
         self.assertEqual(facts["technical_feature_payload"], technical)
+        self.assertEqual(
+            facts["market_sentiment_payload"]["fund_flow_proxy_state"],
+            "accumulation_proxy",
+        )
+
+    def test_build_llm_agent_facts_threads_prior_decision_logs(self) -> None:
+        research = _minimal_research_stub()
+        prior = {"count": 1, "entries": [{"run_id": "20260420T000000Z"}]}
+
+        facts = build_llm_agent_facts(
+            research_result=research,
+            prior_decision_logs=prior,
+        )
+
+        self.assertEqual(facts["prior_decision_logs_payload"], prior)
 
     def test_build_llm_agent_facts_threads_input_validation_payload(self) -> None:
         research = _minimal_research_stub()
@@ -927,6 +1396,17 @@ class SourceTextExcerptTest(unittest.TestCase):
         self.assertEqual(scaffold["ticker"], "09606.HK")
         self.assertIn("deterministic_summary", scaffold)
         self.assertEqual(scaffold["catalyst_count"], 0)
+
+    def test_build_llm_agent_facts_threads_memo_review_payload(self) -> None:
+        research = _minimal_research_stub()
+
+        facts = build_llm_agent_facts(research_result=research)
+
+        review = facts["memo_review_payload"]
+        self.assertTrue(review["available"])
+        self.assertIn("markdown_excerpt", review)
+        self.assertIn("## 执行结论", review["markdown_excerpt"])
+        self.assertEqual(review["render_mode"], "fallback_fields")
 
     def test_build_llm_agent_facts_threads_catalyst_calendar(self) -> None:
         class _Evidence:

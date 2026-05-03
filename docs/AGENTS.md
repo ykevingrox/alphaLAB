@@ -567,9 +567,9 @@ agent declares the stock cheap or expensive.
 Current implementation note: the first LLM scaffold is wired as optional
 `market-expectations`. It consumes valuation snapshot, valuation pod and
 committee payloads, macro context, optional `technical_feature_payload`, and
-optional `market_regime_timing_payload`. `company-report --technical-features
-yfinance` can thread the technical payload when `market-expectations` or
-`market-regime-timing` is requested.
+optional `market_sentiment_payload` / `market_regime_timing_payload`.
+`company-report --technical-features yfinance` can thread the technical payload
+when `market-expectations` or `market-regime-timing` is requested.
 
 Inputs:
 
@@ -604,7 +604,8 @@ the planned k-line specialist into one timing layer.
 
 Current implementation note: the first LLM scaffold is wired as optional
 `market-regime-timing`. It consumes existing `macro_context`, optional
-`macro_context_payload`, and optional `technical_feature_payload`.
+`macro_context_payload`, optional `technical_feature_payload`, and optional
+`market_sentiment_payload`.
 `company-report --technical-features yfinance` can thread the technical payload
 when `market-regime-timing` or `market-expectations` is requested. It is not
 yet in the quick-report default stack because technical payload collection is
@@ -615,8 +616,11 @@ Inputs:
 - Existing `macro-context` output
 - Deterministic technical feature payloads (returns, volume trend,
   moving-average state, volatility state, relative strength, drawdown)
-- Sector sentiment, liquidity, valuation-band, and fund-flow proxies when
-  available
+- `market_sentiment_payload`: deterministic proxy assembled from existing macro
+  and technical payloads, including sentiment state, liquidity proxy, relative
+  strength, and fund-flow proxy state.
+- External sector sentiment, liquidity, valuation-band, and real fund-flow
+  feeds when available later.
 
 Outputs:
 
@@ -647,7 +651,11 @@ Current implementation note: optional `decision-debate` is wired for
 `company-report --llm-agents ...`. It consumes data quality, strategic
 economics, catalyst, valuation pod, market expectations, market-regime/timing,
 scorecard, and deterministic memo scaffold payloads. It can feed
-`report-synthesizer` and `report-quality` when requested in the same run.
+`report-synthesizer` and `report-quality` when requested in the same run. When
+saved, it writes an artifact-only `<run_id>_decision_log.json`; memo prose is
+not changed yet. Future runs for the same company can feed recent decision-log
+artifacts back into this agent as lightweight memory so it can distinguish a
+real view change from repeated unresolved evidence gaps.
 
 Outputs:
 
@@ -658,12 +666,24 @@ Outputs:
   `de_risk_watch`, or `unknown`.
 - `decision_log`: assumptions, revisit reasons, invalidation triggers,
   evidence gaps, and next review triggers.
+- Prior decision-log memory, when available, is used only for changed
+  assumptions, repeated gaps, and invalidated triggers.
 
 Boundaries:
 
 - Must NOT output buy/sell/entry/exit/position-size instructions.
 - Must NOT change deterministic memo decisions or numeric valuation outputs.
 - Must keep debate claims tied to supplied payload keys.
+
+## Valuation Pod Guardrails
+
+Stage A+ valuation sub-agents now record deterministic `role_boundary_flags`
+when postprocessing corrects a role violation. Examples include
+`commercial_rnpv_fallback_blocked` when the commercial agent tries to use rNPV
+without revenue evidence, and `balance_sheet_non_cash_method_blocked` when the
+balance-sheet agent prices pipeline or operating assets instead of net cash.
+The valuation pod prompt/schema now includes this optional field; the flags
+flow into agent findings and the offline Stage C review surface.
 
 ## Report Synthesizer Agent
 
@@ -738,6 +758,19 @@ Inputs:
 - All `AgentFinding` entries from the run
 - Run-level `scorecard`, `extraction_audit`, `input_validation` payloads
 - Structured target-price and valuation pod outputs
+- `decision_debate_payload`, when present, so timing labels and decision-log
+  triggers can be checked for trading-language drift or missing observability
+- `memo_review_payload` and `report_synthesizer_payload`, when present, so the
+  quality gate can inspect final report language for overstated price, BD,
+  platform, catalyst, timing, or trading-advice drift without rewriting prose
+- Deterministic postprocessing also downgrades `pass` to `review_required` if
+  decision/memo/synthesizer text contains trading-instruction language, or if
+  decision logs lack observable `next_review_triggers`
+- Offline review support: `stage-c-review` groups saved `report_quality`,
+  `valuation_pod`, `decision_log`, and `_llm_findings` artifacts by run so
+  calibration review can happen without another LLM call. It flags missing
+  Stage B/C findings, valuation role-boundary guardrails, quality gates, and
+  decision-log trigger coverage.
 
 Outputs:
 
@@ -784,7 +817,9 @@ topology is tracked in `docs/ROADMAP.md`.
   - `valuation-committee-agent`
 - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
 - `report-synthesizer-agent` (Stage C)
-- `report-quality-agent` (Stage A)
+- `report-quality-agent` (Stage A; reviews memo language context plus
+  decision/synthesizer payloads when available, with deterministic guardrails
+  for trading-language drift and missing review triggers)
 
 Detailed gap analysis, contracts, and migration staging live in
 `docs/ARCHITECTURE_AUDIT.md`.

@@ -3001,6 +3001,8 @@ MARKET_EXPECTATIONS_PROMPT = StructuredPrompt(
         "Strategic economics payload:\n${strategic_economics}\n\n"
         "Macro context payload:\n${macro_context}\n\n"
         "Technical feature payload:\n${technical_payload}\n\n"
+        "Market sentiment / fund-flow proxy payload:\n"
+        "${sentiment_payload}\n\n"
         "Market-regime/timing payload:\n${timing_payload}\n\n"
         "Catalyst payload, if available:\n${catalyst_payload}\n\n"
         "Scorecard summary:\n${scorecard_summary}\n\n"
@@ -3193,6 +3195,9 @@ class MarketExpectationsLLMAgent(Agent):
             "technical_payload": _json_block(
                 store.get("technical_feature_payload")
             ),
+            "sentiment_payload": _json_block(
+                store.get("market_sentiment_payload")
+            ),
             "timing_payload": _json_block(
                 store.get("market_regime_timing_payload")
             ),
@@ -3277,6 +3282,9 @@ DECISION_DEBATE_PROMPT = StructuredPrompt(
         "- Work only from provided payloads. Do NOT invent prices, deal terms, "
         "clinical outcomes, catalyst dates, market history, or fund flows.\n"
         "- Keep fundamental view separate from timing view.\n"
+        "- Use prior decision logs only to identify changed assumptions, "
+        "repeated evidence gaps, or newly invalidated triggers; do not anchor "
+        "to an old view if current evidence differs.\n"
         "- Conservative rNPV below current market cap is not by itself a bear "
         "case for biotech; debate whether strategic economics, BD validation, "
         "platform evidence, catalysts, and market expectations justify the gap.\n"
@@ -3305,6 +3313,8 @@ DECISION_DEBATE_PROMPT = StructuredPrompt(
         "Catalyst payload:\n${catalyst_payload}\n\n"
         "Market expectations payload:\n${market_expectations}\n\n"
         "Market regime/timing payload:\n${timing_payload}\n\n"
+        "Prior decision logs for this company, if available:\n"
+        "${prior_decision_logs}\n\n"
         "Valuation pod payloads:\n${valuation_pod_payloads}\n\n"
         "Scorecard summary:\n${scorecard_summary}\n\n"
         "Return EXACTLY this JSON shape (keep keys verbatim):\n"
@@ -3624,6 +3634,9 @@ class DecisionDebateLLMAgent(Agent):
             ),
             "timing_payload": _json_block(
                 store.get("market_regime_timing_payload")
+            ),
+            "prior_decision_logs": _json_block(
+                store.get("prior_decision_logs_payload")
             ),
             "valuation_pod_payloads": _json_block(
                 {
@@ -4166,6 +4179,7 @@ VALUATION_POD_PROMPT = StructuredPrompt(
         "  \"unit_basis\": \"<reported|normalized>\",\n"
         "  \"fx_assumption\": \"<汇率说明>\",\n"
         "  \"shares_outstanding_used\": 0.0,\n"
+        "  \"role_boundary_flags\": [\"<仅当角色边界需要人工复核时填写>\"],\n"
         "  \"conservative_rnpv_floor\": \"<仅committee填写，可空>\",\n"
         "  \"market_implied_value\": \"<仅committee填写，可空>\",\n"
         "  \"scenario_repricing_range\": \"<仅committee填写，可空>\",\n"
@@ -4234,6 +4248,11 @@ VALUATION_POD_PROMPT = StructuredPrompt(
             "unit_basis": {"type": "string", "min_length": 2},
             "fx_assumption": {"type": "string", "min_length": 2},
             "shares_outstanding_used": {"type": ["number", "null"]},
+            "role_boundary_flags": {
+                "type": "array",
+                "items": {"type": "string", "min_length": 1},
+                "max_items": 12,
+            },
             "conservative_rnpv_floor": {
                 "type": ["string", "object", "null"],
             },
@@ -4482,6 +4501,11 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "摘要指标:\n${result_summary}\n\n"
         "估值分项输出:\n${valuation_pod_payloads}\n\n"
         "LLM findings:\n${llm_findings}\n\n"
+        "Decision debate payload:\n${decision_debate_payload}\n\n"
+        "Memo review payload (deterministic memo excerpt plus render metadata):\n"
+        "${memo_review_payload}\n\n"
+        "Report synthesizer payload, if final memo prose was inserted:\n"
+        "${report_synthesizer_payload}\n\n"
         "估值标准化结果:\n${normalized_valuation}\n\n"
         "审阅规则:\n"
         "- 若问题只是缺少战略经济/市场预期解释，优先给review_required，"
@@ -4490,6 +4514,11 @@ REPORT_QUALITY_PROMPT = StructuredPrompt(
         "balance_sheet使用rNPV方法，应作为估值口径问题。\n"
         "- 若报告把保守rNPV写成唯一合理股价，请列入"
         "valuation_coherence_findings。\n\n"
+        "- 若decision debate把timing_view写成交易指令，或decision_log"
+        "缺少可观察复核触发条件，请列入recommended_fixes。\n\n"
+        "- 审阅memo_review_payload和report_synthesizer_payload时，只检查"
+        "最终报告语言是否夸大价格、BD/platform确定性、催化剂确定性、"
+        "或把观察/复核信号写成买卖建议；不要重写报告正文。\n\n"
         "请返回严格 JSON：\n"
         "{\n"
         "  \"summary\": \"<1-3句审查结论>\",\n"
@@ -4651,6 +4680,15 @@ class ReportQualityLLMAgent(Agent):
                     }
                 ),
                 "llm_findings": _json_block(llm_findings),
+                "decision_debate_payload": _json_block(
+                    store.get("decision_debate_payload")
+                ),
+                "memo_review_payload": _json_block(
+                    store.get("memo_review_payload")
+                ),
+                "report_synthesizer_payload": _json_block(
+                    store.get("report_synthesizer_payload")
+                ),
                 "normalized_valuation": _json_block(
                     _normalized_valuation_for_review(store)
                 ),
@@ -5136,6 +5174,10 @@ def _valuation_pod_finding_from_payload(
         text = str(line).strip()
         if text:
             risks.append(f"[conflict] {text}")
+    for line in payload.get("role_boundary_flags") or []:
+        text = str(line).strip()
+        if text:
+            risks.append(f"[role_boundary] {text}")
     for key in (
         "conservative_rnpv_floor",
         "market_implied_value",
@@ -5641,6 +5683,7 @@ def _coerce_valuation_role_payload(
     if role == "valuation-commercial-agent" and not _has_commercial_revenue(
         financials_snapshot
     ):
+        original_method = str(coerced.get("method") or "").strip()
         coerced["method"] = "multiple"
         coerced["scope"] = (
             "commercialized_products_and_recurring_revenue; no commercial "
@@ -5658,7 +5701,13 @@ def _coerce_valuation_role_payload(
             "fall back to pipeline rNPV."
         )
         coerced["assumptions"] = assumptions[:12]
+        flags = list(coerced.get("role_boundary_flags") or [])
+        flags.append("commercial_no_revenue_zeroed")
+        if original_method == "rNPV":
+            flags.append("commercial_rnpv_fallback_blocked")
+        coerced["role_boundary_flags"] = _unique_strings(flags)[:12]
     elif role == "valuation-balance-sheet-agent":
+        original_method = str(coerced.get("method") or "").strip()
         net_cash = _deterministic_balance_sheet_adjustment(valuation_snapshot)
         if net_cash == (0.0, 0.0, 0.0):
             net_cash = _deterministic_balance_sheet_adjustment(
@@ -5681,7 +5730,27 @@ def _coerce_valuation_role_payload(
             "and must not price pipeline or operating assets."
         )
         coerced["assumptions"] = assumptions[:12]
+        flags = list(coerced.get("role_boundary_flags") or [])
+        flags.append("balance_sheet_deterministic_adjustment_applied")
+        if original_method and original_method != "balance_sheet_adjustment":
+            flags.append("balance_sheet_non_cash_method_blocked")
+        coerced["role_boundary_flags"] = _unique_strings(flags)[:12]
     return coerced
+
+
+def _unique_strings(values: Any) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = str(value).strip()
+        if not text:
+            continue
+        key = text.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(text)
+    return unique
 
 
 def _deterministic_balance_sheet_adjustment(
@@ -5813,55 +5882,197 @@ def _postprocess_report_quality_payload(
 ) -> dict[str, Any]:
     normalized = dict(payload)
     gate = str(normalized.get("publish_gate") or "review_required").strip()
-    if gate != "block":
-        return normalized
+    if gate == "block":
+        issue_classification = normalized.get("issue_classification")
+        hard_count = 0
+        if isinstance(issue_classification, list):
+            for item in issue_classification:
+                if isinstance(item, dict) and item.get("severity") == "hard_error":
+                    hard_count += 1
 
-    issue_classification = normalized.get("issue_classification")
-    hard_count = 0
-    if isinstance(issue_classification, list):
-        for item in issue_classification:
-            if isinstance(item, dict) and item.get("severity") == "hard_error":
-                hard_count += 1
-
-    if hard_count == 0:
-        texts: list[str] = []
-        for key in (
-            "critical_issues",
-            "consistency_findings",
-            "missing_evidence_findings",
-            "language_quality_findings",
-            "valuation_coherence_findings",
-        ):
-            texts.extend(str(x) for x in (normalized.get(key) or []))
-        combined = " ".join(texts).lower()
-        hard_tokens = (
-            "计算",
-            "公式",
-            "加总",
-            "单位",
-            "currency",
-            "fx",
-            "冲突",
-            "不一致",
-            "断裂",
-            "漏算",
-            "double count",
-            "shares",
-        )
-        has_hard_signal = any(token in combined for token in hard_tokens)
-        if not has_hard_signal:
-            normalized["publish_gate"] = "review_required"
-            fixes = list(normalized.get("recommended_fixes") or [])
-            fixes.append(
-                "deterministic gate override: downgrade block to review_required "
-                "because only soft warnings were detected"
+        if hard_count == 0:
+            texts: list[str] = []
+            for key in (
+                "critical_issues",
+                "consistency_findings",
+                "missing_evidence_findings",
+                "language_quality_findings",
+                "valuation_coherence_findings",
+            ):
+                texts.extend(str(x) for x in (normalized.get(key) or []))
+            combined = " ".join(texts).lower()
+            hard_tokens = (
+                "计算",
+                "公式",
+                "加总",
+                "单位",
+                "currency",
+                "fx",
+                "冲突",
+                "不一致",
+                "断裂",
+                "漏算",
+                "double count",
+                "shares",
             )
-            normalized["recommended_fixes"] = fixes
+            has_hard_signal = any(token in combined for token in hard_tokens)
+            if not has_hard_signal:
+                normalized["publish_gate"] = "review_required"
+                fixes = list(normalized.get("recommended_fixes") or [])
+                fixes.append(
+                    "deterministic gate override: downgrade block to "
+                    "review_required because only soft warnings were detected"
+                )
+                normalized["recommended_fixes"] = fixes
 
     committee_payload = store.get("valuation_committee_payload")
     if isinstance(committee_payload, dict):
         normalized["committee_unit_basis"] = committee_payload.get("unit_basis")
+    _apply_report_quality_guardrails(normalized=normalized, store=store)
     return normalized
+
+
+_TRADING_ADVICE_TOKENS = (
+    "买入",
+    "卖出",
+    "建仓",
+    "加仓",
+    "减仓",
+    "清仓",
+    "止损",
+    "止盈",
+    "入场",
+    "离场",
+    "买点",
+    "卖点",
+    "仓位",
+    "position size",
+    "entry point",
+    "exit point",
+    "stop loss",
+    "take profit",
+)
+
+
+def _apply_report_quality_guardrails(
+    *,
+    normalized: dict[str, Any],
+    store: FactStore,
+) -> None:
+    decision_payload = store.get("decision_debate_payload")
+    if isinstance(decision_payload, dict):
+        decision_text = " ".join(_nested_strings(decision_payload))
+        if _contains_trading_advice_language(decision_text):
+            _append_unique_quality_item(
+                normalized,
+                "language_quality_findings",
+                (
+                    "deterministic guardrail: decision-debate output contains "
+                    "trading-instruction language"
+                ),
+            )
+            _append_unique_quality_item(
+                normalized,
+                "recommended_fixes",
+                (
+                    "remove buy/sell/position language from decision-debate "
+                    "and restate it as research-only review context"
+                ),
+            )
+        decision_log = decision_payload.get("decision_log")
+        next_triggers = (
+            decision_log.get("next_review_triggers")
+            if isinstance(decision_log, dict)
+            else None
+        )
+        if not _has_nonempty_string_item(next_triggers):
+            _append_unique_quality_item(
+                normalized,
+                "recommended_fixes",
+                (
+                    "deterministic guardrail: decision_log must include at "
+                    "least one observable next_review_trigger"
+                ),
+            )
+
+    report_text = " ".join(
+        (
+            *_nested_strings(store.get("memo_review_payload")),
+            *_nested_strings(store.get("report_synthesizer_payload")),
+        )
+    )
+    if _contains_trading_advice_language(report_text):
+        _append_unique_quality_item(
+            normalized,
+            "language_quality_findings",
+            (
+                "deterministic guardrail: final report language contains "
+                "trading-instruction wording"
+            ),
+        )
+        _append_unique_quality_item(
+            normalized,
+            "recommended_fixes",
+            (
+                "revise memo/synthesizer language to avoid buy/sell/entry/"
+                "exit/position instructions"
+            ),
+        )
+
+
+def _append_unique_quality_item(
+    payload: dict[str, Any],
+    key: str,
+    text: str,
+) -> None:
+    values = payload.get(key)
+    if not isinstance(values, list):
+        values = []
+    if text not in values:
+        values.append(text)
+    payload[key] = values
+    if payload.get("publish_gate") == "pass":
+        payload["publish_gate"] = "review_required"
+
+
+def _contains_trading_advice_language(text: str) -> bool:
+    normalized = text.casefold()
+    return any(token.casefold() in normalized for token in _TRADING_ADVICE_TOKENS)
+
+
+def _has_nonempty_string_item(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if not isinstance(value, list):
+        return False
+    return any(isinstance(item, str) and item.strip() for item in value)
+
+
+def _nested_strings(value: Any, *, limit: int = 80) -> list[str]:
+    strings: list[str] = []
+
+    def visit(item: Any) -> None:
+        if len(strings) >= limit:
+            return
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                strings.append(text)
+            return
+        if isinstance(item, dict):
+            for sub_item in item.values():
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+            return
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                visit(sub_item)
+                if len(strings) >= limit:
+                    return
+
+    visit(value)
+    return strings
 
 
 def _finding_snapshot(finding: Any) -> dict[str, Any] | None:

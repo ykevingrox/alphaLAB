@@ -211,18 +211,31 @@ Target agent topology (canonical):
 - Layer 2 — Market context and timing:
   - `market-expectations-agent` (Stage B)
   - `market-regime-timing-agent` (Stage B; absorbs macro context,
-    technical timing, sector sentiment, and fund-flow framing)
+    technical timing, sector sentiment, and fund-flow framing; current
+    sentiment/fund-flow input is a deterministic proxy)
 - Layer 3 — Valuation pod (Stage A, Stage B calibrated):
   - `valuation-commercial-agent`
   - `valuation-pipeline-rnpv-agent`
   - `valuation-balance-sheet-agent`
   - `valuation-committee-agent`
 - Layer 4 — Decision and publishing:
-  - `decision-debate-agent` (Stage C; bull/bear debate and decision log)
+  - `decision-debate-agent` (Stage C; artifact-only bull/bear debate and
+    decision log with lightweight prior-log memory)
   - `investment-thesis-agent` (retain)
   - `scientific-skeptic-agent` (retain)
   - `report-synthesizer-agent` (Stage C)
-  - `report-quality-agent` (Stage A)
+  - `report-quality-agent` (Stage A; now reviews capped memo language context
+    plus synthesizer and decision-debate payloads when available, with
+    deterministic guardrails for trading-language drift and missing review
+    triggers)
+
+Offline support:
+
+- `stage-c-review` groups saved `report_quality`, `valuation_pod`, and
+  `decision_log`, plus root-level `_llm_findings`, by run for calibration
+  review without another LLM call. It supports severity/flag filters,
+  latest-per-identity mode, sorting, Markdown checklist output, and explicit
+  file output when requested.
 
 Deterministic backbone agents that feed the LLM layers:
 
@@ -249,10 +262,9 @@ Current architecture consistency note:
 External projects can inform adapters and patterns, but they should not replace
 the current lightweight runtime without a clear acceptance reason.
 
-- `yfinance` is a candidate optional data adapter for historical price, volume,
-  analyst, holder, and sector data. It belongs behind provider-neutral
-  interfaces and graceful degradation because it is an unofficial Yahoo Finance
-  wrapper.
+- `biotech_alpha.yfinance_provider` is the optional historical-data adapter for
+  price/volume inputs. It stays behind provider-neutral interfaces and graceful
+  degradation because `yfinance` is an unofficial Yahoo Finance wrapper.
 - `TradingAgents` is architecture inspiration rather than a dependency for the
   next sprint. Useful ideas include specialist analyst teams, bull/bear debate,
   model-tier separation, decision logs, and checkpointing. The current

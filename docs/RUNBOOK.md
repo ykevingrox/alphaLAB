@@ -133,9 +133,11 @@ Architecture note:
 - The target runtime is a multi-LLM-agent collaborative topology (see
   `docs/ARCHITECTURE_AUDIT.md`).
 - Current quick `report` already runs a subset of specialist LLM agents.
-- Planned next upgrades are broader decision-support review, deciding whether
-  decision-log output remains artifact-only, and deeper market-context payloads
-  such as sentiment and fund-flow signals.
+- Stage C decision-support review now has an offline helper:
+  `stage-c-review` can inspect saved support artifacts without another LLM
+  call. Remaining product decisions are whether decision-log output stays
+  artifact-only and when deterministic sentiment/fund-flow proxies should be
+  replaced with deeper market-context payloads from reliable sources.
 
 Expected behavior:
 
@@ -328,6 +330,12 @@ Important files:
   auto-extraction, when `--auto-inputs` runs.
 - `<run_id>_llm_findings.json` under `data/memos/<slug>/`: structured LLM agent
   outputs (risks, evidence, step issues) when LLM agents run.
+- `<run_id>_decision_log.json`: artifact-only bull/bear debate and decision
+  log when `decision-debate` runs. It is linked from the manifest and summary
+  but does not change memo prose yet. Later `decision-debate` runs for the
+  same company load recent decision-log artifacts as lightweight memory. When
+  present, quick-report terminal summaries print the compact decision /
+  fundamental / timing labels.
 - `<run_id>_memo.json`: structured memo.
 - `<run_id>_memo.md`: human-readable memo (includes an LLM addendum when LLM
   agents ran).
@@ -505,6 +513,49 @@ PYTHONPATH=src python3 -m biotech_alpha.cli company-report \
   --technical-benchmark-symbol ^HSI
 ```
 
+Inspect saved decision logs without running a new report:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK
+
+# Portfolio-wide local view
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log --all
+
+# Machine-readable form
+PYTHONPATH=src python3 -m biotech_alpha.cli decision-log 09606.HK --json
+```
+
+When at least two logs exist for the same company, the command also summarizes
+whether the latest decision, fundamental view, or timing view changed, plus new
+and repeated evidence gaps / invalidation triggers.
+
+Review saved Stage B/C support artifacts without running a new report or LLM:
+
+```bash
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review
+
+# Filter to one ticker/company/run_id/artifact directory
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK
+
+# Machine-readable form
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review 09606.HK --json
+
+# Markdown checklist for review notes
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --sort severity --markdown
+
+# Save the checklist when you want a durable calibration note
+PYTHONPATH=src python3 -m biotech_alpha.cli stage-c-review --latest-per-identity --min-severity critical --sort severity --markdown --output data/reviews/stage-c-review.md
+```
+
+The review index groups saved `report_quality`, `valuation_pod`,
+`decision_log`, and `_llm_findings` artifacts by run. It flags missing
+artifacts, missing Stage B/C LLM findings, quality gates that still block or
+require review, unavailable quality-agent fallbacks, valuation pod method
+drift, valuation `role_boundary_flags`, duplicate component ranges, missing
+market-implied/scenario repricing context, rNPV/overvaluation language that
+lacks a market bridge, and decision logs without observable next-review
+triggers.
+
 The technical provider is only consulted when `market-regime-timing` or
 `market-expectations` is requested. Quick `report` still does not fetch
 yfinance history by default.
@@ -556,9 +607,10 @@ If validation warns about placeholders:
   review-gated ClinicalTrials.gov discovery runner.
 - Cash runway is a first-pass estimate, not scenario modeling.
 - Valuation narrative currently comes from the Sprint 6 valuation pod
-  (commercial / pipeline-rNPV / balance-sheet / committee). The next
-  calibration task is to prevent conservative rNPV from being treated as the
-  only fair-value anchor for pre-revenue biotech.
+  (commercial / pipeline-rNPV / balance-sheet / committee). Guardrails now
+  separate conservative rNPV floor, market-implied assumptions, scenario
+  repricing, and valuation role-boundary corrections; the remaining task is to
+  review saved outputs across tickers before promoting defaults.
 - `report-quality-agent` is wired in the LLM path, while the deterministic
   `--no-llm` path still uses the rule-based `quality_gate`.
 - `scientific-skeptic` and `investment-thesis` agents produce LLM-backed

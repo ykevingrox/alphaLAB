@@ -169,6 +169,13 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
         self.assertEqual(payload["method"], "multiple")
         self.assertEqual(payload["valuation_range"]["base"], 0.0)
         self.assertEqual(payload["value_type"], "equity_value")
+        self.assertIn(
+            "commercial_rnpv_fallback_blocked",
+            payload["role_boundary_flags"],
+        )
+        self.assertTrue(
+            any("[role_boundary]" in risk for risk in step.finding.risks)
+        )
 
     def test_balance_sheet_agent_forces_net_cash_adjustment(self) -> None:
         client = FakeLLMClient()
@@ -209,9 +216,55 @@ class ValuationPodRoleBoundaryTest(unittest.TestCase):
         self.assertEqual(payload["method"], "balance_sheet_adjustment")
         self.assertEqual(payload["valuation_range"]["base"], 100.0)
         self.assertEqual(payload["value_type"], "equity_value")
+        self.assertIn(
+            "balance_sheet_non_cash_method_blocked",
+            payload["role_boundary_flags"],
+        )
 
 
 class ReportQualityLLMAgentTest(unittest.TestCase):
+    def test_report_quality_prompt_includes_memo_review_payload(self) -> None:
+        client = FakeLLMClient()
+        client.queue(
+            """{
+              "summary": "memo language review completed",
+              "publish_gate": "review_required",
+              "critical_issues": [],
+              "consistency_findings": [],
+              "missing_evidence_findings": [],
+              "language_quality_findings": ["需要避免把观察信号写成交易建议。"],
+              "valuation_coherence_findings": [],
+              "recommended_fixes": ["复核执行结论中的市场语言。"],
+              "issue_classification": [],
+              "confidence": 0.61
+            }"""
+        )
+        agent = ReportQualityLLMAgent(llm_client=client)
+        context = AgentContext(company="DualityBio", ticker="09606.HK")
+        store = FactStore(
+            {
+                "scorecard_summary": {"watchlist_score": 70},
+                "memo_review_payload": {
+                    "available": True,
+                    "markdown_excerpt": "## 执行结论\n市场语言需要复核。",
+                },
+                "report_synthesizer_payload": {
+                    "executive_verdict_paragraph": "维持观察名单。"
+                },
+            }
+        )
+
+        step = agent.run(context, store)
+
+        self.assertTrue(step.ok)
+        self.assertEqual(
+            step.outputs["report_quality_payload"]["publish_gate"],
+            "review_required",
+        )
+        self.assertIn("Memo review payload", client.calls[0].prompt)
+        self.assertIn("市场语言需要复核", client.calls[0].prompt)
+        self.assertIn("Report synthesizer payload", client.calls[0].prompt)
+
     def test_report_quality_falls_back_to_review_required_on_llm_error(self) -> None:
         client = FakeLLMClient()
         client.queue(raise_error=LLMError("simulated failure"))
@@ -272,6 +325,78 @@ class ReportQualityLLMAgentTest(unittest.TestCase):
             store=FactStore({}),
         )
         self.assertEqual(patched["publish_gate"], "review_required")
+
+    def test_report_quality_guardrails_flag_decision_debate_drift(self) -> None:
+        payload = {
+            "summary": "clean",
+            "publish_gate": "pass",
+            "critical_issues": [],
+            "consistency_findings": [],
+            "missing_evidence_findings": [],
+            "language_quality_findings": [],
+            "valuation_coherence_findings": [],
+            "recommended_fixes": [],
+            "issue_classification": [],
+        }
+        patched = _postprocess_report_quality_payload(
+            payload=payload,
+            store=FactStore(
+                {
+                    "decision_debate_payload": {
+                        "debate_resolution": "建议买入并加仓。",
+                        "decision_log": {"next_review_triggers": []},
+                    }
+                }
+            ),
+        )
+
+        self.assertEqual(patched["publish_gate"], "review_required")
+        self.assertTrue(
+            any(
+                "trading-instruction language" in item
+                for item in patched["language_quality_findings"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "next_review_trigger" in item
+                for item in patched["recommended_fixes"]
+            )
+        )
+
+    def test_report_quality_guardrails_flag_memo_language_drift(self) -> None:
+        payload = {
+            "summary": "clean",
+            "publish_gate": "pass",
+            "critical_issues": [],
+            "consistency_findings": [],
+            "missing_evidence_findings": [],
+            "language_quality_findings": [],
+            "valuation_coherence_findings": [],
+            "recommended_fixes": [],
+            "issue_classification": [],
+        }
+        patched = _postprocess_report_quality_payload(
+            payload=payload,
+            store=FactStore(
+                {
+                    "memo_review_payload": {
+                        "markdown_excerpt": "这里不是研究观察，而是明确买点。"
+                    },
+                    "report_synthesizer_payload": {
+                        "executive_verdict_paragraph": "维持观察名单。"
+                    },
+                }
+            ),
+        )
+
+        self.assertEqual(patched["publish_gate"], "review_required")
+        self.assertTrue(
+            any(
+                "final report language" in item
+                for item in patched["language_quality_findings"]
+            )
+        )
 
 
 class ValuationNormalizationTest(unittest.TestCase):

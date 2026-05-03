@@ -25,7 +25,14 @@ from biotech_alpha.china_cde import (
     parse_cde_feed,
     track_cde_updates,
 )
-from biotech_alpha.company_report import company_report_summary, run_company_report
+from biotech_alpha.company_report import (
+    company_report_summary,
+    decision_log_history,
+    decision_log_index,
+    run_company_report,
+    stage_c_review_index,
+    stage_c_review_markdown,
+)
 from biotech_alpha.competition import (
     competition_validation_report_as_dict,
     validate_competitor_file,
@@ -496,6 +503,107 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--json",
         action="store_true",
         help="Print the compact machine-readable JSON summary.",
+    )
+    decision_log_parser = subparsers.add_parser(
+        "decision-log",
+        help="Show recent artifact-only decision logs for a company.",
+    )
+    decision_log_parser.add_argument(
+        "query",
+        nargs="?",
+        help="Company name or ticker (e.g. DualityBio or 09606.HK).",
+    )
+    decision_log_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Show recent decision logs across all local companies.",
+    )
+    decision_log_parser.add_argument("--company", help="Company name.")
+    decision_log_parser.add_argument("--ticker", help="Ticker symbol.")
+    decision_log_parser.add_argument(
+        "--market",
+        default=None,
+        help="Optional market code used for identity resolution.",
+    )
+    decision_log_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory containing report artifacts. Defaults to data.",
+    )
+    decision_log_parser.add_argument(
+        "--registry",
+        default="data/input/company_registry.json",
+        help="Optional company registry JSON for aliases and tickers.",
+    )
+    decision_log_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum number of prior decision logs to show. Defaults to 5.",
+    )
+    decision_log_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
+    )
+    stage_c_review_parser = subparsers.add_parser(
+        "stage-c-review",
+        help="Review saved Stage B/C support artifacts without running LLMs.",
+    )
+    stage_c_review_parser.add_argument(
+        "query",
+        nargs="?",
+        help="Optional company, ticker, run_id, or artifact directory filter.",
+    )
+    stage_c_review_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory containing report artifacts. Defaults to data.",
+    )
+    stage_c_review_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of saved runs to show. Defaults to 20.",
+    )
+    stage_c_review_parser.add_argument(
+        "--flag",
+        action="append",
+        default=(),
+        help="Require a review flag. May be repeated.",
+    )
+    stage_c_review_parser.add_argument(
+        "--latest-per-identity",
+        action="store_true",
+        help="Show only the latest saved run per ticker/company identity.",
+    )
+    stage_c_review_parser.add_argument(
+        "--min-severity",
+        choices=("coverage", "review", "critical"),
+        help="Only show runs at or above the selected review severity.",
+    )
+    stage_c_review_parser.add_argument(
+        "--sort",
+        choices=("run-id", "severity", "flag-count"),
+        default="run-id",
+        help="Sort saved runs. Defaults to run-id.",
+    )
+    stage_c_review_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON.",
+    )
+    stage_c_review_parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Print a Markdown review checklist.",
+    )
+    stage_c_review_parser.add_argument(
+        "--output",
+        help=(
+            "Optional output path. Requires --json or --markdown and writes "
+            "the selected review payload/checklist."
+        ),
     )
     quick_report_parser.add_argument(
         "--hkexnews-feed-url",
@@ -1156,6 +1264,62 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 quick_paths=quick_paths,
             )
+        return 0
+
+    if args.command == "decision-log":
+        company = getattr(args, "company", None)
+        ticker = getattr(args, "ticker", None)
+        query = getattr(args, "query", None)
+        if getattr(args, "all", False):
+            payload = decision_log_index(
+                output_dir=args.output_dir,
+                limit=max(1, int(getattr(args, "limit", 5) or 5)),
+            )
+        else:
+            if query and not company and not ticker:
+                company, ticker = _split_company_or_ticker(query)
+            if not query and not company and not ticker:
+                parser.error("decision-log requires query, --company, --ticker, or --all")
+            payload = decision_log_history(
+                output_dir=args.output_dir,
+                company=company,
+                ticker=ticker,
+                market=getattr(args, "market", None),
+                registry_path=getattr(args, "registry", None),
+                limit=max(1, int(getattr(args, "limit", 5) or 5)),
+            )
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_decision_log_history(payload)
+        return 0
+
+    if args.command == "stage-c-review":
+        payload = stage_c_review_index(
+            output_dir=args.output_dir,
+            query=getattr(args, "query", None),
+            flags=tuple(getattr(args, "flag", ()) or ()),
+            latest_per_identity=bool(getattr(args, "latest_per_identity", False)),
+            min_severity=getattr(args, "min_severity", None),
+            sort_by=getattr(args, "sort", "run-id"),
+            limit=max(1, int(getattr(args, "limit", 20) or 20)),
+        )
+        if args.output and not (args.json or args.markdown):
+            parser.error("stage-c-review --output requires --json or --markdown")
+        if args.json:
+            rendered = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+            if args.output:
+                _write_text_output(args.output, rendered)
+            else:
+                print(rendered, end="")
+        elif args.markdown:
+            rendered = stage_c_review_markdown(payload)
+            if args.output:
+                _write_text_output(args.output, rendered)
+            else:
+                print(rendered, end="")
+        else:
+            _print_stage_c_review(payload)
         return 0
 
     if args.command == "pipeline-template":
@@ -1852,6 +2016,15 @@ def _print_quick_report_llm_summary(summary: dict[str, object]) -> None:
     fallback_modules = llm_agents.get("fallback_modules")
     if isinstance(fallback_modules, list) and fallback_modules:
         print("LLM fallback modules: " + ", ".join(str(x) for x in fallback_modules))
+    decision = _dict_value(summary, "decision_log_summary")
+    if decision:
+        current = decision.get("current_decision") or "unknown"
+        fundamental = decision.get("fundamental_view") or "unknown"
+        timing = decision.get("timing_view") or "unknown"
+        print(
+            "Decision log: "
+            f"decision={current}, fundamental={fundamental}, timing={timing}"
+        )
 
 
 def _print_quick_report_artifacts(
@@ -1876,6 +2049,7 @@ def _print_quick_report_artifacts(
     _print_path_line("Catalysts", artifacts.get("catalyst_calendar_csv"))
     _print_path_line("Missing-input report", summary.get("missing_inputs_report"))
     _print_path_line("LLM trace", summary.get("llm_trace_path"))
+    _print_path_line("Decision log", summary.get("decision_log_path"))
     _print_path_line("打开报告（中文）", quick_paths.get("latest_report"))
     _print_path_line("Open this folder", quick_paths.get("latest_dir"))
 
@@ -1884,6 +2058,192 @@ def _print_quick_report_artifacts(
     if llm_agents and run_id:
         findings_path = Path(output_dir) / "memos" / f"{run_id}_llm_findings.json"
         _print_path_line("LLM findings", findings_path)
+
+
+def _print_decision_log_history(payload: dict[str, object]) -> None:
+    identity = _dict_value(payload, "identity")
+    label = (
+        _string_value(identity, "ticker")
+        or _string_value(identity, "company")
+        or "all companies"
+    )
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+
+    print(f"Decision logs: {label}")
+    if not entries:
+        print("- No decision-log artifacts found.")
+        return
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        summary = entry.get("summary")
+        if not isinstance(summary, dict):
+            summary = {}
+        decision_log = entry.get("decision_log")
+        if not isinstance(decision_log, dict):
+            decision_log = {}
+        run_id = str(entry.get("run_id") or "unknown")
+        entry_identity = _dict_value(entry, "identity")
+        entry_label = (
+            _string_value(entry_identity, "ticker")
+            or _string_value(entry_identity, "company")
+        )
+        fundamental = summary.get("fundamental_view") or "unknown"
+        timing = summary.get("timing_view") or "unknown"
+        current = summary.get("current_decision") or "unknown"
+        confidence = summary.get("confidence")
+        confidence_text = (
+            f", confidence={confidence}" if confidence is not None else ""
+        )
+        prefix = f"{run_id}"
+        if entry_label and entry_label != label:
+            prefix = f"{prefix} {entry_label}"
+        print(
+            f"- {prefix}: decision={current}, fundamental={fundamental}, "
+            f"timing={timing}{confidence_text}"
+        )
+        for key, label_text in (
+            ("key_assumptions", "assumption"),
+            ("invalidation_triggers", "invalidation"),
+            ("evidence_gaps", "gap"),
+            ("next_review_triggers", "next"),
+        ):
+            values = decision_log.get(key)
+            if not isinstance(values, list) or not values:
+                continue
+            first = str(values[0]).strip()
+            if first:
+                print(f"  {label_text}: {first}")
+
+    change = payload.get("change_summary")
+    if isinstance(change, dict):
+        print("Change summary:")
+        for key, label_text in (
+            ("current_decision_changed", "decision changed"),
+            ("fundamental_view_changed", "fundamental changed"),
+            ("timing_view_changed", "timing changed"),
+        ):
+            print(f"- {label_text}: {bool(change.get(key))}")
+        for key, label_text in (
+            ("new_evidence_gaps", "new gaps"),
+            ("repeated_evidence_gaps", "repeated gaps"),
+            ("new_invalidation_triggers", "new invalidations"),
+            ("repeated_invalidation_triggers", "repeated invalidations"),
+        ):
+            values = change.get(key)
+            if isinstance(values, list) and values:
+                print(f"- {label_text}: {', '.join(str(v) for v in values[:3])}")
+
+
+def _print_stage_c_review(payload: dict[str, object]) -> None:
+    query = payload.get("query")
+    title = "Stage C artifact review"
+    if isinstance(query, str) and query.strip():
+        title = f"{title}: {query.strip()}"
+    print(title)
+
+    summary = _dict_value(payload, "summary")
+    entry_count = summary.get("entry_count", payload.get("count", 0))
+    print(f"- Runs: {entry_count}")
+    gate_counts = summary.get("publish_gate_counts")
+    if isinstance(gate_counts, dict) and gate_counts:
+        parts = [f"{key}={value}" for key, value in sorted(gate_counts.items())]
+        print(f"- Quality gates: {', '.join(parts)}")
+    severity_counts = summary.get("severity_counts")
+    if isinstance(severity_counts, dict) and severity_counts:
+        parts = [
+            f"{key}={value}" for key, value in sorted(severity_counts.items())
+        ]
+        print(f"- Severities: {', '.join(parts)}")
+    flag_counts = summary.get("flag_counts")
+    if isinstance(flag_counts, dict) and flag_counts:
+        parts = [
+            f"{key}={value}"
+            for key, value in sorted(
+                flag_counts.items(),
+                key=lambda item: (-int(item[1]), str(item[0])),
+            )[:8]
+        ]
+        print(f"- Top flags: {', '.join(parts)}")
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or not entries:
+        print("- No Stage C support artifacts found.")
+        return
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        identity = _dict_value(entry, "identity")
+        label = (
+            _string_value(identity, "ticker")
+            or _string_value(identity, "company")
+            or _string_value(entry, "artifact_dir")
+            or "unknown"
+        )
+        report_quality = _dict_value(entry, "report_quality")
+        valuation_pod = _dict_value(entry, "valuation_pod")
+        decision_log = _dict_value(entry, "decision_log")
+        artifacts = _dict_value(entry, "artifacts")
+        flags = entry.get("review_flags")
+        if not isinstance(flags, list):
+            flags = []
+        severity = entry.get("review_severity") or "info"
+        print(f"- {entry.get('run_id') or 'unknown'} {label} [{severity}]")
+        gate = report_quality.get("publish_gate") or "missing"
+        critical_count = report_quality.get("critical_issue_count")
+        fix_count = report_quality.get("recommended_fix_count")
+        print(f"  quality: gate={gate}, critical={critical_count}, fixes={fix_count}")
+        if valuation_pod:
+            duplicate_count = valuation_pod.get("duplicate_component_range_count")
+            committee = valuation_pod.get("committee_publishable")
+            print(
+                "  valuation: "
+                f"committee_publishable={committee}, duplicates={duplicate_count}"
+            )
+        llm_findings = _dict_value(entry, "llm_findings")
+        if llm_findings:
+            missing_agents = llm_findings.get("missing_expected_agents")
+            missing_count = (
+                len(missing_agents) if isinstance(missing_agents, list) else 0
+            )
+            print(
+                "  llm findings: "
+                f"agents={llm_findings.get('agent_count')}, "
+                f"missing_stage_b_c={missing_count}"
+            )
+        if decision_log:
+            decision_summary = _dict_value(decision_log, "summary")
+            print(
+                "  decision: "
+                f"{decision_summary.get('current_decision') or 'unknown'}, "
+                f"timing={decision_summary.get('timing_view') or 'unknown'}"
+            )
+        else:
+            print("  decision: missing artifact")
+        if flags:
+            print(f"  flags: {', '.join(str(flag) for flag in flags[:8])}")
+        actions = entry.get("next_actions")
+        if isinstance(actions, list) and actions:
+            print(f"  next: {str(actions[0]).strip()}")
+        missing = [
+            key
+            for key in ("report_quality", "valuation_pod", "decision_log")
+            if key not in artifacts
+        ]
+        if missing:
+            print(f"  missing: {', '.join(missing)}")
+
+
+def _write_text_output(path: str | Path, text: str) -> Path:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(text, encoding="utf-8")
+    print(f"Wrote {output_path}")
+    return output_path
 
 
 def _publish_quick_report_shortcuts(
